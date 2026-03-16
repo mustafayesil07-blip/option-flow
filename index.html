@@ -1717,14 +1717,24 @@ var SEED = {
 
 // Load from localStorage (opt_v22) or fall back to SEED
 var tradesData, leapsData;
-try { var _d = localStorage.getItem(LS); tradesData = _d ? JSON.parse(_d) : JSON.parse(JSON.stringify(SEED)); } catch(e) { tradesData = JSON.parse(JSON.stringify(SEED)); }
+// Real data is baked into SEED — always use it as base so it shows on every device.
+// User-added trades (id > 400000) from localStorage are merged on top.
+tradesData = JSON.parse(JSON.stringify(SEED));
+try {
+  var _d = localStorage.getItem(LS);
+  if (_d) {
+    var _saved = JSON.parse(_d);
+    Object.keys(_saved).forEach(function(m) {
+      if (!tradesData[m]) tradesData[m] = [];
+      (_saved[m] || []).forEach(function(t) {
+        if (t.id > 400000 && !tradesData[m].find(function(x){return x.id===t.id;})) {
+          tradesData[m].push(t);
+        }
+      });
+    });
+  }
+} catch(e) {}
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
-
-// If localStorage had old data without Aralik, merge it in
-if (tradesData && !tradesData['Aralik']) {
-  tradesData['Aralik'] = SEED['Aralik'];
-  try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){}
-}
 
 function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} }
 function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} }
