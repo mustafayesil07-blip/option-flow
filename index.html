@@ -678,439 +678,79 @@
 
 <!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
 <div class="screen active" id="screen-dashboard">
-
   <div class="hero-strip">
-    <!-- Total P&L - Full Width -->
-    <div class="hero-card">
+    <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(34,197,94,0.08),rgba(59,130,246,0.06));border-color:rgba(34,197,94,0.2);">
       <div class="hero-label">Total P&L — YTD</div>
-      <div class="hero-val" style="color:var(--profit)">+$14,832</div>
-      <div class="hero-change">
-        <span class="hero-badge profit">+18.4%</span>
-        <span style="color:var(--text-3); font-size:11px;">vs last month +$2,140</span>
-      </div>
-      <svg class="hero-sparkline" width="80" height="32" viewBox="0 0 80 32">
-        <polyline points="0,28 13,22 26,25 39,16 52,18 65,8 80,4"
-          fill="none" stroke="var(--profit)" stroke-width="1.5"
-          stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
-      </svg>
+      <div class="hero-val" id="heroPnl">—</div>
+      <div class="hero-change" id="heroPnlChange"></div>
     </div>
-
-    <!-- Win Rate -->
     <div class="hero-card">
       <div class="hero-label">Win Rate</div>
-      <div class="hero-val" style="color:var(--info)">78%</div>
-      <div class="hero-change">
-        <span class="hero-badge info">39/50</span>
-      </div>
+      <div class="hero-val" id="heroWR" style="color:var(--info)">—</div>
+      <div class="hero-change" id="heroWRSub"></div>
     </div>
-
-    <!-- Open Positions -->
     <div class="hero-card">
       <div class="hero-label">Open Positions</div>
-      <div class="hero-val">7</div>
-      <div class="hero-change">
-        <span class="hero-badge warn">3 alerts</span>
-      </div>
+      <div class="hero-val" id="heroOpen">—</div>
+      <div class="hero-change" id="heroOpenSub"></div>
     </div>
-
-    <!-- Collateral Usage -->
-    <div class="hero-card" style="grid-column: 1 / -1;">
+    <div class="hero-card" style="grid-column:1/-1;">
       <div class="hero-label">Collateral In Use</div>
-      <div style="display:flex; align-items:flex-end; justify-content:space-between;">
-        <div>
-          <div class="hero-val">$68,400</div>
-          <div class="hero-change" style="margin-top:8px;">
-            <span class="hero-badge warn">38% of $180K</span>
-            <span style="color:var(--text-3);font-size:11px;">max 60%</span>
-          </div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-family:var(--font-mono); font-size:22px; font-weight:600; color:var(--warn)">38%</div>
-          <div style="font-size:10px; color:var(--text-3); margin-top:3px;">usage</div>
-        </div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;">
+        <div><div class="hero-val" id="heroCollateral">—</div><div class="hero-change" id="heroCollateralSub" style="margin-top:8px;"></div></div>
+        <div style="text-align:right;"><div class="hero-val" id="heroCollPct" style="font-size:22px;color:var(--warn);">—</div><div style="font-size:10px;color:var(--text-3);margin-top:3px;">usage</div></div>
       </div>
-      <div style="margin-top:12px; height:5px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden;">
-        <div style="width:38%; height:100%; background:linear-gradient(90deg,var(--info),var(--warn)); border-radius:3px;"></div>
-      </div>
-      <div style="display:flex; justify-content:space-between; margin-top:5px; font-size:10px; color:var(--text-3);">
-        <span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span>$180K</span>
-      </div>
+      <div style="margin-top:12px;height:5px;background:rgba(255,255,255,0.07);border-radius:3px;overflow:hidden;"><div id="collBarFill" style="width:0%;height:100%;background:linear-gradient(90deg,var(--info),var(--warn));border-radius:3px;transition:width 0.8s ease;"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--text-3);"><span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span id="portSizeLabel">$180K</span></div>
     </div>
   </div>
 
-  <!-- Equity Curve -->
   <div class="chart-wrap">
     <div class="chart-head">
-      <div>
-        <div class="chart-title">Equity Curve</div>
-      </div>
+      <div class="chart-title">Equity Curve</div>
       <div class="chart-tabs">
         <div class="chart-tab active" onclick="switchChartTab(this,'equity')">Equity</div>
         <div class="chart-tab" onclick="switchChartTab(this,'pnl')">P&L</div>
       </div>
     </div>
-    <div class="chart-body">
-      <canvas id="equityChart"></canvas>
-    </div>
+    <div class="chart-body"><canvas id="equityChart"></canvas></div>
   </div>
 
-  <!-- Monthly P&L -->
   <div class="chart-wrap">
     <div class="chart-head">
       <div class="chart-title">Monthly P&L</div>
-      <div style="font-size:12px; color:var(--profit); font-weight:500; font-family:var(--font-mono);">+$14,832</div>
+      <div id="monthlyPnlTotal" style="font-size:12px;font-weight:500;font-family:var(--font-mono);">—</div>
     </div>
-    <div class="chart-body">
-      <canvas id="monthlyChart"></canvas>
-    </div>
+    <div class="chart-body"><canvas id="monthlyChart"></canvas></div>
   </div>
 
-  <!-- Key Stats -->
-  <div class="stats-row">
-    <div class="stat-cell">
-      <div class="stat-cell-val" style="color:var(--profit)">$381</div>
-      <div class="stat-cell-lbl">Avg Win</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-cell-val" style="color:var(--loss)">-$198</div>
-      <div class="stat-cell-lbl">Avg Loss</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-cell-val" style="color:var(--info)">1.93</div>
-      <div class="stat-cell-lbl">Payoff R</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-cell-val" style="color:var(--warn)">2.68</div>
-      <div class="stat-cell-lbl">P Factor</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-cell-val">$296</div>
-      <div class="stat-cell-lbl">EV/Trade</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-cell-val" style="color:var(--info)">34</div>
-      <div class="stat-cell-lbl">Avg DTE</div>
-    </div>
-  </div>
+  <div class="stats-row" id="keyStats"></div>
 
   <div class="section-head">
-    <div>
-      <div class="section-title" style="font-size:16px;">Recent Trades</div>
-    </div>
+    <div><div class="section-title" style="font-size:16px;">Recent Trades</div></div>
     <div class="section-action" onclick="switchScreen('trades')">View All</div>
   </div>
+  <div class="activity-list" id="recentTrades"></div>
+</div>
 
-  <div class="activity-list">
-    <div class="activity-item">
-      <div class="activity-icon" style="background:rgba(59,130,246,0.12); color:var(--info)">TSLA</div>
-      <div class="activity-body">
-        <div class="activity-ticker">TSLA <span class="strategy-tag tag-csp">CSP</span></div>
-        <div class="activity-sub">$190P · Closed Feb 14 · 28 DTE</div>
-      </div>
-      <div>
-        <div class="activity-pnl profit">+$312</div>
-        <div style="font-size:10px; color:var(--text-3); text-align:right; margin-top:2px;">50% of max</div>
-      </div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-icon" style="background:rgba(139,92,246,0.12); color:var(--purple)">SPY</div>
-      <div class="activity-body">
-        <div class="activity-ticker">SPY <span class="strategy-tag tag-pcs">PCS</span></div>
-        <div class="activity-sub">$510/$505P · Closed Mar 1 · 21 DTE</div>
-      </div>
-      <div>
-        <div class="activity-pnl profit">+$183</div>
-        <div style="font-size:10px; color:var(--text-3); text-align:right; margin-top:2px;">61% of max</div>
-      </div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-icon" style="background:rgba(239,68,68,0.12); color:var(--loss)">AMZN</div>
-      <div class="activity-body">
-        <div class="activity-ticker">AMZN <span class="strategy-tag tag-pcs">PCS</span></div>
-        <div class="activity-sub">$190/$185P · Closed Feb 28 · Roll</div>
-      </div>
-      <div>
-        <div class="activity-pnl loss">−$245</div>
-        <div style="font-size:10px; color:var(--text-3); text-align:right; margin-top:2px;">Stopped @ 35Δ</div>
-      </div>
-    </div>
-    <div class="activity-item">
-      <div class="activity-icon" style="background:rgba(34,197,94,0.12); color:var(--profit)">NVDA</div>
-      <div class="activity-body">
-        <div class="activity-ticker">NVDA <span class="strategy-tag tag-cc">CC</span></div>
-        <div class="activity-sub">$900C · Closed Mar 5 · 14 DTE</div>
-      </div>
-      <div>
-        <div class="activity-pnl profit">+$408</div>
-        <div style="font-size:10px; color:var(--text-3); text-align:right; margin-top:2px;">57% of max</div>
-      </div>
-    </div>
-  </div>
-
-</div><!-- /dashboard -->
-
-<!-- ═══════════════════════ TRADES ═══════════════════════ -->
+<!-- TRADES -->
 <div class="screen" id="screen-trades">
-
   <div class="section-head">
-    <div>
-      <div class="section-title">Trades</div>
-      <div class="section-sub">50 total · 7 open · 43 closed</div>
-    </div>
-    <div class="section-action">+ New</div>
+    <div><div class="section-title">Trades</div><div class="section-sub" id="tradesSub">Loading...</div></div>
+    <div class="section-action" onclick="showAddTrade()">+ New</div>
   </div>
-
   <div class="filter-row">
-    <div class="filter-pill active">All</div>
-    <div class="filter-pill">Open</div>
-    <div class="filter-pill">Closed</div>
-    <div class="filter-pill">CSP</div>
-    <div class="filter-pill">Spreads</div>
-    <div class="filter-pill">PMCC</div>
-    <div class="filter-pill">CC</div>
+    <div class="filter-pill active" data-filter="all">All</div>
+    <div class="filter-pill" data-filter="open">Open</div>
+    <div class="filter-pill" data-filter="closed">Closed</div>
+    <div class="filter-pill" data-filter="CSP">CSP</div>
+    <div class="filter-pill" data-filter="PCS">PCS</div>
+    <div class="filter-pill" data-filter="CC">CC</div>
+    <div class="filter-pill" data-filter="PMCC">PMCC</div>
+    <div class="filter-pill" data-filter="IC">IC</div>
   </div>
-
-  <div class="trade-list">
-
-    <!-- Open Trade 1 -->
-    <div class="trade-card">
-      <div class="trade-card-head">
-        <div class="trade-card-left">
-          <div class="trade-ticker-badge" style="background:rgba(59,130,246,0.12); color:var(--info)">
-            <span style="font-size:11px; font-weight:700;">TSLA</span>
-          </div>
-          <div>
-            <div class="trade-ticker">TSLA <span class="strategy-tag tag-csp">CSP</span></div>
-            <div class="trade-date">Opened Mar 4 · Apr 18 Exp</div>
-          </div>
-        </div>
-        <div class="trade-pnl-main">
-          <div class="trade-pnl-val" style="color:var(--profit)">+$178</div>
-          <div class="trade-pnl-pct" style="color:var(--profit)">+42% of max</div>
-        </div>
-      </div>
-      <div class="trade-card-body">
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Strike</div>
-          <div class="trade-metric-val">$185P</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Premium</div>
-          <div class="trade-metric-val">$4.25</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Contracts</div>
-          <div class="trade-metric-val">1 × 100</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Delta</div>
-          <div class="trade-metric-val" style="color:var(--info)">−0.18</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">IVR</div>
-          <div class="trade-metric-val" style="color:var(--warn)">58</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Collateral</div>
-          <div class="trade-metric-val">$18,500</div>
-        </div>
-      </div>
-      <div class="trade-card-foot">
-        <div class="dte-bar-wrap">
-          <div class="dte-label">
-            <span>DTE Progress</span>
-            <span style="color:var(--warn); font-family:var(--font-mono); font-size:10px;">33 DTE</span>
-          </div>
-          <div class="dte-bar">
-            <div class="dte-fill" style="width:55%; background:var(--warn);"></div>
-          </div>
-        </div>
-        <div class="status-label">
-          <div class="status-dot" style="background:var(--profit);"></div>
-          <span style="color:var(--profit); font-size:11px; font-weight:600;">OPEN</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Open Trade 2 -->
-    <div class="trade-card">
-      <div class="trade-card-head">
-        <div class="trade-card-left">
-          <div class="trade-ticker-badge" style="background:rgba(139,92,246,0.12); color:var(--purple)">
-            <span style="font-size:11px; font-weight:700;">SPX</span>
-          </div>
-          <div>
-            <div class="trade-ticker">SPX <span class="strategy-tag tag-ic">IC</span></div>
-            <div class="trade-date">Opened Mar 6 · Apr 4 Exp</div>
-          </div>
-        </div>
-        <div class="trade-pnl-main">
-          <div class="trade-pnl-val" style="color:var(--profit)">+$341</div>
-          <div class="trade-pnl-pct" style="color:var(--profit)">+53% of max</div>
-        </div>
-      </div>
-      <div class="trade-card-body">
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Strikes</div>
-          <div class="trade-metric-val" style="font-size:11px;">5600/5550P<br>5750/5800C</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Credit</div>
-          <div class="trade-metric-val">$6.42</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Width</div>
-          <div class="trade-metric-val">$50</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Delta</div>
-          <div class="trade-metric-val" style="color:var(--profit)">−0.02</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">IVR</div>
-          <div class="trade-metric-val" style="color:var(--profit)">52</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Max Loss</div>
-          <div class="trade-metric-val">$4,358</div>
-        </div>
-      </div>
-      <div class="trade-card-foot">
-        <div class="dte-bar-wrap">
-          <div class="dte-label">
-            <span>DTE Progress</span>
-            <span style="color:var(--warn); font-family:var(--font-mono); font-size:10px;">19 DTE</span>
-          </div>
-          <div class="dte-bar">
-            <div class="dte-fill" style="width:73%; background:linear-gradient(90deg,var(--info),var(--warn));"></div>
-          </div>
-        </div>
-        <div class="status-label">
-          <div class="status-dot" style="background:var(--profit);"></div>
-          <span style="color:var(--profit); font-size:11px; font-weight:600;">OPEN</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Open Trade 3 - Danger -->
-    <div class="trade-card" style="border-color:rgba(239,68,68,0.25);">
-      <div class="trade-card-head">
-        <div class="trade-card-left">
-          <div class="trade-ticker-badge" style="background:rgba(239,68,68,0.12); color:var(--loss)">
-            <span style="font-size:11px; font-weight:700;">AMZN</span>
-          </div>
-          <div>
-            <div class="trade-ticker">AMZN <span class="strategy-tag tag-pcs">PCS</span></div>
-            <div class="trade-date">Opened Feb 27 · Mar 21 Exp</div>
-          </div>
-        </div>
-        <div class="trade-pnl-main">
-          <div class="trade-pnl-val" style="color:var(--loss)">−$198</div>
-          <div class="trade-pnl-pct" style="color:var(--loss)">−66% of max</div>
-        </div>
-      </div>
-      <div class="trade-card-body">
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Strikes</div>
-          <div class="trade-metric-val" style="font-size:11px;">$188/$183P</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Credit</div>
-          <div class="trade-metric-val">$3.00</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Width</div>
-          <div class="trade-metric-val">$5</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Delta</div>
-          <div class="trade-metric-val" style="color:var(--loss)">−0.36 ⚠️</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">IVR</div>
-          <div class="trade-metric-val">44</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Max Loss</div>
-          <div class="trade-metric-val">$500</div>
-        </div>
-      </div>
-      <div class="trade-card-foot">
-        <div class="dte-bar-wrap">
-          <div class="dte-label">
-            <span>DTE Progress</span>
-            <span style="color:var(--loss); font-family:var(--font-mono); font-size:10px;">5 DTE ⚠️</span>
-          </div>
-          <div class="dte-bar">
-            <div class="dte-fill" style="width:92%; background:var(--loss);"></div>
-          </div>
-        </div>
-        <div class="status-label">
-          <div class="status-dot" style="background:var(--loss); animation:pulse 1s infinite;"></div>
-          <span style="color:var(--loss); font-size:11px; font-weight:600;">ALERT</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Closed Trade -->
-    <div class="trade-card" style="opacity:0.75;">
-      <div class="trade-card-head">
-        <div class="trade-card-left">
-          <div class="trade-ticker-badge" style="background:rgba(34,197,94,0.12); color:var(--profit)">
-            <span style="font-size:11px; font-weight:700;">NVDA</span>
-          </div>
-          <div>
-            <div class="trade-ticker">NVDA <span class="strategy-tag tag-cc">CC</span></div>
-            <div class="trade-date">Mar 5 → Mar 14 · 9 days held</div>
-          </div>
-        </div>
-        <div class="trade-pnl-main">
-          <div class="trade-pnl-val" style="color:var(--profit)">+$408</div>
-          <div class="trade-pnl-pct" style="color:var(--profit)">+57% of max</div>
-        </div>
-      </div>
-      <div class="trade-card-body">
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Strike</div>
-          <div class="trade-metric-val">$900C</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Premium</div>
-          <div class="trade-metric-val">$7.15</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Closed At</div>
-          <div class="trade-metric-val">$3.05</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Delta</div>
-          <div class="trade-metric-val">+0.15</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">IVR</div>
-          <div class="trade-metric-val">61</div>
-        </div>
-        <div class="trade-metric">
-          <div class="trade-metric-lbl">Return</div>
-          <div class="trade-metric-val" style="color:var(--profit)">57% max</div>
-        </div>
-      </div>
-      <div class="trade-card-foot">
-        <div class="dte-bar-wrap">
-          <div class="dte-label"><span>Profit target hit</span></div>
-          <div class="dte-bar">
-            <div class="dte-fill" style="width:57%; background:var(--profit);"></div>
-          </div>
-        </div>
-        <div class="status-label">
-          <div class="status-dot" style="background:var(--text-3);"></div>
-          <span style="color:var(--text-3); font-size:11px; font-weight:600;">CLOSED</span>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div><!-- /trades -->
+  <div class="trade-list" id="tradeList"></div>
+</div>
 
 <!-- ═══════════════════════ STATISTICS ═══════════════════════ -->
 <div class="screen" id="screen-statistics">
