@@ -754,532 +754,67 @@
 
 <!-- ═══════════════════════ STATISTICS ═══════════════════════ -->
 <div class="screen" id="screen-statistics">
-
   <div class="section-head">
-    <div>
-      <div class="section-title">Statistics</div>
-      <div class="section-sub">50 trades · Mar 2025 → Mar 2026</div>
-    </div>
+    <div><div class="section-title">Statistics</div><div class="section-sub" id="statsSub">Loading...</div></div>
   </div>
-
-  <div class="period-row">
-    <div class="period-btn active">All time</div>
-    <div class="period-btn">This month</div>
-    <div class="period-btn">Last 3M</div>
-    <div class="period-btn">Last 6M</div>
-  </div>
-
-  <!-- Win/Loss Donut -->
   <div class="donut-section">
-    <div style="font-family:var(--font-head); font-size:14px; font-weight:600; margin-bottom:12px;">Win/Loss Breakdown</div>
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:12px;">Win/Loss Breakdown</div>
     <div class="donut-wrap">
       <canvas class="donut-canvas" id="donutChart"></canvas>
-      <div class="donut-legend">
-        <div class="legend-item">
-          <div class="legend-dot" style="background:var(--profit)"></div>
-          <span class="legend-txt">Winners</span>
-          <span class="legend-pct" style="color:var(--profit)">78% · 39</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot" style="background:var(--loss)"></div>
-          <span class="legend-txt">Losers</span>
-          <span class="legend-pct" style="color:var(--loss)">22% · 11</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot" style="background:var(--warn)"></div>
-          <span class="legend-txt">Break-even</span>
-          <span class="legend-pct" style="color:var(--warn)">0%</span>
-        </div>
-      </div>
+      <div class="donut-legend" id="donutLegend"></div>
     </div>
   </div>
-
-  <!-- Big stats -->
-  <div class="stats-grid">
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">Win Rate</div>
-      <div class="stat-big-val" style="color:var(--info)">78%</div>
-      <div class="stat-big-sub">39 of 50 trades</div>
-      <div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:78%; background:var(--info);"></div></div>
-    </div>
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">Profit Factor</div>
-      <div class="stat-big-val" style="color:var(--profit)">2.68</div>
-      <div class="stat-big-sub">Excellent (&gt;2.0)</div>
-      <div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:80%; background:var(--profit);"></div></div>
-    </div>
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">Avg Win</div>
-      <div class="stat-big-val" style="color:var(--profit)">$381</div>
-      <div class="stat-big-sub">per trade</div>
-    </div>
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">Avg Loss</div>
-      <div class="stat-big-val" style="color:var(--loss)">$198</div>
-      <div class="stat-big-sub">per trade</div>
-    </div>
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">Payoff Ratio</div>
-      <div class="stat-big-val" style="color:var(--warn)">1.93×</div>
-      <div class="stat-big-sub">W:L size ratio</div>
-    </div>
-    <div class="stats-big-card">
-      <div class="stat-big-lbl">EV / Trade</div>
-      <div class="stat-big-val">$296</div>
-      <div class="stat-big-sub">expected value</div>
-    </div>
-    <div class="stats-big-card full">
-      <div class="stat-big-lbl">Avg Holding Period</div>
-      <div class="stat-big-val">18.4 days</div>
-      <div class="stat-big-sub">Range: 3 – 38 days · Avg DTE at open: 34</div>
-    </div>
-  </div>
-
-  <!-- Strategy Breakdown -->
+  <div class="stats-grid" id="statsGrid"></div>
   <div class="perf-table">
-    <div style="font-family:var(--font-head); font-size:14px; font-weight:600; margin-bottom:10px; padding:0 0 0 2px;">By Strategy</div>
-    <div class="perf-table-inner">
-      <div class="perf-row" style="background:rgba(255,255,255,0.02);">
-        <div style="font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px;">Strategy</div>
-        <div style="font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px;">Trades</div>
-        <div style="font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px;">WR%</div>
-        <div style="font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px;">P&L</div>
-      </div>
-      <div class="perf-row" style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr;">
-        <div class="perf-row-label" style="display:flex;align-items:center;gap:6px;"><span class="strategy-tag tag-csp" style="margin:0;">CSP</span></div>
-        <div class="perf-row-val">18</div>
-        <div class="perf-row-val" style="color:var(--profit)">83%</div>
-        <div class="perf-row-val" style="color:var(--profit)">+$6,840</div>
-      </div>
-      <div class="perf-row" style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr;">
-        <div class="perf-row-label" style="display:flex;align-items:center;gap:6px;"><span class="strategy-tag tag-pcs" style="margin:0;">PCS</span></div>
-        <div class="perf-row-val">14</div>
-        <div class="perf-row-val" style="color:var(--info)">79%</div>
-        <div class="perf-row-val" style="color:var(--profit)">+$3,920</div>
-      </div>
-      <div class="perf-row" style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr;">
-        <div class="perf-row-label" style="display:flex;align-items:center;gap:6px;"><span class="strategy-tag tag-cc" style="margin:0;">CC</span></div>
-        <div class="perf-row-val">10</div>
-        <div class="perf-row-val" style="color:var(--profit)">80%</div>
-        <div class="perf-row-val" style="color:var(--profit)">+$2,810</div>
-      </div>
-      <div class="perf-row" style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr;">
-        <div class="perf-row-label" style="display:flex;align-items:center;gap:6px;"><span class="strategy-tag tag-pmcc" style="margin:0;">PMCC</span></div>
-        <div class="perf-row-val">5</div>
-        <div class="perf-row-val" style="color:var(--warn)">60%</div>
-        <div class="perf-row-val" style="color:var(--profit)">+$940</div>
-      </div>
-      <div class="perf-row" style="display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr;">
-        <div class="perf-row-label" style="display:flex;align-items:center;gap:6px;"><span class="strategy-tag tag-ic" style="margin:0;">IC</span></div>
-        <div class="perf-row-val">3</div>
-        <div class="perf-row-val" style="color:var(--warn)">67%</div>
-        <div class="perf-row-val" style="color:var(--profit)">+$322</div>
-      </div>
-    </div>
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;padding:0 0 0 2px;">By Strategy</div>
+    <div class="perf-table-inner" id="stratTableInner"></div>
   </div>
-
-</div><!-- /statistics -->
+</div>
 
 <!-- ═══════════════════════ RISK ═══════════════════════ -->
 <div class="screen" id="screen-risk">
-
   <div class="section-head">
-    <div>
-      <div class="section-title">Risk Monitor</div>
-      <div class="section-sub">3 active alerts · Updated now</div>
-    </div>
-    <div style="font-size:12px; color:var(--warn); font-weight:600; padding:6px 12px; background:var(--warn-dim); border:1px solid rgba(245,158,11,0.25); border-radius:20px;">3 Alerts</div>
+    <div><div class="section-title">Risk Monitor</div><div class="section-sub" id="riskSub">Checking...</div></div>
+    <div id="riskBadge" style="font-size:12px;font-weight:600;padding:6px 12px;background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:20px;color:var(--warn);">—</div>
   </div>
-
-  <!-- Alerts -->
-  <div class="alert-list">
-
-    <div class="alert-card danger">
-      <div class="alert-icon danger">⚠️</div>
-      <div class="alert-body">
-        <div class="alert-title" style="color:var(--loss)">Delta Threshold Breached</div>
-        <div class="alert-desc">AMZN PCS has reached −0.36 delta, exceeding your 35Δ close rule. Consider closing or rolling for net credit.</div>
-        <div class="alert-ticker">AMZN $188/$183P · Mar 21 Exp · 5 DTE</div>
-      </div>
-    </div>
-
-    <div class="alert-card warn">
-      <div class="alert-icon warn">⏱</div>
-      <div class="alert-body">
-        <div class="alert-title" style="color:var(--warn)">DTE Alert — Near Expiry</div>
-        <div class="alert-desc">AMZN PCS has only 5 days to expiration. Gamma risk accelerates below 7 DTE. Review position now.</div>
-        <div class="alert-ticker">AMZN PCS · 5 DTE remaining</div>
-      </div>
-    </div>
-
-    <div class="alert-card warn">
-      <div class="alert-icon warn">📊</div>
-      <div class="alert-body">
-        <div class="alert-title" style="color:var(--warn)">Sector Concentration</div>
-        <div class="alert-desc">Technology sector now represents 71% of open collateral. Your diversification target is &lt;60%. Consider adding exposure to other sectors.</div>
-        <div class="alert-ticker">TSLA · NVDA · AMZN · GOOGL = 71%</div>
-      </div>
-    </div>
-
-    <div class="alert-card ok">
-      <div class="alert-icon ok">✅</div>
-      <div class="alert-body">
-        <div class="alert-title" style="color:var(--profit)">Position Sizing OK</div>
-        <div class="alert-desc">All open positions are within the 10% equity limit. Largest single position: TSLA at 8.2% of portfolio.</div>
-        <div class="alert-ticker">Max allowed: $18,000 · Current max: $14,800</div>
-      </div>
-    </div>
-
-    <div class="alert-card ok">
-      <div class="alert-icon ok">💰</div>
-      <div class="alert-body">
-        <div class="alert-title" style="color:var(--profit)">Collateral Usage Healthy</div>
-        <div class="alert-desc">Current collateral deployment is 38% of portfolio. Well within your 60% maximum limit.</div>
-        <div class="alert-ticker">$68,400 deployed of $180,000 total</div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Portfolio Concentration -->
+  <div class="alert-list" id="alertList"></div>
   <div class="risk-section mx">
-    <div class="risk-title">Sector Concentration</div>
-    <div class="card" style="padding:16px;">
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">Technology</span>
-          <span class="conc-pct" style="color:var(--warn)">71%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:71%; background:var(--warn);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">Indices</span>
-          <span class="conc-pct">18%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:18%; background:var(--info);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">Consumer</span>
-          <span class="conc-pct">7%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:7%; background:var(--purple);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">Other</span>
-          <span class="conc-pct">4%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:4%; background:var(--text-3);"></div></div>
-      </div>
-    </div>
+    <div class="risk-title">Collateral by Ticker (Open Positions)</div>
+    <div class="card" style="padding:16px;" id="tickerConc"></div>
   </div>
-
-  <!-- Per-ticker breakdown -->
-  <div class="risk-section mx">
-    <div class="risk-title">By Ticker — Collateral</div>
-    <div class="card" style="padding:16px;">
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">TSLA</span>
-          <span class="conc-pct">$18,500 · 27%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:27%; background:var(--info);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">NVDA</span>
-          <span class="conc-pct">$14,800 · 22%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:22%; background:var(--purple);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">SPX</span>
-          <span class="conc-pct">$12,900 · 19%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:19%; background:var(--info);"></div></div>
-      </div>
-      <div class="concentration-item">
-        <div class="conc-head">
-          <span class="conc-ticker">AMZN</span>
-          <span class="conc-pct">$10,400 · 15%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:15%; background:var(--loss);"></div></div>
-      </div>
-      <div class="concentration-item" style="margin-bottom:0;">
-        <div class="conc-head">
-          <span class="conc-ticker">GOOGL</span>
-          <span class="conc-pct">$11,800 · 17%</span>
-        </div>
-        <div class="conc-bar"><div class="conc-fill" style="width:17%; background:var(--warn);"></div></div>
-      </div>
-    </div>
-  </div>
-
-</div><!-- /risk -->
+</div>
 
 <!-- ═══════════════════════ REPORTS ═══════════════════════ -->
 <div class="screen" id="screen-reports">
-
   <div class="section-head">
-    <div>
-      <div class="section-title">Reports</div>
-      <div class="section-sub">Performance history & exports</div>
-    </div>
+    <div><div class="section-title">Reports</div><div class="section-sub">Performance history</div></div>
   </div>
-
-  <div class="report-cards">
-    <div class="report-card">
-      <div class="report-icon" style="background:var(--info-dim);">📈</div>
-      <div class="report-body">
-        <div class="report-title">Monthly Performance</div>
-        <div class="report-sub">Detailed breakdown by month</div>
-      </div>
-      <div class="report-arrow">›</div>
-    </div>
-    <div class="report-card">
-      <div class="report-icon" style="background:var(--profit-dim);">🏆</div>
-      <div class="report-body">
-        <div class="report-title">Best & Worst Trades</div>
-        <div class="report-sub">Top 10 winners and losers</div>
-      </div>
-      <div class="report-arrow">›</div>
-    </div>
-    <div class="report-card">
-      <div class="report-icon" style="background:var(--warn-dim);">📊</div>
-      <div class="report-body">
-        <div class="report-title">Tax Report</div>
-        <div class="report-sub">Realized P&L summary for tax year</div>
-      </div>
-      <div class="report-arrow">›</div>
-    </div>
-    <div class="report-card">
-      <div class="report-icon" style="background:var(--purple-dim);">📤</div>
-      <div class="report-body">
-        <div class="report-title">Export to CSV</div>
-        <div class="report-sub">Download all trade data</div>
-      </div>
-      <div class="report-arrow">›</div>
-    </div>
+  <div style="display:flex;gap:10px;margin:0 20px 16px;flex-wrap:wrap;">
+    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export Backup</button>
+    <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>
   </div>
-
-  <!-- Monthly table -->
-  <div class="monthly-table" style="margin-top:20px;">
-    <div style="font-family:var(--font-head); font-size:14px; font-weight:600; margin-bottom:10px; padding:0 2px;">Monthly Breakdown</div>
+  <div class="monthly-table">
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;padding:0 2px;">Monthly Breakdown</div>
     <div class="monthly-inner">
-      <div class="monthly-head">
-        <div>Month</div><div>Trades</div><div>Win%</div><div>P&L</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Mar '26</div>
-        <div class="trades">8</div>
-        <div class="wr" style="color:var(--profit)">87%</div>
-        <div class="pnl" style="color:var(--profit)">+$3,120</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Feb '26</div>
-        <div class="trades">9</div>
-        <div class="wr" style="color:var(--profit)">78%</div>
-        <div class="pnl" style="color:var(--profit)">+$2,840</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Jan '26</div>
-        <div class="trades">7</div>
-        <div class="wr" style="color:var(--warn)">71%</div>
-        <div class="pnl" style="color:var(--profit)">+$1,960</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Dec '25</div>
-        <div class="trades">6</div>
-        <div class="wr" style="color:var(--profit)">83%</div>
-        <div class="pnl" style="color:var(--profit)">+$2,210</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Nov '25</div>
-        <div class="trades">8</div>
-        <div class="wr" style="color:var(--warn)">62%</div>
-        <div class="pnl" style="color:var(--loss)">−$340</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Oct '25</div>
-        <div class="trades">5</div>
-        <div class="wr" style="color:var(--profit)">80%</div>
-        <div class="pnl" style="color:var(--profit)">+$1,420</div>
-      </div>
-      <div class="monthly-row">
-        <div class="month">Sep '25</div>
-        <div class="trades">7</div>
-        <div class="wr" style="color:var(--profit)">86%</div>
-        <div class="pnl" style="color:var(--profit)">+$1,980</div>
-      </div>
-      <div class="monthly-row" style="background:rgba(255,255,255,0.02);">
-        <div class="month" style="font-weight:700;">Total</div>
-        <div class="trades" style="font-weight:600;">50</div>
-        <div class="wr" style="color:var(--profit); font-weight:600;">78%</div>
-        <div class="pnl" style="color:var(--profit); font-weight:700;">+$14,832</div>
-      </div>
+      <div class="monthly-head"><div>Month</div><div>Trades</div><div>Win%</div><div>P&L</div></div>
+      <div id="monthlyTableBody"></div>
     </div>
   </div>
-
-</div><!-- /reports -->
+</div>
 
 <!-- ═══════════════════════ LEAPS ═══════════════════════ -->
 <div class="screen" id="screen-leaps">
-
   <div class="section-head">
-    <div>
-      <div class="section-title">LEAPS</div>
-      <div class="section-sub">Long-dated equity positions</div>
-    </div>
-    <div class="section-action">+ Add</div>
+    <div><div class="section-title">LEAPS</div><div class="section-sub">Long-dated positions</div></div>
+    <div class="section-action" onclick="showAddLeap()">+ Add</div>
   </div>
-
   <div class="leaps-hero mx" style="margin-bottom:16px;">
-    <div class="leaps-hero-title">LEAPS Portfolio</div>
-    <div class="leaps-hero-sub">Long-term equity anticipation securities for directional exposure and PMCC structures.</div>
-    <div class="leaps-metrics">
-      <div class="leaps-m">
-        <div class="leaps-m-val" style="color:var(--profit)">+$8,240</div>
-        <div class="leaps-m-lbl">Unrealized Gain</div>
-      </div>
-      <div class="leaps-m">
-        <div class="leaps-m-val">$42,800</div>
-        <div class="leaps-m-lbl">Total Invested</div>
-      </div>
-      <div class="leaps-m">
-        <div class="leaps-m-val" style="color:var(--profit)">+19.3%</div>
-        <div class="leaps-m-lbl">Return</div>
-      </div>
-      <div class="leaps-m">
-        <div class="leaps-m-val">3</div>
-        <div class="leaps-m-lbl">Positions</div>
-      </div>
-    </div>
+    <div style="font-family:var(--font-head);font-size:22px;font-weight:700;">LEAPS Portfolio</div>
+    <div style="font-size:13px;color:var(--text-2);margin-top:6px;line-height:1.5;">Long-term equity positions for directional exposure and PMCC structures.</div>
+    <div class="leaps-metrics" id="leapsMetrics"></div>
   </div>
-
-  <div class="leaps-list">
-
-    <!-- LEAP 1 -->
-    <div class="leap-card">
-      <div class="leap-head">
-        <div>
-          <div class="leap-ticker">NVDA <span class="strategy-tag tag-pmcc">PMCC</span></div>
-          <div class="leap-type">Jan 2027 $500C · LEAPS leg</div>
-        </div>
-        <div>
-          <div class="leap-value" style="color:var(--profit)">$18,400</div>
-          <div class="leap-gain" style="color:var(--profit)">+$4,200 · +29.6%</div>
-        </div>
-      </div>
-      <div class="leap-body">
-        <div>
-          <div class="leap-metric-lbl">Paid</div>
-          <div class="leap-metric-val">$142.00</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Current</div>
-          <div class="leap-metric-val" style="color:var(--profit)">$184.00</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Delta</div>
-          <div class="leap-metric-val" style="color:var(--info)">0.72</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">DTE</div>
-          <div class="leap-metric-val">305</div>
-        </div>
-      </div>
-      <div class="leap-progress-wrap">
-        <div class="leap-progress-label">
-          <span>Time remaining: 305 / 660 DTE</span>
-          <span>46%</span>
-        </div>
-        <div class="leap-progress-bar"><div class="leap-progress-fill" style="width:54%;"></div></div>
-      </div>
-    </div>
-
-    <!-- LEAP 2 -->
-    <div class="leap-card">
-      <div class="leap-head">
-        <div>
-          <div class="leap-ticker">TSLA <span class="strategy-tag tag-pmcc">PMCC</span></div>
-          <div class="leap-type">Jan 2027 $150C · LEAPS leg</div>
-        </div>
-        <div>
-          <div class="leap-value" style="color:var(--profit)">$14,200</div>
-          <div class="leap-gain" style="color:var(--profit)">+$2,900 · +25.7%</div>
-        </div>
-      </div>
-      <div class="leap-body">
-        <div>
-          <div class="leap-metric-lbl">Paid</div>
-          <div class="leap-metric-val">$113.00</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Current</div>
-          <div class="leap-metric-val" style="color:var(--profit)">$142.00</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Delta</div>
-          <div class="leap-metric-val" style="color:var(--info)">0.68</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">DTE</div>
-          <div class="leap-metric-val">305</div>
-        </div>
-      </div>
-      <div class="leap-progress-wrap">
-        <div class="leap-progress-label">
-          <span>Covered calls sold against: 4</span>
-          <span>+$1,240 collected</span>
-        </div>
-        <div class="leap-progress-bar"><div class="leap-progress-fill" style="width:46%;"></div></div>
-      </div>
-    </div>
-
-    <!-- LEAP 3 - Pure LEAP no PMCC -->
-    <div class="leap-card">
-      <div class="leap-head">
-        <div>
-          <div class="leap-ticker">AAPL</div>
-          <div class="leap-type">Jan 2027 $180C · Pure LEAPS</div>
-        </div>
-        <div>
-          <div class="leap-value" style="color:var(--warn)">$10,200</div>
-          <div class="leap-gain" style="color:var(--profit)">+$1,140 · +12.6%</div>
-        </div>
-      </div>
-      <div class="leap-body">
-        <div>
-          <div class="leap-metric-lbl">Paid</div>
-          <div class="leap-metric-val">$90.60</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Current</div>
-          <div class="leap-metric-val" style="color:var(--profit)">$102.00</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">Delta</div>
-          <div class="leap-metric-val" style="color:var(--info)">0.65</div>
-        </div>
-        <div>
-          <div class="leap-metric-lbl">DTE</div>
-          <div class="leap-metric-val">305</div>
-        </div>
-      </div>
-      <div class="leap-progress-wrap">
-        <div class="leap-progress-label">
-          <span>Break-even: $190.60</span>
-          <span>Stock @ $211</span>
-        </div>
-        <div class="leap-progress-bar"><div class="leap-progress-fill" style="width:35%;"></div></div>
-      </div>
-    </div>
-
-  </div>
-</div><!-- /leaps -->
+  <div class="leaps-list" id="leapsList"></div>
+</div>
 
 <!-- ═══════════════════════ BOTTOM NAV ═══════════════════════ -->
 <nav class="bottom-nav">
@@ -1336,7 +871,72 @@
     <span class="nav-label">LEAPS</span>
   </div>
 
+  <div class="nav-item" onclick="switchScreen('vergi')" id="nav-vergi">
+    <div class="nav-indicator"></div>
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/>
+      <line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+    <span class="nav-label">Vergi</span>
+  </div>
+
 </nav>
+
+<!-- VERGI -->
+<div class="screen" id="screen-vergi">
+  <div class="section-head">
+    <div><div class="section-title">Vergi</div><div class="section-sub" id="vergiSub">Yükleniyor...</div></div>
+    <select id="vergiYilSec" onchange="renderVergi()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:7px 12px;color:var(--text);font-family:var(--font-head);font-size:13px;font-weight:600;outline:none;">
+      <option value="2026">2026</option>
+      <option value="2025">2025</option>
+    </select>
+  </div>
+
+  <!-- OZET KARTLARI -->
+  <div style="padding:0 20px 12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;" id="vergiOzetCards"></div>
+
+  <!-- KUR YONETIMI -->
+  <div style="margin:0 20px 12px;">
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💱 Kur Yönetimi (USD/TRY)</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end;">
+        <div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Tarih</div>
+          <input type="date" id="kurTarih" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Kur (₺)</div>
+          <input type="number" id="kurDeger" placeholder="örn: 38.42" step="0.01" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
+        </div>
+        <button onclick="kurEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Ekle</button>
+      </div>
+      <div id="kurListesi" style="max-height:200px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- KOMISYON GIRISI -->
+  <div style="margin:0 20px 12px;">
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💸 Komisyon Girişi</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.5;">Her kapatılan trade için açılış ve kapanış komisyonlarını gir. Komisyonlar vergi matrahından düşülür.</div>
+      <div id="komisyonListesi"></div>
+    </div>
+  </div>
+
+  <!-- VERGI TABLOSU -->
+  <div style="margin:0 20px 12px;">
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">📋 Trade Bazlı Vergi Tablosu</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);font-size:9px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;gap:4px;">
+        <div>Trade</div><div>Tür</div><div>USD P&L</div><div>Açılış Kur</div><div>Kapanış Kur</div><div>TRY Matrah</div>
+      </div>
+      <div id="vergiTablosu"></div>
+    </div>
+  </div>
+
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -1347,6 +947,33 @@ var LS = 'opt_v22';
 var LEAPS_LS = 'leaps_v1';
 var PORT_SIZE = 180000;
 try { var _h = localStorage.getItem('temH'); if(_h) PORT_SIZE = parseInt(_h); } catch(e){}
+var KURLAR_LS = 'kurlar_v2';
+// Seed data from old app — baked in so it works on any device
+var KURLAR_SEED = {"2025-08-18":40.8084,"2025-09-12":41.209,"2025-09-15":41.255,"2025-09-19":41.2344,"2025-09-23":41.3375,"2025-09-24":41.3726,"2025-09-26":41.4179,"2025-09-29":41.4984,"2025-10-01":41.513,"2025-10-03":41.5226,"2025-10-06":41.6225,"2025-10-07":41.6217,"2025-10-08":41.633,"2025-10-09":41.6421,"2025-10-10":41.6388,"2025-10-13":41.7196,"2025-10-14":41.7496,"2025-10-15":41.7611,"2025-10-17":41.7855,"2025-10-20":41.8768,"2025-10-21":41.8872,"2025-10-22":41.8966,"2025-10-23":41.9042,"2025-10-24":41.8427,"2025-10-27":41.8699,"2025-10-28":41.8699,"2025-10-29":41.8699,"2025-10-30":41.9,"2025-10-31":41.8922,"2025-11-03":41.9751,"2025-11-04":42.0042,"2025-11-05":42.0362,"2025-11-10":42.1124,"2025-11-11":42.1526,"2025-11-12":42.1636,"2025-11-13":42.1724,"2025-11-14":42.1661,"2025-11-18":42.2641,"2025-11-19":42.2756,"2025-11-20":42.2882,"2025-11-21":42.2819,"2025-11-25":42.3668,"2025-11-26":42.3578,"2025-11-28":42.3547,"2025-12-04":42.3771,"2025-12-05":42.3606,"2025-12-08":42.4735,"2025-12-09":42.497,"2025-12-10":42.5179,"2025-12-11":42.5343,"2025-12-12":42.5344,"2025-12-15":42.6211,"2025-12-19":42.6532,"2025-12-22":42.734,"2025-12-26":42.7656,"2025-12-29":42.8542,"2025-12-31":42.8457,"2026-01-02":42.881,"2026-01-05":42.9648,"2026-01-06":42.9663,"2026-01-07":42.9743,"2026-01-08":42.9747,"2026-01-09":42.9863,"2026-01-12":43.0609,"2026-01-13":43.0765,"2026-01-14":43.0925,"2026-01-16":43.0883,"2026-01-19":43.1943,"2026-01-20":43.2061,"2026-01-21":43.2165,"2026-01-22":43.2247,"2026-01-23":43.2036,"2026-01-26":43.2978,"2026-01-27":43.3158,"2026-01-28":43.3327,"2026-01-29":43.3443,"2026-01-30":43.3414,"2026-02-02":43.4168,"2026-02-03":43.4142,"2026-02-04":43.4245,"2026-02-05":43.4555,"2026-02-06":43.4542,"2026-02-09":43.5182,"2026-02-10":43.545,"2026-02-11":43.5633,"2026-02-12":43.5702,"2026-02-13":43.5433,"2026-02-17":43.6524,"2026-02-18":43.6747,"2026-02-19":43.6913,"2026-02-20":43.6883,"2026-02-23":43.7542,"2026-02-24":43.7775,"2026-02-25":43.7888,"2026-02-26":43.8026,"2026-02-27":43.8,"2026-03-02":43.885,"2026-03-03":43.8913,"2026-03-04":43.8932,"2026-03-05":43.9135,"2026-03-06":43.9055,"2026-03-09":44.0007,"2026-03-10":43.9826,"2026-03-11":43.9964,"2026-03-12":44.031};
+var kurlarData = JSON.parse(JSON.stringify(KURLAR_SEED));
+// Merge from localStorage (user additions override seed)
+try { var _k = localStorage.getItem(KURLAR_LS); if(_k){ var _ks=JSON.parse(_k); Object.keys(_ks).forEach(function(d){ kurlarData[d]=_ks[d]; }); } } catch(e){}
+// Also import from old app's kurlar key
+try { var _ko = localStorage.getItem('kurlar'); if(_ko){ var _kod=JSON.parse(_ko); Object.keys(_kod).forEach(function(d){ if(!kurlarData[d]) kurlarData[d]=_kod[d]; }); } } catch(e){}
+function saveKurlar(){ try { localStorage.setItem(KURLAR_LS, JSON.stringify(kurlarData)); } catch(e){} }
+// Also save taxData (komisyon per trade)
+var TAX_LS = 'tax_v1';
+var taxData = {}; // { tradeId: { komisyonAcilis, komisyonKapanis } }
+try { var _tx = localStorage.getItem(TAX_LS); if(_tx) taxData = JSON.parse(_tx); } catch(e){}
+function saveTaxData(){ try { localStorage.setItem(TAX_LS, JSON.stringify(taxData)); } catch(e){} }
+function getKur(date){
+  if(!date) return null;
+  var d = date.substring(0,10);
+  if(kurlarData[d]) return kurlarData[d];
+  // Find nearest previous date
+  var keys = Object.keys(kurlarData).sort();
+  var best = null;
+  for(var i=0; i<keys.length; i++){
+    if(keys[i] <= d) best = kurlarData[keys[i]];
+    else break;
+  }
+  return best;
+}
 
 var SEED = {
   "Aralik":[{"id":1,"ticker":"SOFI","opened":"2025-12-04","closed":"2025-12-12","expiry":"2025-12-12","ivr":30,"strike":"28","delta":null,"type":"CSP","q":5,"price":0.64,"premium":320,"pnl":320,"pct":1,"roi":1.04,"teminat":14000},{"id":2,"ticker":"IREN","opened":"2025-12-04","closed":"2025-12-08","expiry":"2025-12-12","ivr":40,"strike":"42","delta":null,"type":"CSP","q":3,"price":1.59,"premium":477,"pnl":110.85,"pct":0.23,"roi":0.8,"teminat":12600},{"id":3,"ticker":"HIMS","opened":"2025-12-05","closed":"2025-12-12","expiry":"2025-12-12","ivr":3,"strike":"38.5","delta":null,"type":"CSP","q":10,"price":0.96,"premium":960,"pnl":960,"pct":1,"roi":1.3,"teminat":38500},{"id":4,"ticker":"IREN","opened":"2025-12-05","closed":"2025-12-09","expiry":"2025-12-12","ivr":40,"strike":"42","delta":null,"type":"CSP","q":10,"price":1.21,"premium":1210,"pnl":696.69,"pct":0.576,"roi":1.51,"teminat":42000},{"id":5,"ticker":"SOFI","opened":"2025-12-05","closed":"2025-12-10","expiry":"2025-12-12","ivr":20,"strike":"26.5","delta":null,"type":"CSP","q":5,"price":0.54,"premium":270,"pnl":150.1,"pct":0.556,"roi":0.83,"teminat":13250},{"id":6,"ticker":"NBIS","opened":"2025-12-05","closed":"2025-12-08","expiry":"2025-12-12","ivr":29,"strike":"90","delta":null,"type":"CSP","q":5,"price":2.08,"premium":1040,"pnl":493.6,"pct":0.475,"roi":1.33,"teminat":45000},{"id":7,"ticker":"MU","opened":"2025-12-09","closed":"2026-01-06","expiry":"2026-01-23","ivr":null,"strike":"270","delta":null,"type":"CC","q":1,"price":17.25,"premium":1725,"pnl":-5031,"pct":-2.92,"roi":-2.43,"teminat":27000},{"id":8,"ticker":"RZLT","opened":"2025-12-10","closed":"2025-12-11","expiry":"2025-12-19","ivr":60,"strike":"7.5","delta":null,"type":"CSP","q":10,"price":1.17,"premium":1170,"pnl":1170,"pct":1,"roi":56.94,"teminat":7500},{"id":9,"ticker":"HIMS","opened":"2025-12-11","closed":"2025-12-12","expiry":"2025-12-19","ivr":3,"strike":"35.5","delta":null,"type":"CSP","q":1,"price":0.8,"premium":80,"pnl":43.97,"pct":0.55,"roi":4.52,"teminat":3550},{"id":10,"ticker":"IREN","opened":"2025-12-11","closed":"2025-12-19","expiry":"2025-12-19","ivr":40,"strike":"39","delta":null,"type":"CSP","q":1,"price":1.35,"premium":135,"pnl":72.25,"pct":0.535,"roi":0.845,"teminat":3900},{"id":11,"ticker":"NBIS","opened":"2025-12-11","closed":"2025-12-19","expiry":"2025-12-19","ivr":27,"strike":"84","delta":null,"type":"CSP","q":1,"price":2.05,"premium":205,"pnl":197.02,"pct":0.961,"roi":1.07,"teminat":8400},{"id":12,"ticker":"IREN","opened":"2025-12-12","closed":"2025-12-19","expiry":"2025-12-19","ivr":37,"strike":"37","delta":null,"type":"CSP","q":2,"price":1.04,"premium":208,"pnl":190.2,"pct":0.914,"roi":1.34,"teminat":7400},{"id":13,"ticker":"NBIS","opened":"2025-12-12","closed":"2025-12-19","expiry":"2025-12-19","ivr":29,"strike":"83","delta":null,"type":"CSP","q":1,"price":2,"premium":200,"pnl":192.97,"pct":0.965,"roi":1.21,"teminat":8300},{"id":14,"ticker":"HIMS","opened":"2025-12-15","closed":"2025-12-19","expiry":"2025-12-26","ivr":null,"strike":"38.5","delta":null,"type":"CC","q":10,"price":0.83,"premium":830,"pnl":669.19,"pct":0.806,"roi":1.59,"teminat":38500},{"id":15,"ticker":"SOFI","opened":"2025-12-15","closed":"2025-12-22","expiry":"2025-12-26","ivr":null,"strike":"28","delta":null,"type":"CC","q":5,"price":0.4,"premium":200,"pnl":103.35,"pct":0.517,"roi":0.385,"teminat":14000},{"id":16,"ticker":"HIMS","opened":"2025-12-22","closed":"2025-12-29","expiry":"2026-01-30","ivr":1,"strike":"40","delta":null,"type":"CC","q":10,"price":1.63,"premium":1630,"pnl":859.19,"pct":0.527,"roi":1.12,"teminat":40000},{"id":17,"ticker":"NBIS","opened":"2025-12-22","closed":"2026-01-06","expiry":"2026-01-30","ivr":22,"strike":"84","delta":null,"type":"CSP","q":1,"price":6,"premium":600,"pnl":303.93,"pct":0.507,"roi":0.88,"teminat":8400},{"id":18,"ticker":"EOSE","opened":"2025-12-22","closed":"2026-01-06","expiry":"2026-01-30","ivr":36,"strike":"11","delta":null,"type":"CSP","q":5,"price":0.73,"premium":365,"pnl":195.97,"pct":0.537,"roi":0.867,"teminat":5500},{"id":19,"ticker":"HIMS","opened":"2025-12-26","closed":"2026-01-07","expiry":"2026-02-20","ivr":3,"strike":"30","delta":null,"type":"HEDGE","q":10,"price":-1.59,"premium":-1590,"pnl":-693.66,"pct":0.436,"roi":-0.703,"teminat":30000},{"id":20,"ticker":"SOFI","opened":"2025-12-26","closed":"2025-12-31","expiry":"2026-01-09","ivr":22,"strike":"28.5","delta":null,"type":"CC","q":2,"price":0.54,"premium":108,"pnl":77.34,"pct":0.716,"roi":0.99,"teminat":5700},{"id":21,"ticker":"ROOT","opened":"2025-12-26","closed":"2026-01-07","expiry":"2026-02-20","ivr":21,"strike":"80","delta":null,"type":"Long Call","q":2,"price":-4.25,"premium":-850,"pnl":131.37,"pct":-0.155,"roi":0.25,"teminat":16000},{"id":22,"ticker":"BE","opened":"2025-12-29","closed":"2026-01-05","expiry":"2026-01-16","ivr":35,"strike":"78","delta":null,"type":"CSP","q":1,"price":3.2,"premium":320,"pnl":260.93,"pct":0.815,"roi":1.74,"teminat":7800},{"id":23,"ticker":"IREN","opened":"2025-12-29","closed":"2026-01-05","expiry":"2026-01-16","ivr":34,"strike":"34","delta":null,"type":"CSP","q":1,"price":1.08,"premium":108,"pnl":77.21,"pct":0.715,"roi":1.18,"teminat":3400}],
@@ -1714,6 +1341,247 @@ function showAddTrade(){
 }
 
 // ═══════════════════ SCREEN SWITCH ═══════════════════
+
+
+// ═══════════════════ VERGİ ═══════════════════
+var LONG_TYPES = ['LEAPS','Long Call'];
+function isLong(type){ return LONG_TYPES.indexOf((type||'').trim()) !== -1; }
+
+function calcTaxForTrade(t){
+  var td = taxData[t.id] || {};
+  var komAcilis  = parseFloat(td.komAcilis)  || 0;
+  var komKapanis = parseFloat(td.komKapanis) || 0;
+  var prim       = parseFloat(t.premium)     || 0; // alınan veya ödenen prim (USD)
+  var pnl        = parseFloat(t.pnl)         || 0;
+
+  // Kapanışta ödenen/alınan prim = prim - pnl (short) veya pnl - (-prim) (long)
+  // Short: açılışta prim alındı (+), kapanışta (prim-pnl) ödendi
+  // Long:  açılışta prim ödendi (negatif premium), kapanışta (prim+pnl) alındı
+  var acilis_kur  = getKur(t.opened)  || 0;
+  var kapanis_kur = getKur(t.closed)  || 0;
+
+  var matrah_try = 0;
+
+  if(isLong(t.type)){
+    // Alış: ödenen prim + komisyon → negatif (maliyet)
+    var alis_usd   = Math.abs(prim) + komAcilis;   // maliyet
+    // Satış: alınan prim - komisyon → pozitif (gelir)
+    var kapanisPrim = Math.abs(prim) + pnl;         // ne kadar geri aldın
+    var satis_usd   = kapanisPrim - komKapanis;
+    // Matrah = Satış TRY - Alış TRY
+    matrah_try = (satis_usd * kapanis_kur) - (alis_usd * acilis_kur);
+  } else {
+    // Short: Satış (açılış) = alınan prim - komisyon
+    var satis_usd_s = prim - komAcilis;
+    // Alış (kapanış) = ödenen prim + komisyon = (prim - pnl) + komisyon
+    var kapanisOdeme = prim - pnl;
+    var alis_usd_s   = kapanisOdeme + komKapanis;
+    // Matrah = Satış TRY - Alış TRY
+    matrah_try = (satis_usd_s * acilis_kur) - (alis_usd_s * kapanis_kur);
+  }
+
+  return {
+    matrah_try: matrah_try,
+    acilis_kur: acilis_kur,
+    kapanis_kur: kapanis_kur,
+    komAcilis: komAcilis,
+    komKapanis: komKapanis,
+    hasKur: acilis_kur > 0 && kapanis_kur > 0
+  };
+}
+
+function renderVergi(){
+  var vergiYil = document.getElementById('vergiYilSec') ? document.getElementById('vergiYilSec').value : '2026';
+  var closed = getClosedTrades().filter(function(t){
+    return t.closed && t.closed.substring(0,4) === vergiYil;
+  });
+  var totalMatrah = 0; var totalUSD = 0; var missingKur = 0;
+  var rows = [];
+
+  closed.forEach(function(t){
+    var res = calcTaxForTrade(t);
+    if(!res.hasKur) missingKur++;
+    else { totalMatrah += res.matrah_try; totalUSD += (t.pnl||0); }
+    rows.push({t:t, res:res});
+  });
+
+  // Sub
+  var sub = document.getElementById('vergiSub');
+  if(sub) sub.textContent = closed.length + ' kapatılan trade · ' + (missingKur>0 ? missingKur+' kur eksik' : 'tüm kurlar girilmiş');
+
+  // Özet kartlar
+  var oc = document.getElementById('vergiOzetCards');
+  if(oc) oc.innerHTML = [
+    {l:'Toplam Matrah (TRY)', v: totalMatrah.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₺', c: totalMatrah>=0?'var(--profit)':'var(--loss)'},
+    {l:'Toplam P&L (USD)', v: fmt$(totalUSD), c: totalUSD>=0?'var(--profit)':'var(--loss)'},
+    {l:'Eksik Kur Sayısı', v: missingKur, c: missingKur>0?'var(--warn)':'var(--profit)'},
+    {l:'İşlem Sayısı', v: closed.length, c:'var(--info)'}
+  ].map(function(x){
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">' +
+      '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">'+x.l+'</div>'+
+      '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;color:'+x.c+'">'+x.v+'</div></div>';
+  }).join('');
+
+  // Kur listesi
+  renderKurListesi();
+
+  // Komisyon listesi
+  var kl = document.getElementById('komisyonListesi');
+  if(kl){
+    if(!closed.length){ kl.innerHTML='<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Kapatılan trade yok</div>'; }
+    else {
+      kl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 100px 100px;gap:6px;margin-bottom:6px;padding:0 2px;">'+
+        '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;">Trade</div>'+
+        '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;">Açılış Kom. ($)</div>'+
+        '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;">Kapanış Kom. ($)</div></div>'+
+        closed.map(function(t){
+          var td = taxData[t.id]||{};
+          return '<div style="display:grid;grid-template-columns:1fr 100px 100px;gap:6px;margin-bottom:6px;align-items:center;">'+
+            '<div style="font-size:12px;font-weight:600;color:var(--text);">'+t.ticker+' <span style="font-size:10px;color:var(--text-3);">'+t.opened+'→'+t.closed+'</span></div>'+
+            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komAcilis||'')+'" data-tid="'+t.id+'" data-field="komAcilis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
+            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komKapanis||'')+'" data-tid="'+t.id+'" data-field="komKapanis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
+          '</div>';
+        }).join('');
+    }
+  }
+
+  // Vergi tablosu
+  var vt = document.getElementById('vergiTablosu');
+  if(vt){
+    vt.innerHTML = rows.map(function(r){
+      var t=r.t; var res=r.res;
+      var tc2 = tcol(t.ticker.split(' ')[0]);
+      var matrahColor = !res.hasKur ? 'var(--text-3)' : res.matrah_try>=0 ? 'var(--profit)' : 'var(--loss)';
+      var matrahTxt = !res.hasKur ? '—' : res.matrah_try.toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0})+' ₺';
+      return '<div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;gap:4px;align-items:center;">'+
+        '<div><span style="font-family:var(--font-head);font-weight:600;color:'+tc2.color+'">'+t.ticker+'</span><div style="font-size:10px;color:var(--text-3);margin-top:1px;">'+t.closed+'</div></div>'+
+        '<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--text-2);text-align:center;">'+t.type+'</div>'+
+        '<div style="font-family:var(--font-mono);color:'+(t.pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(t.pnl)+'</div>'+
+        '<div style="font-family:var(--font-mono);color:var(--text-2);">'+(res.acilis_kur>0?res.acilis_kur.toFixed(2):'<span style="color:var(--warn)">—</span>')+'</div>'+
+        '<div style="font-family:var(--font-mono);color:var(--text-2);">'+(res.kapanis_kur>0?res.kapanis_kur.toFixed(2):'<span style="color:var(--warn)">—</span>')+'</div>'+
+        '<div style="font-family:var(--font-mono);font-weight:600;color:'+matrahColor+'">'+matrahTxt+'</div>'+
+      '</div>';
+    }).join('') || '<div style="text-align:center;padding:20px;color:var(--text-3);">Kapatılan trade yok</div>';
+  }
+}
+
+function renderKurListesi(){
+  var el = document.getElementById('kurListesi');
+  if(!el) return;
+  var keys = Object.keys(kurlarData).sort().reverse();
+  if(!keys.length){
+    el.innerHTML='<div style="color:var(--text-3);font-size:12px;text-align:center;padding:8px;">Henüz kur girilmedi</div>';
+    return;
+  }
+  el.innerHTML = keys.slice(0,30).map(function(d){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="font-family:var(--font-mono);font-size:13px;">'+d+'</div>'+
+      '<div style="display:flex;align-items:center;gap:10px;">'+
+        '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--warn);">'+parseFloat(kurlarData[d]).toFixed(2)+' ₺</div>'+
+        '<button onclick="kurSil(this.dataset.d)" data-d="'+d+'" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Sil</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function kurEkle(){
+  var tarih = document.getElementById('kurTarih').value;
+  var deger = parseFloat(document.getElementById('kurDeger').value);
+  if(!tarih){ alert('Tarih seçin'); return; }
+  if(!deger || deger <= 0){ alert('Geçerli bir kur girin'); return; }
+  kurlarData[tarih] = deger;
+  saveKurlar();
+  document.getElementById('kurDeger').value = '';
+  renderVergi();
+}
+
+function kurSil(tarih){
+  delete kurlarData[tarih];
+  saveKurlar();
+  renderVergi();
+}
+
+function saveTaxField(input){
+  var tid = parseInt(input.dataset.tid);
+  var field = input.dataset.field;
+  var val = parseFloat(input.value) || 0;
+  if(!taxData[tid]) taxData[tid] = {};
+  taxData[tid][field] = val;
+  saveTaxData();
+  // Re-render just the table
+  renderVergi();
+}
+
+// ═══════════════════ LEAPS ═══════════════════
+function renderLeaps(){
+  var leaps=leapsData||[];
+  var ti=leaps.reduce(function(s,l){return s+(parseFloat(l.costPer)||0)*(parseInt(l.qty)||1)*100;},0);
+  var tc=leaps.reduce(function(s,l){return s+(parseFloat(l.currentPer)||0)*(parseInt(l.qty)||1)*100;},0);
+  var tg=tc-ti;
+  var lm=document.getElementById('leapsMetrics');
+  if(lm)lm.innerHTML=[
+    {v:fmt$(tg),l:'Unrealized Gain',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:fmtA$(ti),l:'Total Invested',c:'var(--text)'},
+    {v:ti>0?(tg/ti*100).toFixed(1)+'%':'—',l:'Return',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:leaps.length,l:'Positions',c:'var(--info)'}
+  ].map(function(x){return'<div><div class="leaps-m-val" style="color:'+x.c+'">'+x.v+'</div><div class="leaps-m-lbl">'+x.l+'</div></div>';}).join('');
+  var ll=document.getElementById('leapsList');
+  if(!ll)return;
+  if(!leaps.length){ll.innerHTML='<div class="empty-state"><div class="empty-icon">⏰</div>Henüz LEAPS pozisyonu yok.<br><br><div style="font-size:12px;color:var(--text-3);">+ Add butonuna basarak ekleyebilirsin.</div></div>';return;}
+  ll.innerHTML=leaps.map(function(l){
+    var cost=(parseFloat(l.costPer)||0)*(parseInt(l.qty)||1)*100;
+    var cur=(parseFloat(l.currentPer)||0)*(parseInt(l.qty)||1)*100;
+    var gain=cur-cost; var gp=cost>0?gain/cost:0;
+    var dte=getDTE(l.expiry); var tc2=tcol(l.ticker);
+    return'<div class="leap-card"><div class="leap-head">'+
+      '<div><div class="leap-ticker" style="color:'+tc2.color+'">'+l.ticker+'</div><div class="leap-type">'+(l.expiry||'')+ ' $'+(l.strike||'')+' '+(l.direction||'')+'</div></div>'+
+      '<div><div class="leap-value" style="color:'+(gain>=0?'var(--profit)':'var(--loss)')+'">'+fmtA$(cur)+'</div>'+
+      '<div class="leap-gain" style="color:'+(gain>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(gain)+' · '+(gp*100).toFixed(1)+'%</div></div></div>'+
+      '<div class="leap-body">'+
+        '<div><div class="leap-metric-lbl">Paid</div><div class="leap-metric-val">$'+(l.costPer||'—')+'</div></div>'+
+        '<div><div class="leap-metric-lbl">Current</div><div class="leap-metric-val" style="color:'+(gain>=0?'var(--profit)':'var(--loss)')+'">$'+(l.currentPer||'—')+'</div></div>'+
+        '<div><div class="leap-metric-lbl">Qty</div><div class="leap-metric-val">'+(l.qty||1)+'</div></div>'+
+        '<div><div class="leap-metric-lbl">DTE</div><div class="leap-metric-val">'+(dte!==null?dte:'—')+'</div></div>'+
+      '</div>'+
+      '<div class="leap-progress-wrap">'+
+        '<div class="leap-progress-label"><span>Hedef: '+(l.target?'$'+l.target:'—')+'</span><span>'+(gain>=0?'+':'')+((gp*100).toFixed(1))+'%</span></div>'+
+        '<div class="leap-progress-bar"><div class="leap-progress-fill" style="width:'+Math.min(100,Math.abs(gp)*100)+'%;background:'+(gain>=0?'linear-gradient(90deg,var(--info),var(--purple))':'var(--loss)')+'"></div></div>'+
+      '</div></div>';
+  }).join('');
+}
+
+function showAddLeap(){
+  var m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
+  m.innerHTML='<div style="width:100%;max-width:500px;background:#131925;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
+    '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
+    '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Pozisyonu Ekle</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+      '<input id="lf_t" placeholder="Ticker (e.g. NVDA)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<select id="lf_d" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>Call</option><option>Put</option></select></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+      '<input id="lf_s" placeholder="Strike" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_e" type="date" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+      '<input id="lf_c" type="number" placeholder="Alış fiyatı ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_cur" type="number" placeholder="Güncel fiyat ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+      '<input id="lf_q" type="number" placeholder="Kontrat sayısı" value="1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_tg" type="number" placeholder="Hedef fiyat ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+    '<button id="lfSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
+    '<button id="lfCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button></div>';
+  document.body.appendChild(m);
+  m.querySelector('#lfCancel').onclick=function(){m.remove();};
+  m.addEventListener('click',function(e){if(e.target===m)m.remove();});
+  m.querySelector('#lfSave').onclick=function(){
+    var ticker=m.querySelector('#lf_t').value.trim().toUpperCase();
+    if(!ticker){alert('Ticker gerekli');return;}
+    var leap={id:Date.now(),ticker,direction:m.querySelector('#lf_d').value,strike:m.querySelector('#lf_s').value,expiry:m.querySelector('#lf_e').value,costPer:m.querySelector('#lf_c').value,currentPer:m.querySelector('#lf_cur').value,qty:parseInt(m.querySelector('#lf_q').value)||1,target:m.querySelector('#lf_tg').value,notes:''};
+    leapsData.push(leap);
+    saveLeaps();m.remove();renderLeaps();
+  };
+}
+
 function switchScreen(name){
   document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
@@ -1724,19 +1592,11 @@ function switchScreen(name){
   if(name==='risk')renderRisk();
   if(name==='reports')renderReports();
   if(name==='trades')renderTradeList(currentFilter);
+  if(name==='leaps')renderLeaps();
+  if(name==='vergi')renderVergi();
 }
 
-// Inject Import/Export buttons into Reports screen
-(function(){
-  var rs=document.getElementById('screen-reports');
-  if(rs){
-    var bw=document.createElement('div');
-    bw.style.cssText='display:flex;gap:10px;margin:0 20px 20px;flex-wrap:wrap;';
-    bw.innerHTML='<button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export Backup</button>'+
-      '<button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>';
-    rs.querySelector('.section-head').insertAdjacentElement('afterend',bw);
-  }
-})();
+
 
 // ═══════════════════ INIT ═══════════════════
 renderDashboard();
