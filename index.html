@@ -657,6 +657,12 @@
     color: var(--text-3); margin-left: 4px; cursor: help;
     vertical-align: middle;
   }
+
+  .overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.65);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .18s ease}
+  .modal-sheet{width:100%;max-width:520px;background:#141C2B;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;animation:slideUp .28s cubic-bezier(.16,1,.3,1);max-height:88vh;overflow-y:auto}
+  .modal-handle{width:32px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;margin:0 auto 18px}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>
@@ -1246,11 +1252,11 @@ function renderTradeList(filter){
     var dw=dte!==null&&t.expiry?Math.min(100,Math.max(0,((new Date()-new Date(t.opened))/(new Date(t.expiry)-new Date(t.opened)))*100)):0;
     var df=dte===null?'var(--profit)':dte<=7?'var(--loss)':dte<=14?'var(--warn)':'var(--info)';
     var isAlert=isOpen&&((t.delta&&t.delta>35)||(dte!==null&&dte<=7));
-    return'<div class="trade-card" style="'+ab+'">'+
+    return'<div class="trade-card" style="'+ab+'" onclick="openTradeDetail('+t.id+',\"'+t.month+'\")">'+
       '<div class="trade-card-head"><div class="trade-card-left">'+
         '<div class="trade-ticker-badge" style="background:'+tc.bg+';color:'+tc.color+'">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
         '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
-        '<div class="trade-date">'+t.opened+(t.closed?' → '+t.closed:' → open')+'</div></div></div>'+
+        '<div class="trade-date">'+t.opened+(t.closed?' > '+t.closed:' > open')+'</div></div></div>'+
         '<div><div class="trade-pnl-val" style="color:'+pc+'">'+(isOpen?'Open':fmt$(t.pnl))+'</div>'+
         '<div class="trade-pnl-pct" style="color:'+pc+'">'+(t.pct?fmtP(t.pct):(isOpen?'pending':''))+'</div></div></div>'+
       '<div class="trade-card-body">'+
@@ -1430,9 +1436,9 @@ function calcTaxForTrade(t){
   var matrah_try = 0;
 
   if(isLong(t.type)){
-    // Alış: ödenen prim + komisyon → negatif (maliyet)
+    // Alış: ödenen prim + komisyon > negatif (maliyet)
     var alis_usd   = Math.abs(prim) + komAcilis;   // maliyet
-    // Satış: alınan prim - komisyon → pozitif (gelir)
+    // Satış: alınan prim - komisyon > pozitif (gelir)
     var kapanisPrim = Math.abs(prim) + pnl;         // ne kadar geri aldın
     var satis_usd   = kapanisPrim - komKapanis;
     // Matrah = Satış TRY - Alış TRY
@@ -1647,6 +1653,159 @@ function showAddLeap(){
     leapsData.push(leap);
     saveLeaps();m.remove();renderLeaps();
   };
+}
+
+
+
+// TRADE DETAIL
+function openTradeDetail(tradeId, month){
+  var trade=null;
+  getAllTrades().forEach(function(t){if(t.id==tradeId)trade=t;});
+  if(!trade)return;
+  var isOpen=!trade.closed;
+  var tc=tcol(trade.ticker.split(' ')[0]);
+
+  var ov=document.createElement('div');
+  ov.className='overlay';
+  var sh=document.createElement('div');
+  sh.className='modal-sheet';
+  ov.appendChild(sh);
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+
+  function row(label,val){
+    var d=document.createElement('div');
+    d.style.cssText='display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)';
+    var l=document.createElement('span');l.style.cssText='font-size:13px;color:var(--text-2)';l.textContent=label;
+    var v=document.createElement('span');v.style.cssText='font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--text)';v.textContent=val;
+    d.appendChild(l);d.appendChild(v);return d;
+  }
+
+  // Handle
+  var handle=document.createElement('div');handle.className='modal-handle';sh.appendChild(handle);
+
+  // Header
+  var hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:18px';
+  var ico=document.createElement('div');
+  ico.style.cssText='width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:'+tc.bg+';color:'+tc.color;
+  ico.textContent=trade.ticker.split(' ')[0].slice(0,4);
+  var inf=document.createElement('div');inf.style.flex='1';
+  var tn=document.createElement('div');tn.style.cssText='font-size:17px;font-weight:700;color:var(--text)';tn.textContent=trade.ticker+' ('+trade.type+')';
+  var td2=document.createElement('div');td2.style.cssText='font-size:11px;color:var(--text-3);margin-top:3px';
+  td2.textContent=trade.opened+(trade.closed?' > '+trade.closed:' - Acik');
+  inf.appendChild(tn);inf.appendChild(td2);
+  var badge=document.createElement('div');
+  badge.style.cssText='font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;'+(isOpen?'background:var(--profit-dim);color:var(--profit)':'background:rgba(255,255,255,.06);color:var(--text-3)');
+  badge.textContent=isOpen?'ACIK':'KAPALI';
+  hdr.appendChild(ico);hdr.appendChild(inf);hdr.appendChild(badge);
+  sh.appendChild(hdr);
+
+  // Details box
+  var box=document.createElement('div');
+  box.style.cssText='background:rgba(255,255,255,.04);border-radius:12px;padding:4px 14px;margin-bottom:14px';
+  box.appendChild(row('Strike','$'+trade.strike));
+  box.appendChild(row('Premium',fmtA$(trade.premium)));
+  box.appendChild(row('Qty / Expiry',trade.q+' x 100  |  '+trade.expiry));
+  box.appendChild(row('Delta / IVR',(trade.delta||'-')+' D  |  '+(trade.ivr||'-')));
+  if(trade.pnl!=null){
+    var pr=row('P&L',(trade.pnl>=0?'+':'')+fmt$(trade.pnl));
+    pr.querySelector('span:last-child').style.color=trade.pnl>=0?'var(--profit)':'var(--loss)';
+    box.appendChild(pr);
+  }
+  sh.appendChild(box);
+
+  if(isOpen){
+    // Close section
+    var sec=document.createElement('div');
+    sec.style.cssText='margin-top:4px;padding-top:16px;border-top:1px solid var(--border)';
+    var stitle=document.createElement('div');
+    stitle.style.cssText='font-size:12px;font-weight:700;letter-spacing:.5px;color:var(--text-3);margin-bottom:12px;text-transform:uppercase';
+    stitle.textContent='Pozisyonu Kapat';
+    sec.appendChild(stitle);
+
+    // Date + PnL row
+    var grow=document.createElement('div');grow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px';
+    function inp(id,type,ph,lbl){
+      var wrap=document.createElement('div');
+      var label=document.createElement('label');
+      label.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px;display:block';
+      label.textContent=lbl;
+      var input=document.createElement('input');
+      input.id=id;input.type=type;input.placeholder=ph;
+      input.style.cssText='background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;padding:11px 12px;color:var(--text);font-size:13px;outline:none;width:100%';
+      if(type==='date') input.value=new Date().toISOString().split('T')[0];
+      if(type==='number') input.step='0.01';
+      wrap.appendChild(label);wrap.appendChild(input);return wrap;
+    }
+    grow.appendChild(inp('td_date','date','','Kapanis Tarihi'));
+    grow.appendChild(inp('td_pnl','number','250.50','P&L ($)'));
+    sec.appendChild(grow);
+    sec.appendChild(inp('td_price','number','1.25','Kapanis Fiyati ($) - opsiyonel'));
+    sec.style.marginBottom='10px';
+
+    var closeBtn=document.createElement('button');
+    closeBtn.style.cssText='width:100%;margin-top:10px;background:linear-gradient(135deg,var(--profit),#0EA870);border:none;border-radius:12px;padding:14px;color:#fff;font-family:var(--font-head);font-size:14px;font-weight:700;cursor:pointer';
+    closeBtn.textContent='Pozisyonu Kapat';
+    closeBtn.onclick=function(){
+      var d=document.getElementById('td_date').value;
+      var p=parseFloat(document.getElementById('td_pnl').value);
+      var pr=parseFloat(document.getElementById('td_price').value);
+      if(!d){alert('Tarih gir');return;}
+      if(isNaN(p)){alert('P&L gir');return;}
+      var months=Object.keys(tradesData);
+      for(var mi=0;mi<months.length;mi++){
+        var arr=tradesData[months[mi]];
+        for(var ti=0;ti<arr.length;ti++){
+          if(arr[ti].id==tradeId){
+            arr[ti].closed=d;arr[ti].pnl=p;
+            arr[ti].pct=arr[ti].premium?p/Math.abs(arr[ti].premium):null;
+            if(!isNaN(pr)&&pr>0)arr[ti].closePrice=pr;
+            break;
+          }
+        }
+      }
+      saveData();ov.remove();
+      renderDashboard();renderTradeList(currentFilter);
+    };
+    sec.appendChild(closeBtn);
+    sh.appendChild(sec);
+  } else {
+    var acts=document.createElement('div');
+    acts.style.cssText='margin-top:4px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:8px';
+    var reopenBtn=document.createElement('button');
+    reopenBtn.style.cssText='flex:1;background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:12px;color:var(--warn);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
+    reopenBtn.textContent='Yeniden Ac';
+    reopenBtn.onclick=function(){
+      var months=Object.keys(tradesData);
+      for(var mi=0;mi<months.length;mi++){
+        var arr=tradesData[months[mi]];
+        for(var ti=0;ti<arr.length;ti++){
+          if(arr[ti].id==tradeId){arr[ti].closed=null;arr[ti].pnl=null;arr[ti].pct=null;break;}
+        }
+      }
+      saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
+    };
+    var delBtn=document.createElement('button');
+    delBtn.style.cssText='flex:1;background:var(--loss-dim);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:12px;color:var(--loss);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
+    delBtn.textContent='Sil';
+    delBtn.onclick=function(){
+      var months=Object.keys(tradesData);
+      for(var mi=0;mi<months.length;mi++){
+        tradesData[months[mi]]=tradesData[months[mi]].filter(function(t){return t.id!=tradeId;});
+      }
+      saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
+    };
+    acts.appendChild(reopenBtn);acts.appendChild(delBtn);
+    sh.appendChild(acts);
+  }
+
+  // Cancel
+  var cancel=document.createElement('button');
+  cancel.style.cssText='width:100%;background:transparent;border:none;padding:12px;color:var(--text-3);font-size:13px;cursor:pointer;margin-top:4px';
+  cancel.textContent='Iptal';
+  cancel.onclick=function(){ov.remove();};
+  sh.appendChild(cancel);
 }
 
 function switchScreen(name){
