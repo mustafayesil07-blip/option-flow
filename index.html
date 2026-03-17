@@ -1681,7 +1681,7 @@ function renderKurListesi(){
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'+
       '<div style="font-family:var(--font-mono);font-size:13px;">'+d+'</div>'+
       '<div style="display:flex;align-items:center;gap:10px;">'+
-        '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--warn);">'+parseFloat(kurlarData[d]).toFixed(2)+' ₺</div>'+
+        '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--warn);">'+parseFloat(kurlarData[d]).toFixed(4)+' ₺</div>'+
         '<button onclick="kurSil(this.dataset.d)" data-d="'+d+'" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Sil</button>'+
       '</div>'+
     '</div>';
