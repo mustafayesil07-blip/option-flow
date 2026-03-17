@@ -1103,7 +1103,7 @@ function switchScreen(name) {
 }
 
 // ═══════════════════ CHARTS + DYNAMIC DATA ═══════════════════
-Chart.defaults.color = '#475569';
+Chart.defaults.color = '#C4AA90';
 Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 11;
@@ -1123,7 +1123,7 @@ function buildEquityChart(){
   var g=ctx.createLinearGradient(0,0,0,160);
   g.addColorStop(0,lp>=0?'rgba(34,197,94,.25)':'rgba(239,68,68,.25)');g.addColorStop(1,'rgba(0,0,0,0)');
   if(equityChartInst)equityChartInst.destroy();
-  equityChartInst=new Chart(ctx,{type:'line',data:{labels:sl,datasets:[{data:se,borderColor:lc,borderWidth:2,fill:true,backgroundColor:g,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:lc}]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(15,20,32,.95)',borderColor:'rgba(255,255,255,.1)',borderWidth:1,padding:10,callbacks:{label:function(c){return fmtA$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:5}},y:{grid:{color:'rgba(255,255,255,.04)'},border:{display:false},ticks:{maxTicksLimit:4,callback:function(v){return'$'+(v/1000).toFixed(0)+'K';}}}}}});
+  equityChartInst=new Chart(ctx,{type:'line',data:{labels:sl,datasets:[{data:se,borderColor:lc,borderWidth:2,fill:true,backgroundColor:g,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:lc}]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.97)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,padding:10,callbacks:{label:function(c){return fmtA$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:5,color:'#C4AA90'}},y:{grid:{color:'rgba(255,255,255,.10)'},border:{display:false},ticks:{maxTicksLimit:4,color:'#C4AA90',callback:function(v){return'$'+(v/1000).toFixed(0)+'K';}}}}}});
   equityChartInst._eq=se;equityChartInst._pl=sp;equityChartInst._lc=lc;
 }
 
@@ -1135,7 +1135,7 @@ function buildMonthlyChart(){
   var bd=vl.map(function(v){return v>=0?'#22C55E':'#EF4444';});
   var ctx2=document.getElementById('monthlyChart').getContext('2d');
   if(monthlyChartInst)monthlyChartInst.destroy();
-  monthlyChartInst=new Chart(ctx2,{type:'bar',data:{labels:lb,datasets:[{data:vl,backgroundColor:bc,borderColor:bd,borderWidth:1,borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(15,20,32,.95)',borderColor:'rgba(255,255,255,.1)',borderWidth:1,callbacks:{label:function(c){return fmt$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'rgba(255,255,255,.04)'},border:{display:false},ticks:{maxTicksLimit:4,callback:function(v){return(v>=0?'+':'')+'$'+(v/1000).toFixed(1)+'K';}}}}}});
+  monthlyChartInst=new Chart(ctx2,{type:'bar',data:{labels:lb,datasets:[{data:vl,backgroundColor:bc,borderColor:bd,borderWidth:1,borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.97)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return fmt$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},y:{grid:{color:'rgba(255,255,255,.10)'},border:{display:false},ticks:{maxTicksLimit:4,color:'#C4AA90',callback:function(v){return(v>=0?'+':'')+'$'+(v/1000).toFixed(1)+'K';}}}}}});
 }
 
 function switchChartTab(el,type){
