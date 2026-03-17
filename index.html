@@ -714,7 +714,10 @@
         <div style="text-align:right;"><div class="hero-val" id="heroCollPct" style="font-size:22px;color:var(--warn);">—</div><div style="font-size:10px;color:var(--text-3);margin-top:3px;">usage</div></div>
       </div>
       <div style="margin-top:12px;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;"><div id="collBarFill" style="width:0%;height:100%;background:linear-gradient(90deg,var(--info),var(--warn));border-radius:3px;transition:width 0.8s ease;"></div></div>
-      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--text-3);"><span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span id="portSizeLabel">$180K</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--text-3);"><span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span id="portSizeLabel" style="color:var(--text-2)">$180K</span></div>
+      <div style="margin-top:10px;text-align:right">
+        <button id="editPortBtn" style="background:var(--info);border:none;border-radius:8px;padding:7px 16px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">✎ Portföy Boyutunu Düzenle</button>
+      </div>
     </div>
   </div>
 
@@ -770,6 +773,15 @@
     <div class="filter-pill" data-month="Mart">Mart</div>
   </div>
   <div class="trade-list" id="tradeList"></div>
+
+  <!-- PLANNED TRADES -->
+  <div style="padding:0 16px 20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 12px">
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">📋 Planlanan İşlemler</div>
+      <button id="addPlanBtn" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:6px 14px;color:var(--info);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Plan Ekle</button>
+    </div>
+    <div id="plannedList"></div>
+  </div>
 </div>
 
 <!-- ═══════════════════════ STATISTICS ═══════════════════════ -->
@@ -966,6 +978,12 @@
 </div>
 
 <script>
+var PLAN_LS = 'planned_v1';
+var plannedTrades = [];
+try { var _pl2 = localStorage.getItem(PLAN_LS); if(_pl2) plannedTrades = JSON.parse(_pl2); } catch(e){}
+function savePlanned(){ try { localStorage.setItem(PLAN_LS, JSON.stringify(plannedTrades)); } catch(e){} }
+
+
 // ═══════════════════════════════════════════════════
 // DATA — reads opt_v22 (same key as old app)
 // Falls back to PDF seed data if localStorage empty
@@ -1227,7 +1245,8 @@ function renderDashboard(){
   el=document.getElementById('heroCollateralSub'); if(el)el.innerHTML='<span class="hero-badge '+(cp>0.6?'loss':cp>0.4?'warn':'info')+'">'+(cp*100).toFixed(0)+'% of $'+Math.round(PORT_SIZE/1000)+'K</span><span style="color:var(--text-3);font-size:11px;"> max 60%</span>';
   el=document.getElementById('heroCollPct'); if(el){el.textContent=(cp*100).toFixed(0)+'%';el.style.color=cp>0.6?'var(--loss)':cp>0.4?'var(--warn)':'var(--info)';}
   el=document.getElementById('collBarFill'); if(el)el.style.width=Math.min(100,cp*100)+'%';
-  el=document.getElementById('portSizeLabel'); if(el)el.textContent='$'+Math.round(PORT_SIZE/1000)+'K';
+  el=document.getElementById('portSizeLabel'); if(el) el.textContent='$'+Math.round(PORT_SIZE/1000)+'K';
+  el=document.getElementById('editPortBtn'); if(el) el.onclick=function(){ editPortSize(); };
   el=document.getElementById('monthlyPnlTotal'); if(el){el.textContent=fmt$(ytd);el.style.color=ytd>=0?'var(--profit)':'var(--loss)';}
 
   el=document.getElementById('keyStats');
@@ -1415,6 +1434,7 @@ function importData(){
       var d=JSON.parse(m.querySelector('#impTa').value);
       tradesData=d; saveData(); m.remove();
       renderDashboard(); renderTradeList('all');
+renderPlannedList();
       alert('✅ Veri yüklendi! '+Object.keys(d).length+' ay, '+getAllTrades().length+' trade.');
     }catch(e){alert('❌ Geçersiz JSON. Kontrol et ve tekrar dene.');}
   };
@@ -2020,7 +2040,7 @@ function switchScreen(name){
   if(name==='statistics')renderStats();
   if(name==='risk')renderRisk();
   if(name==='reports')renderReports();
-  if(name==='trades')renderTradeList(currentFilter);
+  if(name==='trades'){renderTradeList(currentFilter);renderPlannedList();}
   if(name==='leaps')renderLeaps();
   if(name==='vergi')renderVergi();
 }
@@ -2030,6 +2050,174 @@ function switchScreen(name){
 // ═══════════════════ INIT ═══════════════════
 renderDashboard();
 renderTradeList('all');
+
+function editPortSize(){
+  var cur = PORT_SIZE || 180000;
+  var ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
+  var box = document.createElement('div');
+  box.style.cssText='background:#1a2234;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:24px;width:100%;max-width:320px';
+  box.innerHTML='<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f1f5f9">Portföy Boyutu ($)</div>'
+    +'<input id="_psInp" type="number" value="'+cur+'" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:12px;color:#f1f5f9;font-size:18px;font-family:monospace;outline:none;margin-bottom:16px">'
+    +'<div style="display:flex;gap:10px">'
+    +'<button id="_psCancel" style="flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#94a3b8;font-size:13px;cursor:pointer">İptal</button>'
+    +'<button id="_psSave" style="flex:2;padding:11px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Kaydet</button>'
+    +'</div>';
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  var inp = document.getElementById('_psInp');
+  inp.focus(); inp.select();
+  document.getElementById('_psCancel').onclick = function(e){ e.stopPropagation(); ov.remove(); };
+  document.getElementById('_psSave').onclick = function(e){
+    e.stopPropagation();
+    var val = parseInt(inp.value)||0;
+    if(val < 1000){ inp.style.borderColor='#ef4444'; return; }
+    PORT_SIZE = val;
+    try { localStorage.setItem('temH', val); } catch(e2){}
+    ov.remove();
+    renderDashboard();
+  };
+  ov.onclick = function(e){ if(e.target===ov) ov.remove(); };
+}
+
+// ═══════════════════ PLANNED TRADES ═══════════════════
+
+function renderPlannedList(){
+  var el = document.getElementById('plannedList');
+  if(!el) return;
+  if(!plannedTrades.length){
+    el.innerHTML='<div style="text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">Henüz plan yok</div>';
+    return;
+  }
+  var TC2={CSP:'#22c55e',CC:'#3b82f6',PMCC:'#a78bfa',PCS:'#f59e0b',IC:'#8b5cf6',LEAPS:'#10b981','Long Call':'#ef4444',HEDGE:'#64748b'};
+  el.innerHTML = plannedTrades.map(function(p,i){
+    var c=TC2[p.type]||'#94a3b8';
+    var fields=[];
+    if(p.strike) fields.push({l:'Strike',v:p.strike});
+    if(p.expiry) fields.push({l:'Vade',v:p.expiry});
+    if(p.q)      fields.push({l:'Kontrat',v:p.q+'x'});
+    if(p.premium)fields.push({l:'Prim',v:'$'+p.premium});
+    if(p.delta)  fields.push({l:'Delta',v:p.delta});
+    if(p.ivr)    fields.push({l:'IVR',v:p.ivr});
+    var grid=fields.map(function(f){
+      return '<div style="background:rgba(255,255,255,.04);border-radius:6px;padding:7px 9px">'
+        +'<div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">'+f.l+'</div>'
+        +'<div style="font-family:monospace;font-size:13px;font-weight:600;color:#f1f5f9">'+f.v+'</div>'
+        +'</div>';
+    }).join('');
+    return '<div style="background:#0f1724;border:1px solid rgba(255,255,255,.07);border-left:3px solid '+c+';border-radius:12px;padding:14px;margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:16px;font-weight:800;font-family:monospace;color:#f1f5f9">'+p.ticker+'</span>'
+      +'<span style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:5px;font-size:10px;font-weight:700;padding:2px 8px">'+p.type+'</span>'
+      +'</div>'
+      +'<button onclick="deletePlan('+i+')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px">Sil</button>'
+      +'</div>'
+      +(grid?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:'+(p.note?'10':'0')+'px">'+grid+'</div>':'')
+      +(p.note?'<div style="font-size:11px;color:#94a3b8;background:rgba(255,255,255,.03);border-radius:6px;padding:7px 9px;font-style:italic">'+p.note+'</div>':'')
+      +'</div>';
+  }).join('');
+}
+
+function deletePlan(i){
+  plannedTrades.splice(i,1);
+  savePlanned();
+  renderPlannedList();
+}
+
+function openAddPlan(){
+  // Remove any existing plan modal
+  var existing = document.getElementById('_planModal');
+  if(existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = '_planModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:99999;display:flex;align-items:flex-end;justify-content:center';
+
+  var sheet = document.createElement('div');
+  sheet.style.cssText = 'background:#111827;border:1px solid rgba(255,255,255,.1);border-top:1px solid rgba(255,255,255,.15);border-radius:20px 20px 0 0;width:100%;max-width:540px;max-height:85vh;overflow-y:auto;padding:0 0 40px';
+  sheet.innerHTML =
+    '<div style="width:36px;height:3px;background:rgba(255,255,255,.2);border-radius:2px;margin:14px auto 18px"></div>'
+   +'<div style="padding:0 18px">'
+   +'<div style="font-size:17px;font-weight:700;color:#f1f5f9;margin-bottom:18px">📋 Plan Ekle</div>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Ticker *</div>'
+   +'<input id="_pl_ticker" type="text" placeholder="SOFI" autocomplete="off" autocorrect="off" autocapitalize="characters" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:15px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">İşlem Tipi</div>'
+   +'<select id="_pl_type" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none">'
+   +'<option>CSP</option><option>CC</option><option>PCS</option><option>PMCC</option><option>IC</option><option>Long Call</option><option>LEAPS</option><option>HEDGE</option>'
+   +'</select></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Vade</div>'
+   +'<input id="_pl_expiry" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Strike</div>'
+   +'<input id="_pl_strike" type="number" placeholder="50" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Kontrat</div>'
+   +'<input id="_pl_q" type="number" placeholder="1" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Prim ($)</div>'
+   +'<input id="_pl_premium" type="number" step="0.01" placeholder="0.50" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Delta</div>'
+   +'<input id="_pl_delta" type="number" placeholder="20" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">IVR</div>'
+   +'<input id="_pl_ivr" type="number" placeholder="45" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
+   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Not</div>'
+   +'<input id="_pl_note" type="text" placeholder="Giriş gerekçesi..." style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
+   +'</div>'
+   +'<div style="display:flex;gap:10px;margin-top:18px">'
+   +'<button id="_pl_cancel_btn" style="flex:1;padding:13px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#94a3b8;font-size:14px;cursor:pointer">İptal</button>'
+   +'<button id="_pl_save_btn" style="flex:2;padding:13px;background:#3b82f6;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Kaydet</button>'
+   +'</div>'
+   +'</div>';
+
+  modal.appendChild(sheet);
+  document.body.appendChild(modal);
+
+  // Focus ticker
+  setTimeout(function(){ 
+    var t = document.getElementById('_pl_ticker'); 
+    if(t) t.focus(); 
+  }, 100);
+
+  // Cancel — tap X or cancel button
+  document.getElementById('_pl_cancel_btn').onclick = function(){ modal.remove(); };
+  
+  // Dismiss on overlay tap (only if tapping the dark area, not the sheet)
+  modal.onclick = function(e){ if(e.target === modal) modal.remove(); };
+
+  // Save
+  document.getElementById('_pl_save_btn').onclick = function(){
+    var ticker = (document.getElementById('_pl_ticker').value||'').trim().toUpperCase();
+    if(!ticker){
+      document.getElementById('_pl_ticker').style.borderColor = '#ef4444';
+      return;
+    }
+    var plan = {
+      ticker:  ticker,
+      type:    document.getElementById('_pl_type').value || 'CSP',
+      expiry:  document.getElementById('_pl_expiry').value || '',
+      strike:  document.getElementById('_pl_strike').value || '',
+      q:       document.getElementById('_pl_q').value || '',
+      premium: document.getElementById('_pl_premium').value || '',
+      delta:   document.getElementById('_pl_delta').value || '',
+      ivr:     document.getElementById('_pl_ivr').value || '',
+      note:    (document.getElementById('_pl_note').value||'').trim(),
+      created: new Date().toISOString().slice(0,10)
+    };
+    plannedTrades.unshift(plan);
+    savePlanned();
+    modal.remove();
+    renderPlannedList();
+  };
+}
+
+// Wire addPlanBtn via event delegation (safe for dynamic DOM)
+document.addEventListener('click', function(e){
+  if(e.target && (e.target.id==='addPlanBtn' || (e.target.parentElement && e.target.parentElement.id==='addPlanBtn'))){
+    e.stopPropagation();
+    openAddPlan();
+  }
+});
+
+
 </script>
 </body>
 </html>
