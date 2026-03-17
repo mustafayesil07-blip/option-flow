@@ -9,11 +9,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0B0F17;
-    --bg2: #0F1420;
-    --bg3: #131925;
-    --card: rgba(255,255,255,0.045);
-    --card-hover: rgba(255,255,255,0.07);
+    --bg: #3D3530;
+    --bg2: #4A4039;
+    --bg3: #564C44;
+    --card: rgba(255,255,255,0.06);
+    --card-hover: rgba(255,255,255,0.10);
     --border: rgba(255,255,255,0.08);
     --border-bright: rgba(255,255,255,0.14);
     --profit: #22C55E;
@@ -26,9 +26,9 @@
     --info-dim: rgba(59,130,246,0.12);
     --purple: #8B5CF6;
     --purple-dim: rgba(139,92,246,0.12);
-    --text: #F1F5F9;
-    --text-2: #94A3B8;
-    --text-3: #475569;
+    --text: #F5EDE0;
+    --text-2: #C4AA90;
+    --text-3: #8A7A6A;
     --font-head: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
@@ -42,7 +42,7 @@
   html { font-size: 16px; scroll-behavior: smooth; }
 
   body {
-    background: var(--bg);
+    background: radial-gradient(ellipse at top right, rgba(180,130,80,0.08), transparent 50%), var(--bg);
     color: var(--text);
     font-family: var(--font-body);
     min-height: 100vh;
@@ -53,7 +53,7 @@
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
   /* SCREENS */
   .screen { display: none; padding: 0 0 16px; animation: fadeUp 0.3s ease both; }
@@ -67,7 +67,7 @@
   /* TOP BAR */
   .topbar {
     position: sticky; top: 0; z-index: 100;
-    background: rgba(11,15,23,0.85);
+    background: rgba(61,53,48,0.92);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border);
@@ -116,7 +116,7 @@
   .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
     height: var(--nav-h);
-    background: rgba(13,17,26,0.95);
+    background: rgba(61,53,48,0.97);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--border);
@@ -170,7 +170,7 @@
     font-weight: 700; letter-spacing: -0.4px;
   }
   .section-sub {
-    font-size: 12px; color: var(--text-3); margin-top: 2px;
+    font-size: 12px; color: #9A8472; margin-top: 2px;
     font-weight: 400;
   }
   .section-action {
@@ -229,7 +229,7 @@
   }
   .hero-label {
     font-size: 11px; font-weight: 500; text-transform: uppercase;
-    letter-spacing: 0.8px; color: var(--text-3); margin-bottom: 8px;
+    letter-spacing: 0.8px; color: #C4AA90; margin-bottom: 8px;
   }
   .hero-val {
     font-family: var(--font-head); font-size: 28px; font-weight: 700;
@@ -269,7 +269,7 @@
   }
   .chart-tabs {
     display: flex; gap: 2px;
-    background: rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.03);
     padding: 3px; border-radius: 8px;
   }
   .chart-tab {
@@ -300,7 +300,7 @@
     letter-spacing: -0.3px;
   }
   .stat-cell-lbl {
-    font-size: 10px; color: var(--text-3); margin-top: 4px;
+    font-size: 10px; color: #B0987E; margin-top: 4px;
     text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500;
   }
 
@@ -659,7 +659,7 @@
   }
 
   .overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.65);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .18s ease}
-  .modal-sheet{width:100%;max-width:520px;background:#141C2B;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;animation:slideUp .28s cubic-bezier(.16,1,.3,1);max-height:88vh;overflow-y:auto}
+  .modal-sheet{width:100%;max-width:520px;background:#453C36;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;animation:slideUp .28s cubic-bezier(.16,1,.3,1);max-height:88vh;overflow-y:auto}
   .modal-handle{width:32px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;margin:0 auto 18px}
   @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -692,7 +692,7 @@
     <div class="filter-pill" data-dash-month="Mart" onclick="setDashMonth(this,'Mart')">Mart</div>
   </div>
   <div class="hero-strip">
-    <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(34,197,94,0.08),rgba(59,130,246,0.06));border-color:rgba(34,197,94,0.2);">
+    <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(180,130,80,0.12),rgba(120,90,60,0.08));border-color:rgba(180,130,80,0.2);">
       <div class="hero-label" id="heroPnlLabel">Total P&L — YTD</div>
       <div class="hero-val" id="heroPnl">—</div>
       <div class="hero-change" id="heroPnlChange"></div>
@@ -713,7 +713,7 @@
         <div><div class="hero-val" id="heroCollateral">—</div><div class="hero-change" id="heroCollateralSub" style="margin-top:8px;"></div></div>
         <div style="text-align:right;"><div class="hero-val" id="heroCollPct" style="font-size:22px;color:var(--warn);">—</div><div style="font-size:10px;color:var(--text-3);margin-top:3px;">usage</div></div>
       </div>
-      <div style="margin-top:12px;height:5px;background:rgba(255,255,255,0.07);border-radius:3px;overflow:hidden;"><div id="collBarFill" style="width:0%;height:100%;background:linear-gradient(90deg,var(--info),var(--warn));border-radius:3px;transition:width 0.8s ease;"></div></div>
+      <div style="margin-top:12px;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;"><div id="collBarFill" style="width:0%;height:100%;background:linear-gradient(90deg,var(--info),var(--warn));border-radius:3px;transition:width 0.8s ease;"></div></div>
       <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--text-3);"><span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span id="portSizeLabel">$180K</span></div>
     </div>
   </div>
@@ -931,11 +931,11 @@
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end;">
         <div>
           <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Tarih</div>
-          <input type="date" id="kurTarih" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
+          <input type="date" id="kurTarih" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Kur (₺)</div>
-          <input type="number" id="kurDeger" placeholder="örn: 38.4271" step="0.0001" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
+          <input type="number" id="kurDeger" placeholder="örn: 38.4271" step="0.0001" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
         <button onclick="kurEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Ekle</button>
       </div>
@@ -956,7 +956,7 @@
   <div style="margin:0 20px 12px;">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">📋 Trade Bazlı Vergi Tablosu</div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
-      <div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);font-size:9px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;gap:4px;">
+      <div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.08);font-size:9px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;gap:4px;">
         <div>Trade</div><div>Tür</div><div>USD P&L</div><div>Açılış Kur</div><div>Kapanış Kur</div><div>TRY Matrah</div>
       </div>
       <div id="vergiTablosu"></div>
@@ -1355,7 +1355,7 @@ function renderStats(){
     {l:'Total P&L',v:fmt$(stats.totalPnl),sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true}
   ].map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
-  if(st){var rows=['CSP','CC','PMCC','PCS','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
+  if(st){var rows=['CSP','CC','PMCC','PCS','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
 }
 
 // ═══════════════════ RISK ═══════════════════
@@ -1385,7 +1385,7 @@ function renderReports(){
   var m=getMonthlyStats(); var tot={t:0,pnl:0};
   var rows=m.map(function(x){tot.t+=x.trades;tot.pnl+=x.pnl;var wc=x.wr>=.7?'var(--profit)':x.wr>=.5?'var(--warn)':'var(--loss)';return'<div class="monthly-row"><div class="month">'+x.month+'</div><div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div><div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</div></div>';}).reverse().join('');
   var as=calcStats();
-  rows+='<div class="monthly-row" style="background:rgba(255,255,255,.02);"><div class="month" style="font-weight:700;">Total</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(as.winRate*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
+  rows+='<div class="monthly-row" style="background:rgba(255,255,255,0.02);"><div class="month" style="font-weight:700;">Total</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(as.winRate*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
   var tb=document.getElementById('monthlyTableBody'); if(tb)tb.innerHTML=rows;
 }
 
@@ -1398,11 +1398,11 @@ function exportData(){
 function importData(){
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
-  m.innerHTML='<div style="width:100%;max-width:500px;background:#131925;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:80vh;overflow-y:auto;">'+
+  m.innerHTML='<div style="width:100%;max-width:500px;background:#453C36;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:80vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
     '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:14px;">📥 Import JSON Backup</div>'+
     '<div style="font-size:13px;color:var(--text-2);margin-bottom:14px;line-height:1.5;">Eski uygulamadan Export ettiğin JSON\'u yapıştır:</div>'+
-    '<textarea id="impTa" style="width:100%;height:150px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;resize:vertical;" placeholder=\'{"Aralik":[...],"Ocak":[...],...}\'></textarea>'+
+    '<textarea id="impTa" style="width:100%;height:150px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px;color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;resize:vertical;" placeholder=\'{"Aralik":[...],"Ocak":[...],...}\'></textarea>'+
     '<button id="impSave" style="width:100%;margin-top:14px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Yükle & Kaydet</button>'+
     '<button id="impCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:var(--text-3);font-size:14px;cursor:pointer;">İptal</button></div>';
   document.body.appendChild(m);
@@ -1423,27 +1423,27 @@ function showAddTrade(){
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
   var mo=Object.keys(tradesData).map(function(k){return'<option>'+k+'</option>';}).join('');
-  m.innerHTML='<div style="width:100%;max-width:500px;background:#131925;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
+  m.innerHTML='<div style="width:100%;max-width:500px;background:#453C36;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
     '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">Log New Trade</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_t" placeholder="Ticker" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<select id="nt_ty" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>CSP</option><option>PCS</option><option>CC</option><option>PMCC</option><option>IC</option><option>LEAPS</option></select></div>'+
+      '<input id="nt_t" placeholder="Ticker" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<select id="nt_ty" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>CSP</option><option>PCS</option><option>CC</option><option>PMCC</option><option>IC</option><option>LEAPS</option></select></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_s" placeholder="Strike" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<select id="nt_m" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+mo+'</select></div>'+
+      '<input id="nt_s" placeholder="Strike" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<select id="nt_m" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+mo+'</select></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_p" type="number" placeholder="Premium ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="nt_q" type="number" placeholder="Qty" value="1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="nt_p" type="number" placeholder="Premium ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="nt_q" type="number" placeholder="Qty" value="1" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_d" type="number" placeholder="Delta" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="nt_i" type="number" placeholder="IVR" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="nt_d" type="number" placeholder="Delta" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="nt_i" type="number" placeholder="IVR" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_o" type="date" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="nt_e" type="date" placeholder="Expiry" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="nt_o" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="nt_e" type="date" placeholder="Expiry" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="nt_c" type="number" placeholder="Collateral ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="nt_pnl" type="number" placeholder="P&L (boş=open)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="nt_c" type="number" placeholder="Collateral ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="nt_pnl" type="number" placeholder="P&L (boş=open)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<button id="ntSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
     '<button id="ntCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button></div>';
   document.body.appendChild(m);
@@ -1560,8 +1560,8 @@ function renderVergi(){
           var td = taxData[t.id]||{};
           return '<div style="display:grid;grid-template-columns:1fr 100px 100px;gap:6px;margin-bottom:6px;align-items:center;">'+
             '<div style="font-size:12px;font-weight:600;color:var(--text);">'+t.ticker+' <span style="font-size:10px;color:var(--text-3);">'+t.opened+'→'+t.closed+'</span></div>'+
-            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komAcilis||'')+'" data-tid="'+t.id+'" data-field="komAcilis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
-            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komKapanis||'')+'" data-tid="'+t.id+'" data-field="komKapanis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
+            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komAcilis||'')+'" data-tid="'+t.id+'" data-field="komAcilis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
+            '<input type="number" step="0.01" placeholder="0.00" value="'+(td.komKapanis||'')+'" data-tid="'+t.id+'" data-field="komKapanis" onchange="saveTaxField(this)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;">'+
           '</div>';
         }).join('');
     }
@@ -1575,9 +1575,9 @@ function renderVergi(){
       var tc2 = tcol(t.ticker.split(' ')[0]);
       var matrahColor = !res.hasKur ? 'var(--text-3)' : res.matrah_try>=0 ? 'var(--profit)' : 'var(--loss)';
       var matrahTxt = !res.hasKur ? '—' : res.matrah_try.toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0})+' ₺';
-      return '<div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;gap:4px;align-items:center;">'+
+      return '<div style="display:grid;grid-template-columns:1fr 60px 70px 80px 80px 80px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:12px;gap:4px;align-items:center;">'+
         '<div><span style="font-family:var(--font-head);font-weight:600;color:'+tc2.color+'">'+t.ticker+'</span><div style="font-size:10px;color:var(--text-3);margin-top:1px;">'+t.closed+'</div></div>'+
-        '<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--text-2);text-align:center;">'+t.type+'</div>'+
+        '<div style="font-size:10px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-2);text-align:center;">'+t.type+'</div>'+
         '<div style="font-family:var(--font-mono);color:'+(t.pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(t.pnl)+'</div>'+
         '<div style="font-family:var(--font-mono);color:var(--text-2);">'+(res.acilis_kur>0?res.acilis_kur.toFixed(4):'<span style="color:var(--warn)">—</span>')+'</div>'+
         '<div style="font-family:var(--font-mono);color:var(--text-2);">'+(res.kapanis_kur>0?res.kapanis_kur.toFixed(4):'<span style="color:var(--warn)">—</span>')+'</div>'+
@@ -1596,12 +1596,14 @@ function renderKurListesi(){
     return;
   }
   el.innerHTML = keys.slice(0,30).map(function(d){
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">'+
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'+
       '<div style="font-family:var(--font-mono);font-size:13px;">'+d+'</div>'+
       '<div style="display:flex;align-items:center;gap:10px;">'+
         '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--warn);">'+parseFloat(kurlarData[d]).toFixed(2)+' ₺</div>'+
         '<button onclick="kurSil(this.dataset.d)" data-d="'+d+'" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Sil</button>'+
       '</div>'+
+    '</div>'+
+      (t.note ? '<div class="tc-note">📝 '+t.note+'</div>' : '')+
     '</div>';
   }).join('');
 }
@@ -1677,21 +1679,21 @@ function renderLeaps(){
 function showAddLeap(){
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
-  m.innerHTML='<div style="width:100%;max-width:500px;background:#131925;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
+  m.innerHTML='<div style="width:100%;max-width:500px;background:#453C36;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
     '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Pozisyonu Ekle</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_t" placeholder="Ticker (e.g. NVDA)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<select id="lf_d" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>Call</option><option>Put</option></select></div>'+
+      '<input id="lf_t" placeholder="Ticker (e.g. NVDA)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<select id="lf_d" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>Call</option><option>Put</option></select></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_s" placeholder="Strike" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_e" type="date" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="lf_s" placeholder="Strike" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_e" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_c" type="number" placeholder="Alış fiyatı ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_cur" type="number" placeholder="Güncel fiyat ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="lf_c" type="number" placeholder="Alış fiyatı ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_cur" type="number" placeholder="Güncel fiyat ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_q" type="number" placeholder="Kontrat sayısı" value="1" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_tg" type="number" placeholder="Hedef fiyat ($)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<input id="lf_q" type="number" placeholder="Kontrat sayısı" value="1" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
+      '<input id="lf_tg" type="number" placeholder="Hedef fiyat ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<button id="lfSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
     '<button id="lfCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button></div>';
   document.body.appendChild(m);
@@ -1747,14 +1749,14 @@ function openTradeDetail(tradeId, month){
   td2.textContent=trade.opened+(trade.closed?' > '+trade.closed:' - Acik');
   inf.appendChild(tn);inf.appendChild(td2);
   var badge=document.createElement('div');
-  badge.style.cssText='font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;'+(isOpen?'background:var(--profit-dim);color:var(--profit)':'background:rgba(255,255,255,.06);color:var(--text-3)');
+  badge.style.cssText='font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;'+(isOpen?'background:var(--profit-dim);color:var(--profit)':'background:rgba(255,255,255,0.05);color:var(--text-3)');
   badge.textContent=isOpen?'ACIK':'KAPALI';
   hdr.appendChild(ico);hdr.appendChild(inf);hdr.appendChild(badge);
   sh.appendChild(hdr);
 
   // Details box
   var box=document.createElement('div');
-  box.style.cssText='background:rgba(255,255,255,.04);border-radius:12px;padding:4px 14px;margin-bottom:14px';
+  box.style.cssText='background:rgba(255,255,255,0.03);border-radius:12px;padding:4px 14px;margin-bottom:14px';
   box.appendChild(row('Strike','$'+trade.strike));
   box.appendChild(row('Premium',fmtA$(trade.premium)));
   box.appendChild(row('Qty / Expiry',trade.q+' x 100  |  '+trade.expiry));
@@ -1784,7 +1786,7 @@ function openTradeDetail(tradeId, month){
       label.textContent=lbl;
       var input=document.createElement('input');
       input.id=id;input.type=type;input.placeholder=ph;
-      input.style.cssText='background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;padding:11px 12px;color:var(--text);font-size:13px;outline:none;width:100%';
+      input.style.cssText='background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:9px;padding:11px 12px;color:var(--text);font-size:13px;outline:none;width:100%';
       if(type==='date') input.value=new Date().toISOString().split('T')[0];
       if(type==='number') input.step='0.01';
       wrap.appendChild(label);wrap.appendChild(input);return wrap;
@@ -1851,6 +1853,41 @@ function openTradeDetail(tradeId, month){
     acts.appendChild(reopenBtn);acts.appendChild(delBtn);
     sh.appendChild(acts);
   }
+
+  // Note section - always visible
+  var noteSec=document.createElement('div');
+  noteSec.style.cssText='margin-top:4px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08)';
+  var noteLbl=document.createElement('div');
+  noteLbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:7px';
+  noteLbl.textContent='Not';
+  var noteInput=document.createElement('textarea');
+  noteInput.id='td_note';
+  noteInput.rows=2;
+  noteInput.placeholder='Trade notu...';
+  noteInput.value=trade.note||'';
+  noteInput.style.cssText='background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none;width:100%;resize:none';
+  var saveNoteBtn=document.createElement('button');
+  saveNoteBtn.style.cssText='margin-top:7px;width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:9px;color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer';
+  saveNoteBtn.textContent='Notu Kaydet';
+  saveNoteBtn.onclick=function(){
+    var note=noteInput.value.trim();
+    var months=Object.keys(tradesData);
+    for(var mi=0;mi<months.length;mi++){
+      var arr=tradesData[months[mi]];
+      for(var ti=0;ti<arr.length;ti++){
+        if(arr[ti].id==tradeId){arr[ti].note=note;break;}
+      }
+    }
+    saveData();
+    saveNoteBtn.textContent='Kaydedildi!';
+    saveNoteBtn.style.color='var(--profit)';
+    setTimeout(function(){saveNoteBtn.textContent='Notu Kaydet';saveNoteBtn.style.color='var(--text-2)';},1500);
+    renderTradeList(currentFilter);
+  };
+  noteSec.appendChild(noteLbl);
+  noteSec.appendChild(noteInput);
+  noteSec.appendChild(saveNoteBtn);
+  sh.appendChild(noteSec);
 
   // Cancel
   var cancel=document.createElement('button');
