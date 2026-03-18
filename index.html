@@ -1015,6 +1015,38 @@
 </div>
 
 <script>
+// ─── Delete confirm helper ───────────────────────────────
+function showDeleteConfirm(onConfirm){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:24px';
+
+  var box=document.createElement('div');
+  box.style.cssText='background:#453C36;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center';
+
+  var icon=document.createElement('div');icon.style.cssText='font-size:32px;margin-bottom:10px';icon.textContent='🗑';
+  var title=document.createElement('div');title.style.cssText='font-size:16px;font-weight:700;color:#F5EDE0;margin-bottom:8px';title.textContent='Pozisyonu Sil';
+  var msg=document.createElement('div');msg.style.cssText='font-size:13px;color:#C4AA90;margin-bottom:20px;line-height:1.5';msg.textContent='Bu pozisyon kalıcı olarak silinecek. Emin misin?';
+
+  var btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:10px';
+
+  var btnNo=document.createElement('button');
+  btnNo.style.cssText='flex:1;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#C4AA90;font-size:14px;font-family:inherit;cursor:pointer';
+  btnNo.textContent='İptal';
+  btnNo.onclick=function(){ ov.remove(); };
+
+  var btnYes=document.createElement('button');
+  btnYes.style.cssText='flex:1;padding:13px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);border-radius:10px;color:#EF4444;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer';
+  btnYes.textContent='Sil';
+  btnYes.onclick=function(){ ov.remove(); onConfirm(); };
+
+  btnRow.appendChild(btnNo);btnRow.appendChild(btnYes);
+  box.appendChild(icon);box.appendChild(title);box.appendChild(msg);box.appendChild(btnRow);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+}
+// ─────────────────────────────────────────────────────────
+
 var PLAN_LS = 'planned_v1';
 var plannedTrades = [];
 try { var _pl2 = localStorage.getItem(PLAN_LS); if(_pl2) plannedTrades = JSON.parse(_pl2); } catch(e){}
@@ -2663,30 +2695,14 @@ function openTradeDetail(tradeId, month){
     delBtn.style.cssText='flex:1;background:var(--loss-dim);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:12px;color:var(--loss);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
     delBtn.textContent='Sil';
     delBtn.onclick=function(){
-      var _conf2=document.createElement('div');
-      _conf2.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:24px';
-      var _box2=document.createElement('div');
-      _box2.style.cssText='background:#453C36;border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center';
-      _box2.innerHTML='<div style="font-size:28px;margin-bottom:12px">🗑</div>'+
-        '<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Pozisyonu Sil</div>'+
-        '<div style="font-size:13px;color:var(--text-2);margin-bottom:20px;line-height:1.5">Bu pozisyon kalıcı olarak silinecek. Emin misin?</div>'+
-        '<div style="display:flex;gap:10px">'+
-          '<button id="_delNo2" style="flex:1;padding:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:var(--text-2);font-size:14px;cursor:pointer">İptal</button>'+
-          '<button id="_delYes2" style="flex:1;padding:12px;background:var(--loss-dim);border:1px solid rgba(239,68,68,.3);border-radius:10px;color:var(--loss);font-size:14px;font-weight:700;cursor:pointer">Sil</button>'+
-        '</div>';
-      _conf2.appendChild(_box2);
-      document.body.appendChild(_conf2);
-      _conf2.querySelector('#_delNo2').onclick=function(){_conf2.remove();};
-      _conf2.querySelector('#_delYes2').onclick=function(){
-        _conf2.remove();
+      showDeleteConfirm(function(){
         var months=Object.keys(tradesData);
         for(var mi=0;mi<months.length;mi++){
           tradesData[months[mi]]=tradesData[months[mi]].filter(function(t){return t.id!=tradeId;});
         }
         saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
         if(typeof renderVergi==='function')renderVergi();
-      };
-      _conf2.onclick=function(e){if(e.target===_conf2)_conf2.remove();};
+      });
     };
     acts.appendChild(reopenBtn);acts.appendChild(delBtn);
     sh.appendChild(acts);
@@ -2700,31 +2716,14 @@ function openTradeDetail(tradeId, month){
     openDelBtn.style.cssText='width:100%;background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:10px;color:var(--loss);font-family:var(--font-head);font-size:12px;font-weight:600;cursor:pointer';
     openDelBtn.textContent='🗑 Pozisyonu Sil';
     openDelBtn.onclick=function(){
-      // confirm() mobil tarayıcılarda çalışmayabilir — custom onay diyalogu
-      var _conf=document.createElement('div');
-      _conf.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:24px';
-      var _box=document.createElement('div');
-      _box.style.cssText='background:#453C36;border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center';
-      _box.innerHTML='<div style="font-size:28px;margin-bottom:12px">🗑</div>'+
-        '<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Pozisyonu Sil</div>'+
-        '<div style="font-size:13px;color:var(--text-2);margin-bottom:20px;line-height:1.5">Bu pozisyon kalıcı olarak silinecek. Emin misin?</div>'+
-        '<div style="display:flex;gap:10px">'+
-          '<button id="_delNo" style="flex:1;padding:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:var(--text-2);font-size:14px;cursor:pointer">İptal</button>'+
-          '<button id="_delYes" style="flex:1;padding:12px;background:var(--loss-dim);border:1px solid rgba(239,68,68,.3);border-radius:10px;color:var(--loss);font-size:14px;font-weight:700;cursor:pointer">Sil</button>'+
-        '</div>';
-      _conf.appendChild(_box);
-      document.body.appendChild(_conf);
-      _conf.querySelector('#_delNo').onclick=function(){_conf.remove();};
-      _conf.querySelector('#_delYes').onclick=function(){
-        _conf.remove();
+      showDeleteConfirm(function(){
         var months=Object.keys(tradesData);
         for(var mi=0;mi<months.length;mi++){
           tradesData[months[mi]]=tradesData[months[mi]].filter(function(t){return t.id!=tradeId;});
         }
         saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
         if(typeof renderVergi==='function')renderVergi();
-      };
-      _conf.onclick=function(e){if(e.target===_conf)_conf.remove();};
+      });
     };
     openDelDiv.appendChild(openDelBtn);
     sh.appendChild(openDelDiv);
