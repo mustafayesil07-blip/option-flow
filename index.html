@@ -1561,7 +1561,8 @@ function showAddTrade(existingTrade){
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
   var mo=Object.keys(tradesData).map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=['LEAPS','Long Call'];
-  var typeOpts=['CSP','PCS','CC','PMCC','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'].map(function(t){return'<option'+(isEdit&&t===existingTrade.type?' selected':'')+'>'+t+'</option>';}).join('');
+  var ALL_TYPES=['CSP','PCS','CC','PMCC','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'];
+  var _initialType = isEdit ? existingTrade.type : 'CSP';
 
   var sheet=document.createElement('div');
   sheet.style.cssText='width:100%;max-width:500px;background:#453C36;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:90vh;overflow-y:auto;';
@@ -1569,7 +1570,11 @@ function showAddTrade(existingTrade){
   document.body.appendChild(m);
 
   function rebuildSheet(){
-    var typeVal = sheet.querySelector('#nt_ty') ? sheet.querySelector('#nt_ty').value : (isEdit?existingTrade.type:'CSP');
+    // Mevcut seçili türü koru — select yoksa initial değeri kullan
+    var typeVal = sheet.querySelector('#nt_ty') ? sheet.querySelector('#nt_ty').value : _initialType;
+    // Geçerli bir tür değilse initial'a dön
+    if(ALL_TYPES.indexOf(typeVal) === -1) typeVal = _initialType;
+    var typeOpts = ALL_TYPES.map(function(t){return'<option'+(t===typeVal?' selected':'')+'>'+t+'</option>';}).join('');
     var isLongPos = longTypes.indexOf(typeVal) !== -1;
     var openPremLabel = isLongPos ? 'Ödenen Prim — Açılış ($)' : 'Alınan Prim — Açılış ($)';
     var closePremLabel = isLongPos ? 'Alınan Prim — Kapanış ($)' : 'Ödenen Prim — Kapanış ($)';
@@ -1582,7 +1587,7 @@ function showAddTrade(existingTrade){
       '<!-- Row 1: Ticker + Type -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Ticker','<input id="nt_t" placeholder="SOFI" autocapitalize="characters" style="'+s+'"'+(isEdit?' value="'+existingTrade.ticker+'"':'')+'>') +
-        _fldWrap('Tür','<select id="nt_ty" style="'+s+'">'+typeOpts+'</select>')+
+        _fldWrap('Tür','<div id="nt_ty_wrap" style="position:relative"></div>')+
       '</div>'+
 
       '<!-- Row 2: Strike + Month -->'+
@@ -1644,8 +1649,75 @@ function showAddTrade(existingTrade){
       sheet.querySelector('#nt_o').value=new Date().toISOString().split('T')[0];
     }
 
-    // Re-attach type change listener
-    sheet.querySelector('#nt_ty').onchange = rebuildSheet;
+    // Re-attach type change listener (native select fallback için)
+    if(sheet.querySelector('#nt_ty')) sheet.querySelector('#nt_ty').onchange = rebuildSheet;
+
+    // Custom type picker inject
+    var _tyWrap = sheet.querySelector('#nt_ty_wrap');
+    if(_tyWrap){
+      _tyWrap.innerHTML = '';
+      // Seçili type göster (tıklanabilir)
+      var _tyBtn = document.createElement('div');
+      _tyBtn.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 13px;color:#F1F5F9;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;-webkit-user-select:none';
+      _tyBtn.innerHTML = '<span id="nt_ty_label">'+typeVal+'</span><span style="font-size:10px;opacity:0.5">▼</span>';
+      // Gizli input değer için
+      var _tyHidden = document.createElement('input');
+      _tyHidden.type='hidden'; _tyHidden.id='nt_ty'; _tyHidden.value=typeVal;
+      _tyWrap.appendChild(_tyBtn);
+      _tyWrap.appendChild(_tyHidden);
+
+      // Dropdown aç
+      _tyBtn.onclick = function(e){
+        e.stopPropagation();
+        // Mevcut dropdown varsa kapat
+        var existing = document.getElementById('_ty_dropdown');
+        if(existing){ existing.remove(); return; }
+        var dd = document.createElement('div');
+        dd.id = '_ty_dropdown';
+        dd.style.cssText = 'position:fixed;z-index:99999;background:#453C36;border:1px solid rgba(255,255,255,.15);border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:200px;max-height:70vh;overflow-y:auto';
+        // Pozisyonu belirle
+        var rect = _tyBtn.getBoundingClientRect();
+        var top = rect.bottom + 4;
+        var left = rect.left;
+        if(top + 400 > window.innerHeight) top = rect.top - 400;
+        dd.style.top = top + 'px';
+        dd.style.left = left + 'px';
+        dd.style.width = rect.width + 'px';
+        ALL_TYPES.forEach(function(t){
+          var item = document.createElement('div');
+          item.style.cssText = 'padding:13px 16px;font-size:14px;color:'+(t===typeVal?'#3B82F6':'#F1F5F9')+';cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-weight:'+(t===typeVal?'700':'400');
+          if(t===typeVal) item.style.background='rgba(59,130,246,0.1)';
+          item.textContent = t;
+          item.onclick = function(ev){
+            ev.stopPropagation();
+            _tyHidden.value = t;
+            document.getElementById('nt_ty_label').textContent = t;
+            dd.remove();
+            // typeVal güncelle ve label'ları yenile
+            var _isLong2 = longTypes.indexOf(t) !== -1;
+            var _opLbl = sheet.querySelector('label[for="nt_p"]') || sheet.querySelector('[id="nt_p"]');
+            // Prim label'larını güncelle
+            var allLabels = sheet.querySelectorAll('label');
+            allLabels.forEach(function(lbl){
+              if(lbl.textContent.indexOf('Prim') !== -1 && lbl.textContent.indexOf('Açılış') !== -1){
+                lbl.textContent = _isLong2 ? 'Ödenen Prim — Açılış ($)' : 'Alınan Prim — Açılış ($)';
+              }
+              if(lbl.textContent.indexOf('Prim') !== -1 && lbl.textContent.indexOf('Kapanış') !== -1){
+                lbl.textContent = _isLong2 ? 'Alınan Prim — Kapanış ($)' : 'Ödenen Prim — Kapanış ($)';
+              }
+            });
+          };
+          item.addEventListener('touchstart', function(ev){ item.style.background='rgba(255,255,255,0.08)'; }, {passive:true});
+          item.addEventListener('touchend', function(ev){ item.style.background=t===typeVal?'rgba(59,130,246,0.1)':''; }, {passive:true});
+          dd.appendChild(item);
+        });
+        document.body.appendChild(dd);
+        // Dışarı tıklayınca kapat
+        setTimeout(function(){
+          document.addEventListener('click', function _close(){ dd.remove(); document.removeEventListener('click',_close); });
+        }, 10);
+      };
+    }
 
     // Cancel
     sheet.querySelector('#ntCancel').onclick=function(){m.remove();};
