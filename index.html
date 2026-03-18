@@ -1092,7 +1092,21 @@ function getAllTrades() {
   });
   return a;
 }
-function getClosedTrades() { return getAllTrades().filter(function(t){ return t.closed && t.pnl != null; }); }
+function getClosedTrades() {
+  var result = [];
+  getAllTrades().forEach(function(t){
+    if(t.closed && t.pnl != null) { result.push(t); return; }
+    // Kısmi kapanmaları da dahil et — her birini sanal trade gibi ekle
+    if(!t.closed && t.partialCloses && t.partialCloses.length>0){
+      t.partialCloses.forEach(function(pc){
+        result.push(Object.assign({}, t, {
+          closed: pc.date, pnl: pc.pnl, _isPartial: true, _partialEntry: pc
+        }));
+      });
+    }
+  });
+  return result;
+}
 function getOpenTrades()   { return getAllTrades().filter(function(t){ return !t.closed; }); }
 function getPartialCloses(t){ return (t.partialCloses||[]); }
 function getClosedQty(t){ return getPartialCloses(t).reduce(function(s,pc){return s+(pc.qty||0);},0); }
@@ -1119,9 +1133,17 @@ function calcStats() {
 function getMonthlyStats() {
   return Object.keys(tradesData).map(function(m){
     var t = (tradesData[m]||[]).filter(function(x){ return x.closed && x.pnl!=null; });
-    var pnl = t.reduce(function(s,x){return s+x.pnl;},0);
-    var wins = t.filter(function(x){return x.pnl>0;}).length;
-    return { month:m, trades:t.length, pnl, wr: t.length ? wins/t.length : 0 };
+    // Kısmi kapanmaları da ekle
+    var partialTrades = [];
+    (tradesData[m]||[]).forEach(function(x){
+      if(!x.closed && x.partialCloses && x.partialCloses.length>0){
+        x.partialCloses.forEach(function(pc){ partialTrades.push({pnl:pc.pnl||0}); });
+      }
+    });
+    var all = t.concat(partialTrades);
+    var pnl = all.reduce(function(s,x){return s+x.pnl;},0);
+    var wins = all.filter(function(x){return x.pnl>0;}).length;
+    return { month:m, trades:all.length, pnl, wr: all.length ? wins/all.length : 0 };
   }).filter(function(x){ return x.trades > 0; });
 }
 
@@ -1643,6 +1665,7 @@ function showAddTrade(existingTrade){
 
       saveData(); m.remove();
       renderDashboard(); renderTradeList(currentFilter);
+      if(typeof renderVergi==='function') renderVergi();
     };
   }
 
@@ -1752,14 +1775,23 @@ function calcTaxForTrade(t){
     komKapanis: totalKomKapanis,
     openPrem: openPrem,
     closePrem: totalClosePrem,
-    hasKur: hasAllKur && acilis_kur > 0
+    hasKur: hasAllKur && acilis_kur > 0,
+    isPartialOnly: partialCloses.length > 0 && !t.closed
   };
 }
 
 function renderVergi(){
-  var vergiYil = document.getElementById('vergiYilSec') ? document.getElementById('vergiYilSec').value : '2026';
-  var closed = getAllTrades().filter(function(t){
-    return t.closed && t.pnl != null && t.closed.substring(0,4) === vergiYil;
+  var _yvEl = document.getElementById('vergiYilSec');
+  var vergiYil = _yvEl ? _yvEl.value : '2026';
+  // Hem tam kapalı hem kısmi kapanmaları dahil et (kısmi: partialCloses var ama closed=null)
+  var allT = getAllTrades();
+  var closed = allT.filter(function(t){
+    if(t.closed && t.pnl != null && t.closed.substring(0,4) === vergiYil) return true;
+    // Kısmi kapanması olan ve son kapanış tarihi yıla uyanlar da dahil
+    if(!t.closed && t.partialCloses && t.partialCloses.length>0){
+      return t.partialCloses.some(function(pc){ return pc.date && pc.date.substring(0,4)===vergiYil; });
+    }
+    return false;
   });
   var totalMatrah = 0; var totalUSD = 0; var missingKur = 0;
   var rows = [];
@@ -1877,16 +1909,19 @@ function renderVergi(){
         var odenen  = isLong(tr.type) ? res.openPrem  : res.closePrem;
 
         var row=document.createElement('div');
-        row.style.cssText='display:grid;grid-template-columns:150px 52px 80px 80px 60px 60px 80px 80px 100px;min-width:740px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:12px;gap:4px;align-items:center';
+        var _rowBg = res.isPartialOnly ? 'background:rgba(245,158,11,0.04);' : '';
+        row.style.cssText='display:grid;grid-template-columns:150px 52px 80px 80px 60px 60px 80px 80px 100px;min-width:740px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:12px;gap:4px;align-items:center;'+_rowBg;
 
         // Col1: Ticker + açılış → kapanış tarihi
         var c1=document.createElement('div');
         var sp=document.createElement('span');
         sp.style.cssText='font-family:var(--font-head);font-weight:600;color:'+tc2.color;
         sp.textContent=tr.ticker;
+        if(res.isPartialOnly){var pb=document.createElement('span');pb.style.cssText='font-size:8px;background:rgba(245,158,11,0.2);color:var(--warn);border-radius:3px;padding:1px 4px;margin-left:5px;vertical-align:middle';pb.textContent='KISMI';sp.appendChild(pb);}
         var dt=document.createElement('div');
         dt.style.cssText='font-size:9px;color:var(--text-3);margin-top:1px';
-        dt.textContent=(tr.opened||'')+'  →  '+(tr.closed||'');
+        var lastDate = res.isPartialOnly ? (tr.partialCloses[tr.partialCloses.length-1].date||'') : (tr.closed||'');
+        dt.textContent=(tr.opened||'')+'  →  '+lastDate;
         c1.appendChild(sp); c1.appendChild(dt);
 
         // Col2: Tür
@@ -1985,10 +2020,10 @@ function saveTaxField(input){
   if(!taxData[tid]) taxData[tid] = {};
   taxData[tid][field] = val;
   saveTaxData();
-  refreshVergiCalc();
+  renderVergi();
 }
 
-function refreshVergiCalc(){
+function refreshVergiCalc_DEPRECATED_USE_renderVergi(){
   var vergiYil = document.getElementById('vergiYilSec') ? document.getElementById('vergiYilSec').value : '2026';
   var closed2 = getAllTrades().filter(function(t){ return t.closed && t.pnl!=null && t.closed.substring(0,4)===vergiYil; });
   var totalM=0, totalU=0, missingK=0, rows2=[];
@@ -2031,7 +2066,7 @@ function refreshVergiCalc(){
       rowEl.style.cssText='display:grid;grid-template-columns:150px 52px 80px 80px 60px 60px 80px 80px 100px;min-width:740px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:12px;gap:4px;align-items:center';
       var c1=document.createElement('div');
       var sp=document.createElement('span');sp.style.cssText='font-family:var(--font-head);font-weight:600;color:'+tc2.color;sp.textContent=tr2.ticker;
-      var dt=document.createElement('div');dt.style.cssText='font-size:9px;color:var(--text-3);margin-top:1px';dt.textContent=(tr2.opened||'')+'  →  '+(tr2.closed||'');
+      var dt=document.createElement('div');dt.style.cssText='font-size:9px;color:var(--text-3);margin-top:1px';var _lastD2=res3.isPartialOnly?(tr2.partialCloses&&tr2.partialCloses.length>0?tr2.partialCloses[tr2.partialCloses.length-1].date:''):(tr2.closed||'');dt.textContent=(tr2.opened||'')+'  →  '+_lastD2;
       c1.appendChild(sp);c1.appendChild(dt);
       var c2=document.createElement('div');c2.style.cssText='font-size:10px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,0.05);color:var(--text-2);text-align:center';c2.textContent=tr2.type;
       var c3=document.createElement('div');c3.style.cssText='font-family:var(--font-mono);color:var(--profit);font-size:11px';c3.textContent=alinan2>0?fmtA$(alinan2):'-';
@@ -2298,7 +2333,7 @@ function openTradeDetail(tradeId, month){
         for(var mi2=0;mi2<months.length;mi2++){var arr2=tradesData[months[mi2]];for(var ti2=0;ti2<arr2.length;ti2++){if(arr2[ti2].id==tradeId){arr2[ti2].closed=d;arr2[ti2].pnl=Math.round(p*100)/100;arr2[ti2].pct=arr2[ti2].premium?arr2[ti2].pnl/Math.abs(arr2[ti2].premium):null;if(!isNaN(cpVal)&&cpVal>=0)arr2[ti2].closePremium=cpVal;if(komK>0)arr2[ti2].closeCommission=komK;if(!taxData[tradeId])taxData[tradeId]={};if(komK>0)taxData[tradeId].komKapanis=komK;saveTaxData();break;}}}
       }
       saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
-      if(typeof renderVergi==='function'&&document.getElementById('screen-vergi')&&document.getElementById('screen-vergi').classList.contains('active'))renderVergi();
+      if(typeof renderVergi==='function') renderVergi();
     };
     sec.appendChild(closeBtn);sh.appendChild(sec);
   }
@@ -2341,6 +2376,7 @@ function openTradeDetail(tradeId, month){
         }
       }
       saveData();ov.remove();renderDashboard();renderTradeList(currentFilter);
+      if(typeof renderVergi==='function') renderVergi();
     };
     var delBtn=document.createElement('button');
     delBtn.style.cssText='flex:1;background:var(--loss-dim);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:12px;color:var(--loss);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
