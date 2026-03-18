@@ -1108,26 +1108,30 @@ var SEED = {
 
 // Load from localStorage (opt_v22) or fall back to SEED
 var tradesData, leapsData;
-// Real data is baked into SEED — always use it as base so it shows on every device.
-// User-added trades (id > 400000) from localStorage are merged on top.
+// Silinen seed trade id'lerini takip et
+var DELETED_IDS_LS = 'deleted_ids_v1';
+var deletedIds = [];
+try { var _di = localStorage.getItem(DELETED_IDS_LS); if(_di) deletedIds = JSON.parse(_di); } catch(e){}
+function saveDeletedIds(){ try { localStorage.setItem(DELETED_IDS_LS, JSON.stringify(deletedIds)); } catch(e){} }
+function markDeleted(id){ if(deletedIds.indexOf(id)<0){ deletedIds.push(id); saveDeletedIds(); } }
+
 try {
   var _d = localStorage.getItem(LS);
   if (_d) {
-    // localStorage has full data — use it directly (preserves closed/edited states)
     tradesData = JSON.parse(_d);
-    // Merge any SEED trades that are missing (new months added later)
+    // Merge any SEED trades that are missing — EXCEPT deleted ones
     Object.keys(SEED).forEach(function(m) {
       if (!tradesData[m]) tradesData[m] = [];
       SEED[m].forEach(function(seedTrade) {
+        // Silinmiş ise ekleme
+        if (deletedIds.indexOf(seedTrade.id) >= 0) return;
         if (!tradesData[m].find(function(x){return x.id===seedTrade.id;})) {
           tradesData[m].push(JSON.parse(JSON.stringify(seedTrade)));
         }
       });
     });
   } else {
-    // No localStorage yet — load from SEED
     tradesData = JSON.parse(JSON.stringify(SEED));
-    // Save immediately so future loads use localStorage
     try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e2){}
   }
 } catch(e) {
@@ -2696,6 +2700,7 @@ function openTradeDetail(tradeId, month){
     delBtn.textContent='Sil';
     delBtn.onclick=function(){
       showDeleteConfirm(function(){
+        markDeleted(tradeId);
         var months=Object.keys(tradesData);
         for(var mi=0;mi<months.length;mi++){
           tradesData[months[mi]]=tradesData[months[mi]].filter(function(t){return t.id!=tradeId;});
@@ -2717,6 +2722,7 @@ function openTradeDetail(tradeId, month){
     openDelBtn.textContent='🗑 Pozisyonu Sil';
     openDelBtn.onclick=function(){
       showDeleteConfirm(function(){
+        markDeleted(tradeId);
         var months=Object.keys(tradesData);
         for(var mi=0;mi<months.length;mi++){
           tradesData[months[mi]]=tradesData[months[mi]].filter(function(t){return t.id!=tradeId;});
