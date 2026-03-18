@@ -1782,6 +1782,14 @@ function calcTaxForTrade(t){
 
 function renderVergi(){
   // Her zaman çalışır — ekran aktif olmasa bile veriyi günceller
+  try { _renderVergiInner(); } catch(err){
+    var _vt=document.getElementById('vergiTablosu');
+    if(_vt){_vt.innerHTML='<div style="color:#ef4444;padding:16px;font-size:12px;">⚠️ Hata: '+String(err.message||err)+'</div>';}
+    console.error('renderVergi error:', err);
+  }
+}
+function _renderVergiInner(){
+  // Her zaman çalışır — ekran aktif olmasa bile veriyi günceller
   var _yvEl = document.getElementById('vergiYilSec');
   var vergiYil = _yvEl ? _yvEl.value : '2026';
 
