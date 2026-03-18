@@ -2205,21 +2205,37 @@ function openTradeDetail(tradeId, month){
     closeBtn.textContent='Pozisyonu Kapat';
     closeBtn.onclick=function(){
       var d=document.getElementById('td_date').value;
-      var p=parseFloat(document.getElementById('td_pnl').value);
-      var cpVal=parseFloat(document.getElementById('td_cp').value)||0;
+      var pStr=document.getElementById('td_pnl').value;
+      var cpVal=parseFloat(document.getElementById('td_cp').value);
       var komK=parseFloat(document.getElementById('td_kom_k').value)||0;
       if(!d){alert('Tarih gir');return;}
-      if(isNaN(p)){alert('P&L gir');return;}
+
+      // P&L: önce girilen değer, yoksa kapanış priminden hesapla
+      var p;
+      if(pStr!=='' && !isNaN(parseFloat(pStr))){
+        p=parseFloat(pStr);
+      } else if(!isNaN(cpVal) && cpVal>=0){
+        var _op=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
+        var _ok=parseFloat(trade.openCommission)||0;
+        if(isLong(trade.type)){
+          p = cpVal - komK - _op - _ok;
+        } else {
+          p = _op - _ok - cpVal - komK;
+        }
+      } else {
+        alert('P&L veya Kapanış Primini gir');return;
+      }
+
       var months=Object.keys(tradesData);
       for(var mi=0;mi<months.length;mi++){
         var arr=tradesData[months[mi]];
         for(var ti=0;ti<arr.length;ti++){
           if(arr[ti].id==tradeId){
-            arr[ti].closed=d;arr[ti].pnl=p;
+            arr[ti].closed=d;
+            arr[ti].pnl=p;
             arr[ti].pct=arr[ti].premium?p/Math.abs(arr[ti].premium):null;
-            if(cpVal>0) arr[ti].closePremium=cpVal;
+            if(!isNaN(cpVal)&&cpVal>=0) arr[ti].closePremium=cpVal;
             if(komK>0) arr[ti].closeCommission=komK;
-            // Sync to taxData
             if(!taxData[tradeId]) taxData[tradeId]={};
             if(komK>0) taxData[tradeId].komKapanis=komK;
             saveTaxData();
