@@ -1017,8 +1017,8 @@
 <script>
 // ─── Delete confirm helper ───────────────────────────────
 function showDeleteConfirm(onConfirm){
-  var ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:24px';
+  var _delOv=document.createElement('div');
+  _delOv.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:24px';
 
   var box=document.createElement('div');
   box.style.cssText='background:#453C36;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center';
@@ -1032,18 +1032,18 @@ function showDeleteConfirm(onConfirm){
   var btnNo=document.createElement('button');
   btnNo.style.cssText='flex:1;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#C4AA90;font-size:14px;font-family:inherit;cursor:pointer';
   btnNo.textContent='İptal';
-  btnNo.onclick=function(){ ov.remove(); };
+  btnNo.onclick=function(e){ e.stopPropagation(); _delOv.remove(); };
 
   var btnYes=document.createElement('button');
   btnYes.style.cssText='flex:1;padding:13px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);border-radius:10px;color:#EF4444;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer';
   btnYes.textContent='Sil';
-  btnYes.onclick=function(){ ov.remove(); onConfirm(); };
+  btnYes.onclick=function(e){ e.stopPropagation(); _delOv.remove(); onConfirm(); };
 
   btnRow.appendChild(btnNo);btnRow.appendChild(btnYes);
   box.appendChild(icon);box.appendChild(title);box.appendChild(msg);box.appendChild(btnRow);
-  ov.appendChild(box);
-  document.body.appendChild(ov);
-  ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+  _delOv.appendChild(box);
+  document.body.appendChild(_delOv);
+  _delOv.onclick=function(e){ if(e.target===_delOv) _delOv.remove(); };
 }
 // ─────────────────────────────────────────────────────────
 
