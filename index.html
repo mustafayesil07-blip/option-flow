@@ -861,9 +861,21 @@
   <div class="section-head">
     <div><div class="section-title">Reports</div><div class="section-sub">Performance history</div></div>
   </div>
+  <!-- Veri Güvenliği Kartı -->
+  <div style="margin:0 20px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:14px 16px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:16px;">🛡️</span>
+      <span style="font-family:var(--font-head);font-size:13px;font-weight:700;color:var(--warn);">Veri Güvenliği</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-2);line-height:1.6;margin-bottom:10px;">
+      Verileriniz tarayıcının hafızasında (localStorage) saklanıyor. Tarayıcı cache'i temizlenirse veya uygulama silinirse verileriniz kaybolabilir.
+      <strong style="color:var(--warn)"> Düzenli yedek almanız önerilir.</strong>
+    </div>
+    <div style="font-size:11px;color:var(--text-3)" id="lastBackupInfo">Son yedek: hiç alınmadı</div>
+  </div>
   <div style="display:flex;gap:10px;margin:0 20px 16px;flex-wrap:wrap;">
-    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export Backup</button>
-    <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>
+    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Yedek Al (Export)</button>
+    <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Yedek Yükle (Import)</button>
   </div>
   <div class="monthly-table">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;padding:0 2px;">Monthly Breakdown</div>
@@ -1236,11 +1248,29 @@ try {
     try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e2){}
   }
 } catch(e) {
-  tradesData = JSON.parse(JSON.stringify(SEED));
+  // Ana key okunamadı — shadow key'den kurtar
+  try {
+    var _shadow = localStorage.getItem('opt_v22_shadow');
+    if(_shadow) {
+      tradesData = JSON.parse(_shadow);
+      console.warn('Restored from shadow key');
+    } else {
+      tradesData = JSON.parse(JSON.stringify(SEED));
+    }
+  } catch(e2) {
+    tradesData = JSON.parse(JSON.stringify(SEED));
+  }
 }
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
 
-function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} }
+function saveData() {
+  try {
+    var json=JSON.stringify(tradesData);
+    localStorage.setItem(LS, json);
+    // Her kayıtta ikinci key'e de yaz (ek güvenlik)
+    try{ localStorage.setItem('opt_v22_shadow', json); }catch(e2){}
+  } catch(e){}
+}
 function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} }
 
 // ── Helpers ──────────────────────────────────────────
@@ -1782,6 +1812,21 @@ function renderRisk(){
 
 // ═══════════════════ REPORTS ═══════════════════
 function renderReports(){
+  // Son yedek tarihini göster
+  var el=document.getElementById('lastBackupInfo');
+  if(el){
+    try{
+      var lb=localStorage.getItem('lastBackup');
+      if(lb){
+        var d=new Date(lb);
+        var diffDays=Math.floor((Date.now()-d.getTime())/(1000*60*60*24));
+        var dateStr=d.toISOString().split('T')[0];
+        var color=diffDays>7?'var(--warn)':diffDays>3?'var(--info)':'var(--profit)';
+        el.innerHTML='Son yedek: <span style="color:'+color+';font-weight:600">'+dateStr+'</span>'+(diffDays===0?' (bugün)':' ('+diffDays+' gün önce)')+(diffDays>7?' ⚠️ Yedek almanız önerilir':'');
+      }
+    }catch(e){}
+  }
+
   var m=getMonthlyStats(); var tot={t:0,pnl:0};
   var rows=m.map(function(x){tot.t+=x.trades;tot.pnl+=x.pnl;var wc=x.wr>=.7?'var(--profit)':x.wr>=.5?'var(--warn)':'var(--loss)';return'<div class="monthly-row"><div class="month">'+x.month+'</div><div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div><div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</div></div>';}).reverse().join('');
   var as=calcStats();
@@ -1791,9 +1836,24 @@ function renderReports(){
 
 // ═══════════════════ EXPORT / IMPORT ═══════════════════
 function exportData(){
-  var blob=new Blob([JSON.stringify(tradesData,null,2)],{type:'application/json'});
+  var json=JSON.stringify(tradesData,null,2);
+  var blob=new Blob([json],{type:'application/json'});
   var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='optionflow-backup-'+new Date().toISOString().split('T')[0]+'.json'; a.click();
+  var dateStr=new Date().toISOString().split('T')[0];
+  a.download='optionflow-backup-'+dateStr+'.json'; a.click();
+  // Son yedek tarihini kaydet
+  try{ localStorage.setItem('lastBackup', new Date().toISOString()); }catch(e){}
+  // İkinci key'e de yedekle (güvenlik için)
+  try{ localStorage.setItem('opt_v22_backup', json); }catch(e){}
+  // UI güncelle
+  var el=document.getElementById('lastBackupInfo');
+  if(el) el.textContent='Son yedek: '+dateStr+' ✅';
+  // Toast
+  var t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#22C55E;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
+  t.textContent='✅ Yedek indirildi — '+dateStr;
+  document.body.appendChild(t);
+  setTimeout(function(){t.remove();},3000);
 }
 function importData(){
   var m=document.createElement('div');
@@ -1811,85 +1871,76 @@ function importData(){
 
   var desc=document.createElement('div');
   desc.style.cssText='font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5';
-  desc.textContent='Export ile aldığın JSON dosyasının içeriğini aşağıya yapıştır.';
+  desc.textContent='Export ile aldığın JSON dosyasını seç veya içeriğini yapıştır. Mevcut veriler yeni veriyle değiştirilecek.';
 
-  var ta=document.createElement('textarea');
-  ta.id='impTa';
-  ta.placeholder='{"Ocak":[...],"Subat":[...]} şeklinde JSON yapıştır...';
-  ta.style.cssText='width:100%;height:160px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;color:var(--text);font-size:12px;font-family:var(--font-mono);outline:none;resize:none;margin-bottom:14px;-webkit-appearance:none';
-
-  // Dosyadan yükleme seçeneği
-  var fileLabel=document.createElement('div');
-  fileLabel.style.cssText='font-size:11px;color:var(--text-3);margin-bottom:8px';
-  fileLabel.textContent='veya dosya seç:';
+  // Dosya seçici
+  var fileBtn=document.createElement('button');
+  fileBtn.style.cssText='width:100%;padding:12px;background:rgba(59,130,246,0.12);border:1px dashed rgba(59,130,246,0.4);border-radius:10px;color:var(--info);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px';
+  fileBtn.textContent='📂 JSON Dosyası Seç';
 
   var fileInp=document.createElement('input');
-  fileInp.type='file';
-  fileInp.accept='.json';
-  fileInp.style.cssText='width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px;color:var(--text);font-size:12px;margin-bottom:14px;cursor:pointer';
+  fileInp.type='file'; fileInp.accept='.json';
+  fileInp.style.cssText='display:none';
+
+  var ta=document.createElement('textarea');
+  ta.placeholder='veya JSON içeriğini buraya yapıştır...';
+  ta.style.cssText='width:100%;height:120px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;color:var(--text);font-size:12px;font-family:var(--font-mono);outline:none;resize:none;margin-bottom:14px;-webkit-appearance:none';
+
   fileInp.onchange=function(e){
-    var file=e.target.files[0];
-    if(!file)return;
+    var file=e.target.files[0]; if(!file) return;
+    fileBtn.textContent='📄 '+file.name;
+    fileBtn.style.borderColor='rgba(34,197,94,0.5)';
+    fileBtn.style.color='var(--profit)';
     var reader=new FileReader();
     reader.onload=function(ev){ ta.value=ev.target.result; };
     reader.readAsText(file);
   };
+  fileBtn.onclick=function(){ fileInp.click(); };
 
   var btnRow=document.createElement('div');
   btnRow.style.cssText='display:flex;gap:10px';
 
   var cancelBtn=document.createElement('button');
-  cancelBtn.id='impCancel';
   cancelBtn.style.cssText='flex:1;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:var(--text-2);font-size:14px;cursor:pointer;font-family:inherit';
   cancelBtn.textContent='İptal';
   cancelBtn.onclick=function(){m.remove();};
 
   var saveBtn=document.createElement('button');
-  saveBtn.id='impSave';
   saveBtn.style.cssText='flex:2;padding:13px;background:var(--info);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit';
   saveBtn.textContent='✅ Yükle';
   saveBtn.onclick=function(){
     try{
       var raw=ta.value.trim();
-      if(!raw){alert('JSON yapıştır veya dosya seç');return;}
+      if(!raw){alert('Dosya seç veya JSON yapıştır');return;}
       var d=JSON.parse(raw);
-      if(typeof d!=='object'||Array.isArray(d)){alert('❌ Geçersiz format. {Ay:[...]} yapısında olmalı.');return;}
+      if(typeof d!=='object'||Array.isArray(d)){alert('Geçersiz format. {Ay:[...]} yapısında JSON gerekli.');return;}
       tradesData=d;
       saveData();
-      // deletedIds sıfırla — import sonrası tüm veriler geçerli
-      deletedIds=[];
-      saveDeletedIds();
+      try{ localStorage.setItem('opt_v22_backup', JSON.stringify(d)); }catch(e2){}
+      if(typeof deletedIds!=='undefined'){ deletedIds=[]; saveDeletedIds(); }
       m.remove();
-      renderDashboard();
-      renderTradeList('all');
+      renderDashboard(); renderTradeList('all');
       if(typeof renderPlannedList==='function') renderPlannedList();
       if(typeof renderVergi==='function') renderVergi();
       var total=getAllTrades().length;
       var months=Object.keys(d).length;
-      // Başarı mesajı
-      var _toast=document.createElement('div');
-      _toast.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#22C55E;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
-      _toast.textContent='✅ '+months+' ay, '+total+' trade yüklendi';
-      document.body.appendChild(_toast);
-      setTimeout(function(){_toast.remove();},3000);
+      var t=document.createElement('div');
+      t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#22C55E;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
+      t.textContent='✅ '+months+' ay, '+total+' trade yüklendi';
+      document.body.appendChild(t);
+      setTimeout(function(){t.remove();},3000);
     }catch(e){
-      alert('❌ Geçersiz JSON. Hata: '+e.message);
+      alert('Geçersiz JSON. Hata: '+e.message);
     }
   };
 
-  btnRow.appendChild(cancelBtn);
-  btnRow.appendChild(saveBtn);
-  sheet.appendChild(handle);
-  sheet.appendChild(title);
-  sheet.appendChild(desc);
-  sheet.appendChild(ta);
-  sheet.appendChild(fileLabel);
-  sheet.appendChild(fileInp);
-  sheet.appendChild(btnRow);
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(saveBtn);
+  sheet.appendChild(handle); sheet.appendChild(title); sheet.appendChild(desc);
+  sheet.appendChild(fileBtn); sheet.appendChild(fileInp);
+  sheet.appendChild(ta); sheet.appendChild(btnRow);
   m.appendChild(sheet);
   document.body.appendChild(m);
   m.addEventListener('click',function(e){if(e.target===m)m.remove();});
-  setTimeout(function(){ta.focus();},100);
 }
 
 
