@@ -2899,6 +2899,11 @@ function openTradeDetail(tradeId, month){
     grow1.appendChild(mkInp('td_date','date','','Kapanış Tarihi'));grow1.appendChild(mkInp('td_pnl','number','opsiyonel','P&L ($) — opsiyonel'));
     var grow2=document.createElement('div');grow2.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px';
     grow2.appendChild(mkInp('td_cp','number','0.00',closePremLabel2+' (toplam)'));grow2.appendChild(mkInp('td_kom_k','number','0.00','Komisyon ($) (toplam)'));
+    // Kapanış primi ve komisyon için default 0 set et
+    setTimeout(function(){
+      var _cp=document.getElementById('td_cp'); if(_cp&&_cp.value==='') _cp.value='0';
+      var _ck=document.getElementById('td_kom_k'); if(_ck&&_ck.value==='') _ck.value='0';
+    },10);
 
     // P&L önizleme
     var pnlPreview=document.createElement('div');
@@ -2984,20 +2989,19 @@ function openTradeDetail(tradeId, month){
       var p;
       if(pStr!==''&&!isNaN(parseFloat(pStr))){
         p=parseFloat(pStr);
-      } else if(!isNaN(cpVal)&&cpVal>=0){
-        // Bu entry için P&L = kapanış tarafı etkisi (açılış son adımda hesaplanır)
-        // Her partial sadece kapanış primini ve komisyonunu saklar.
-        // Gerçek PnL son adımda tüm partial'lar toplanarak hesaplanır.
-        // Burada placeholder olarak -(closePrem + kom) saklıyoruz (short için negatif nakit)
-        // Ama nihai PnL calcTaxForTrade ve toplam hesabında doğru yapılacak.
-        // Şimdilik entry pnl = sadece bu kapanışın etkisi, açılış primini dahil etmeden:
-        if(isLong(trade.type)){
-          p = cpVal - komK; // long: bu kapanışta aldık
-        } else {
-          p = -(cpVal + komK); // short: bu kapanışta ödedik (negatif)
-        }
       } else {
-        alert('P&L veya Kapanış Primini gir');return;
+        // cpVal geçerli değil veya girilmedi — 0 kabul et
+        // Kullanıcı sadece komisyon girmek isteyebilir (0 primle kapanış)
+        var _cpRaw = document.getElementById('td_cp') ? document.getElementById('td_cp').value.trim() : '';
+        var _cpFinal = _cpRaw === '' ? 0 : parseFloat(_cpRaw);
+        if(isNaN(_cpFinal)) _cpFinal = 0;
+        if(isLong(trade.type)){
+          p = _cpFinal - komK;
+        } else {
+          p = -(_cpFinal + komK);
+        }
+        // cpVal'i de güncelle (sonraki hesaplar için)
+        cpVal = _cpFinal;
       }
       p=Math.round(p*100)/100;
 
