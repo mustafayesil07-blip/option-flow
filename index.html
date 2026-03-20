@@ -1703,7 +1703,7 @@ function renderDashboard(){
 // ═══════════════════ TRADES ═══════════════════
 var currentFilter='all';
 var currentMonthFilter='all';
-var currentTradeView = 'cards'; // 'cards' | 'list'
+var currentTradeView = 'list'; // 'cards' | 'list'
 
 function setTradeView(v){
   currentTradeView = v;
@@ -1808,11 +1808,11 @@ function renderTradeList(filter, month){
             var _tk=t.ticker.split(' ')[0].toUpperCase();
             var _sp=stockPrices[_tk];
             var _stk=parseFloat(t.strike);
-            var _dist=(_sp&&_stk)?((_sp-_stk)/_stk*100):null;
-            var _dc=_dist===null?'var(--text-2)':Math.abs(_dist)<3?'var(--loss)':Math.abs(_dist)<8?'var(--warn)':'var(--profit)';
+            var _dist=(_sp&&_stk)?((_sp-_stk)/_sp*100):null; // % düşüş gereksinimi
+            var _dc=_dist===null?'var(--text-2)':_dist<0?'#ef4444':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
             return '<td style="padding:9px 8px;text-align:right;white-space:nowrap;">'+
               '<div style="font-family:var(--font-mono);color:var(--text);font-size:12px;">$'+t.strike+'</div>'+
-              (_sp?'<div style="font-family:var(--font-mono);font-size:10px;color:'+_dc+';">$'+_sp+' ('+((_dist>=0?'+':'')+_dist.toFixed(1))+'%)</div>':'')+
+              (_sp?'<div style="font-family:var(--font-mono);font-size:10px;color:'+_dc+';">$'+_sp+' ('+((_dist<0?'⚠ ITM ':(_dist>=0?'-':'+'))+Math.abs(_dist).toFixed(1))+'%)</div>':'')+
               '</td>';
           })()+
           '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiry(t.expiry)+'</td>'+
@@ -1887,13 +1887,13 @@ function renderTradeList(filter, month){
   var _tk=t.ticker.split(' ')[0].toUpperCase();
   var _sp=stockPrices[_tk];
   var _stk=parseFloat(t.strike);
-  var _dist=(_sp&&_stk)?((_sp-_stk)/_stk*100):null;
-  var _dc=_dist===null?'var(--text-2)':Math.abs(_dist)<3?'var(--loss)':Math.abs(_dist)<8?'var(--warn)':'var(--profit)';
+  var _dist=(_sp&&_stk)?((_sp-_stk)/_sp*100):null; // % düşüş gereksinimi
+  var _dc=_dist===null?'var(--text-2)':_dist<0?'#ef4444':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
   return '<div><div class="trade-metric-lbl">Strike / Fiyat</div>'+
     '<div class="trade-metric-val" style="font-size:12px;">'+
     '<span>$'+t.strike+'</span>'+
     (_sp?'<span style="color:'+_dc+';margin-left:5px;font-size:11px;">$'+_sp+
-    ' <span style="font-size:9px;">('+(_dist>=0?'+':'')+_dist.toFixed(1)+'%)</span></span>':'')+
+    ' <span style="font-size:9px;">('+(_dist<0?'ITM ':(_dist<3?'!':'-'))+Math.abs(_dist).toFixed(1)+'%)</span></span>':'')+
     '</div></div>';
 })()+''+
         '<div><div class="trade-metric-lbl">Premium</div><div class="trade-metric-val">'+fmtA$(t.premium)+'</div></div>'+
@@ -3106,7 +3106,27 @@ function switchScreen(name){
   if(name==='statistics')renderStats();
   if(name==='risk')renderRisk();
   if(name==='reports')renderReports();
-  if(name==='trades'){renderTradeList(currentFilter);renderPlannedList();}
+  if(name==='trades'){
+    // İlk girişte: liste görünümü, closed, mevcut ay
+    var _monthNames=['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
+    var _curM = _monthNames[new Date().getMonth()];
+    // Filtre ve ay'ı set et
+    currentFilter='closed';
+    currentMonthFilter=_curM;
+    currentTradeView='list';
+    // Filter pill'leri güncelle
+    document.querySelectorAll('#typeFilterRow .filter-pill').forEach(function(x){
+      x.classList.toggle('active', x.dataset.filter==='closed');
+    });
+    document.querySelectorAll('#monthFilterRow .filter-pill').forEach(function(x){
+      x.classList.toggle('active', x.dataset.month===_curM);
+    });
+    // View butonlarını güncelle
+    var bc=document.getElementById('viewCards'), bl=document.getElementById('viewList');
+    if(bc&&bl){bc.style.background='transparent';bc.style.color='var(--text-3)';bl.style.background='rgba(255,255,255,0.12)';bl.style.color='var(--text)';}
+    renderTradeList();
+    renderPlannedList();
+  }
   if(name==='leaps')renderLeaps();
   if(name==='vergi')renderVergi();
 }
