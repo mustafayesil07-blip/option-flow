@@ -1549,6 +1549,22 @@ function getFilteredClosedTrades(month){
   return getFilteredTrades(month).filter(function(t){ return t.closed && t.pnl != null; });
 }
 
+
+function calcAvgHoldDays(trades){
+  // Sadece CSP, PCS, IC, CC, PMCC için — long pozisyonlar hariç
+  var TYPES = ['CSP','PCS','IC','CC','PMCC'];
+  var eligible = trades.filter(function(t){
+    return TYPES.indexOf(t.type) >= 0 && t.opened && t.closed;
+  });
+  if(!eligible.length) return null;
+  var total = eligible.reduce(function(s,t){
+    var d1=new Date(t.opened), d2=new Date(t.closed);
+    var days=Math.round((d2-d1)/(1000*60*60*24));
+    return s+(days>=0?days:0);
+  },0);
+  return Math.round(total/eligible.length);
+}
+
 function calcStatsFor(month){
   var closed = getFilteredClosedTrades(month);
   var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
@@ -1685,6 +1701,7 @@ function renderDashboard(){
   el=document.getElementById('editPortBtn'); if(el) el.onclick=function(){ editPortSize(); };
   el=document.getElementById('monthlyPnlTotal'); if(el){el.textContent=fmt$(ytd);el.style.color=ytd>=0?'var(--profit)':'var(--loss)';}
 
+  var _holdDays=calcAvgHoldDays(getFilteredClosedTrades(month));
   el=document.getElementById('keyStats');
   if(el)el.innerHTML=[
     {v:fmtA$(stats.avgWin),l:'Avg Win',c:'var(--profit)'},
@@ -1692,7 +1709,8 @@ function renderDashboard(){
     {v:stats.payoff.toFixed(2),l:'Payoff R',c:'var(--info)'},
     {v:stats.profitFactor.toFixed(2),l:'P Factor',c:'var(--warn)'},
     {v:fmt$(stats.ev),l:'EV/Trade',c:'var(--text)'},
-    {v:stats.total,l:month==='all'?'Trades':'Trades ('+month+')',c:'var(--info)'}
+    {v:stats.total,l:month==='all'?'Trades':'Trades ('+month+')',c:'var(--info)'},
+    {v:_holdDays!==null?_holdDays+' gün':'—',l:'Ort. Elde Tutma',c:'var(--purple)'}
   ].map(function(x){
     var _k=x.l.indexOf('Trades')===0?'Trades':x.l;
     return '<div class="stat-cell" onclick="showStatInfo(&quot;'+_k+'&quot;)" style="cursor:pointer;-webkit-user-select:none;user-select:none">'+
@@ -2021,7 +2039,8 @@ function renderStats(){
     {l:'Avg Loss',v:fmtA$(stats.avgLoss),sub:'per trade',c:'var(--loss)'},
     {l:'Payoff Ratio',v:stats.payoff.toFixed(2)+'×',sub:'Win:Loss size',c:'var(--warn)'},
     {l:'EV / Trade',v:fmt$(stats.ev),sub:'expected value',c:stats.ev>=0?'var(--profit)':'var(--loss)'},
-    {l:'Total P&L',v:fmt$(stats.totalPnl),sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true}
+    {l:'Total P&L',v:fmt$(stats.totalPnl),sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true},
+    {l:'Ort. Elde Tutma',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' gün':'—';})(),sub:'CSP/PCS/IC/CC/PMCC',c:'var(--purple)',full:true}
   ].map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
   if(st){var rows=['CSP','CC','PMCC','PCS','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
