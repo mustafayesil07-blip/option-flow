@@ -1130,7 +1130,7 @@ function deleteTradeById(tradeId, closeOverlay){
 }
 
 // ═══════════════ HİSSE FİYATLARI ═══════════════════════
-var PROXY_BASE = 'https://voluble-dieffenbachia-243e91.netlify.app';
+var PROXY_BASE = 'https://hisse-portfoyu.vercel.app';
 
 function _setPriceBtn(html, color, disabled){
   var btn = document.getElementById('priceRefreshBtn');
@@ -1142,7 +1142,7 @@ function _setPriceBtn(html, color, disabled){
 }
 
 function _fetchQuote(symbol){
-  var url = PROXY_BASE + '/.netlify/functions/quote?symbol=' + encodeURIComponent(symbol);
+  var url = PROXY_BASE + '/api/quote?symbol=' + encodeURIComponent(symbol);
   return fetch(url).then(function(r){
     if(!r.ok) return r.json().then(function(e){ throw new Error(e.error||r.status); });
     return r.json();
@@ -1151,7 +1151,7 @@ function _fetchQuote(symbol){
 
 function _fetchBulkQuotes(tickers){
   if(!tickers.length) return Promise.resolve({});
-  var url = PROXY_BASE + '/.netlify/functions/quote?symbol=' + tickers.map(encodeURIComponent).join(',');
+  var url = PROXY_BASE + '/api/quote?symbol=' + tickers.map(encodeURIComponent).join(',');
   return fetch(url)
     .then(function(r){ if(!r.ok) throw new Error('bulk '+r.status); return r.json(); })
     .then(function(data){
