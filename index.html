@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>OptionFlow — Trading Journal</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3D3530">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OptionFlow">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -3761,6 +3768,23 @@ function deleteLeap(id){
   leapsData = leapsData.filter(function(l){ return l.id !== id; });
   saveLeaps();
   renderLeaps();
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  var _host = window.location.hostname;
+  // Only register SW on real hosting (not Claude preview, not file://)
+  var _isHosted = _host !== 'www.claudeusercontent.com' &&
+                  _host !== 'localhost' &&
+                  _host !== '' &&
+                  window.location.protocol !== 'file:';
+  if (_isHosted) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/sw.js')
+        .then(function(reg) { console.log('[PWA] SW registered'); })
+        .catch(function() {});
+    });
+  }
 }
 </script>
 </body>
