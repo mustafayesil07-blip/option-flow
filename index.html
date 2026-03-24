@@ -1451,7 +1451,7 @@ function getKur(date){
   if(!date) return null;
   var d = date.substring(0,10);
   if(kurlarData[d]) return kurlarData[d];
-  // Find nearest previous date
+  // Find nearest previous date (fallback)
   var keys = Object.keys(kurlarData).sort();
   var best = null;
   for(var i=0; i<keys.length; i++){
@@ -1459,6 +1459,12 @@ function getKur(date){
     else break;
   }
   return best;
+}
+// Returns true only if exact date exists (not fallback)
+function hasExactKur(date){
+  if(!date) return false;
+  var d = date.substring(0,10);
+  return !!kurlarData[d];
 }
 
 var SEED = {
@@ -2663,7 +2669,7 @@ function calcTaxForTrade(t){
   var matrah_try = 0;
   var totalKomKapanis = 0;
   var totalClosePrem  = 0;
-  var hasAllKur = acilis_kur > 0;
+  var hasAllKur = acilis_kur > 0 && hasExactKur(t.opened);
 
   if(partialCloses.length > 0){
     // partialCloses her biri için kendi kapanış kuruyla matrah hesapla
@@ -2681,8 +2687,8 @@ function calcTaxForTrade(t){
     var sumCloseMatrah = 0; // Σ kapanış tarafı (kur bazlı)
     partialCloses.forEach(function(pc){
       var pcKapanis = parseFloat(pc.closeCommission) || 0;
-      var pcKur = pc.kapanis_kur || getKur(pc.date) || 0;
-      if(!pcKur) hasAllKur = false;
+      var pcKur = getKur(pc.date) || pc.kapanis_kur || 0;  // güncel kuru önce dene
+      if(!pcKur || !hasExactKur(pc.date)) hasAllKur = false;
       var pcClosePrem = (pc.closePremium != null && !isNaN(pc.closePremium) && parseFloat(pc.closePremium) >= 0)
         ? parseFloat(pc.closePremium) : 0;
       totalKomKapanis += pcKapanis;
@@ -2705,7 +2711,7 @@ function calcTaxForTrade(t){
     // Kısmi kapanma yok — standart hesap
     var komKapanis = parseFloat(t.closeCommission)||parseFloat(td.komKapanis)||0;
     var kapanis_kur = getKur(t.closed) || 0;
-    if(!kapanis_kur) hasAllKur = false;
+    if(!kapanis_kur || !hasExactKur(t.closed)) hasAllKur = false;
     var closePrem = parseFloat(t.closePremium);
     var pnl = parseFloat(t.pnl)||0;
     if(isNaN(closePrem)||closePrem<0){closePrem=isLong(t.type)?openPrem+pnl:openPrem-pnl;}
