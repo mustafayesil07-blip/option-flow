@@ -3792,19 +3792,65 @@ if ('serviceWorker' in navigator) {
   import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import { getMessaging, getToken, onMessage }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
+  import { getFirestore, doc, setDoc }
+                            from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-  const app = initializeApp({
+  const firebaseConfig = {
     apiKey:            "AIzaSyDQQ7GlZ0j6kR_FSTSN06RRGdxY5GMHrHs",
     authDomain:        "optionflow-ef59d.firebaseapp.com",
     projectId:         "optionflow-ef59d",
     storageBucket:     "optionflow-ef59d.firebasestorage.app",
     messagingSenderId: "977067075912",
     appId:             "1:977067075912:web:3732b70b3343fd4c906b7d"
-  });
+  };
 
+  const app       = initializeApp(firebaseConfig);
   const messaging = getMessaging(app);
+  const db        = getFirestore(app);
   const VAPID_KEY = "BDcNMAd0E107KD5mOEBPKV1pMAvGZJv0AK1x7_u2Gq1-ylhCjmxLrgjaMueAILZSDRr6EGJTLduKm9BtgTtQTJw";
 
+  // ── Açık pozisyonları Firestore'a yaz ──────────────────────────────────
+  async function syncPositionsToFirestore(token) {
+    try {
+      // localStorage'dan tüm verileri oku
+      const tradesRaw = localStorage.getItem('opt_v22');
+      const leapsRaw  = localStorage.getItem('leaps_v1');
+      const tradesData = tradesRaw ? JSON.parse(tradesRaw) : {};
+      const leapsData  = leapsRaw  ? JSON.parse(leapsRaw)  : [];
+
+      // Açık trade pozisyonlarını topla
+      const openTrades = [];
+      Object.values(tradesData).forEach(month => {
+        month.forEach(t => {
+          if (!t.closed) openTrades.push({
+            id: t.id, ticker: t.ticker, type: t.type,
+            strike: t.strike, expiry: t.expiry, closed: null
+          });
+        });
+      });
+
+      // Açık LEAPS pozisyonlarını ekle
+      leapsData.forEach(l => {
+        if (!l.closed) openTrades.push({
+          id: 'L' + l.id, ticker: l.ticker, type: 'LEAPS',
+          strike: l.strike, expiry: l.expiry, closed: null
+        });
+      });
+
+      // Firestore'a kaydet
+      await setDoc(doc(db, 'optionflow', 'main'), {
+        positions:   openTrades,
+        token:       token,
+        updatedAt:   new Date().toISOString()
+      });
+
+      console.info('[FCM] Firestore senkronize edildi:', openTrades.length, 'açık pozisyon');
+    } catch (err) {
+      console.warn('[FCM] Firestore sync hatası:', err.message);
+    }
+  }
+
+  // ── Push bildirim izni ve token al ─────────────────────────────────────
   async function initPush() {
     try {
       const permission = await Notification.requestPermission();
@@ -3814,7 +3860,6 @@ if ('serviceWorker' in navigator) {
         scope: '/option-flow/'
       });
 
-      // SW aktif olana kadar bekle
       await new Promise((resolve) => {
         if (swReg.active) return resolve();
         const sw = swReg.installing || swReg.waiting;
@@ -3827,27 +3872,21 @@ if ('serviceWorker' in navigator) {
       const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       if (token) {
         console.info('[FCM] Token:', token);
-        // Ekranda göster
-        const box = document.createElement('div');
-        box.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;background:#1a1a1a;color:#22C55E;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;border:1px solid #22C55E;z-index:99999;word-break:break-all;';
-        box.innerHTML = '<b style="display:block;margin-bottom:6px;">FCM Token (kopyala):</b>' + token + '<br><button onclick="navigator.clipboard.writeText(`' + token + '`).then(()=>this.textContent=\'Kopyalandı ✓\')" style="margin-top:8px;background:#22C55E;color:#000;border:none;padding:6px 12px;border-radius:6px;font-weight:bold;cursor:pointer;">Kopyala</button> <button onclick="this.closest(\'div\').remove()" style="background:none;border:1px solid #555;color:#aaa;padding:6px 10px;border-radius:6px;cursor:pointer;">Kapat</button>';
-        document.body.appendChild(box);
+        // Token alınınca pozisyonları Firestore'a senkronize et
+        await syncPositionsToFirestore(token);
       }
     } catch (err) {
       console.error('[FCM] Hata:', err);
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;background:#1a1a1a;color:#EF4444;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;border:1px solid #EF4444;z-index:99999;word-break:break-all;';
-      box.innerHTML = '<b style="display:block;margin-bottom:6px;">FCM Hata:</b>' + err.message + '<br><button onclick="this.closest(\'div\').remove()" style="margin-top:8px;background:none;border:1px solid #555;color:#aaa;padding:6px 10px;border-radius:6px;cursor:pointer;">Kapat</button>';
-      document.body.appendChild(box);
     }
   }
 
+  // ── Uygulama açıkken gelen bildirimler ─────────────────────────────────
   onMessage(messaging, (payload) => {
     const { title, body } = payload.notification ?? {};
     if (Notification.permission === 'granted') {
       new Notification(title ?? 'OptionFlow', {
         body:  body ?? '',
-        icon:  '/icon-192.png'
+        icon:  '/option-flow/icon-192.png'
       });
     }
   });
