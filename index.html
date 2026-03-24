@@ -1507,8 +1507,13 @@ try {
 }
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
 
-function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} }
-function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} }
+function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); }
+function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} syncFirestoreIfReady(); }
+
+var _fcmToken = null;
+function syncFirestoreIfReady() {
+  if(_fcmToken) syncPositionsToFirestore(_fcmToken);
+}
 
 // ── Helpers ──────────────────────────────────────────
 function getAllTrades() {
@@ -3886,6 +3891,7 @@ if ('serviceWorker' in navigator) {
       const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       if (token) {
         console.info('[FCM] Token:', token);
+        window._fcmToken = token;
         // Token alınınca pozisyonları Firestore'a senkronize et
         await syncPositionsToFirestore(token);
       }
