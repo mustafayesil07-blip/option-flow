@@ -3810,7 +3810,11 @@ if ('serviceWorker' in navigator) {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return;
 
-      const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+      const swReg = await navigator.serviceWorker.register('/option-flow/firebase-messaging-sw.js', {
+        scope: '/option-flow/'
+      });
+
+      const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       if (token) {
         console.info('[FCM] Token:', token);
         // Ekranda göster
