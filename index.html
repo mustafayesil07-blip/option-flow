@@ -3821,6 +3821,10 @@ if ('serviceWorker' in navigator) {
       }
     } catch (err) {
       console.error('[FCM] Hata:', err);
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;background:#1a1a1a;color:#EF4444;font-size:11px;font-family:monospace;padding:12px;border-radius:10px;border:1px solid #EF4444;z-index:99999;word-break:break-all;';
+      box.innerHTML = '<b style="display:block;margin-bottom:6px;">FCM Hata:</b>' + err.message + '<br><button onclick="this.closest(\'div\').remove()" style="margin-top:8px;background:none;border:1px solid #555;color:#aaa;padding:6px 10px;border-radius:6px;cursor:pointer;">Kapat</button>';
+      document.body.appendChild(box);
     }
   }
 
