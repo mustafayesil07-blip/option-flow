@@ -48,6 +48,21 @@
 
   /* Privacy mode */
   body.privacy-mode .privacy-val { filter: blur(6px); user-select: none; }
+
+  /* NLV Card */
+  .nlv-card {
+    grid-column: 1/-1;
+    background: linear-gradient(135deg, rgba(34,197,94,0.10), rgba(16,180,120,0.06));
+    border: 1px solid rgba(34,197,94,0.22);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 2px;
+  }
+  .nlv-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 6px; }
+  .nlv-usd { font-size: 34px; font-weight: 700; font-family: var(--font-head); letter-spacing: -1px; color: var(--profit); line-height: 1; }
+  .nlv-try { font-size: 15px; font-weight: 500; color: var(--text-2); margin-top: 4px; }
+  .nlv-sub { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+  .nlv-edit-btn { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25); border-radius: 7px; padding: 5px 12px; color: var(--profit); font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html { font-size: 16px; scroll-behavior: smooth; }
 
@@ -731,6 +746,15 @@
     <div class="filter-pill" data-dash-month="Mart" onclick="setDashMonth(this,'Mart')">Mart</div>
   </div>
   <div class="hero-strip">
+    <div id="nlvCard" class="nlv-card" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="nlv-label">Net Liquidation Value</div>
+        <button class="nlv-edit-btn" onclick="openNlvModal()">✎ Başlangıç</button>
+      </div>
+      <div class="nlv-usd privacy-val" id="nlvUsd">—</div>
+      <div class="nlv-try privacy-val" id="nlvTry">—</div>
+      <div class="nlv-sub" id="nlvSub">—</div>
+    </div>
     <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(180,130,80,0.12),rgba(120,90,60,0.08));border-color:rgba(180,130,80,0.2);">
       <div class="hero-label" id="heroPnlLabel">Total P&L — YTD</div>
       <div class="hero-val privacy-val" id="heroPnl">—</div>
@@ -1877,6 +1901,8 @@ function renderDashboard(){
   el=document.getElementById('heroCollPct'); if(el){el.textContent=(cp*100).toFixed(0)+'%';el.style.color=cp>0.6?'var(--loss)':cp>0.4?'var(--warn)':'var(--info)';}
   el=document.getElementById('collBarFill'); if(el)el.style.width=Math.min(100,cp*100)+'%';
   el=document.getElementById('portSizeLabel'); if(el) el.textContent='$'+Math.round(PORT_SIZE/1000)+'K';
+  // NLV güncelle
+  if(typeof updateNlvCard === 'function') updateNlvCard();
   el=document.getElementById('editPortBtn'); if(el) el.onclick=function(){ editPortSize(); };
   el=document.getElementById('monthlyPnlTotal'); if(el){el.textContent=fmt$(ytd);el.style.color=ytd>=0?'var(--profit)':'var(--loss)';}
 
@@ -4045,9 +4071,11 @@ function reloadProfileData() {
   var _nowMonth = _jsToApp2[new Date().getMonth()];
   if(!tradesData[_nowMonth]) { tradesData[_nowMonth] = []; }
 
+  // NLV yükle
+  if(typeof loadNlv === 'function') loadNlv();
   // Ekranı yenile
   switchScreen('dashboard');
-  setTimeout(function(){ updateDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
+  setTimeout(function(){ renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
 }
 
 function showProfileScreen() {
@@ -4065,6 +4093,115 @@ function showProfileScreen() {
     document.getElementById('profile-screen').style.display = 'flex';
   }
 })();
+</script>
+
+<!-- NLV MODAL -->
+<div id="nlv-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);align-items:flex-end;justify-content:center;">
+  <div style="background:#453C36;border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-width:500px;border-top:1px solid rgba(255,255,255,.1);">
+    <div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>
+    <div style="font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px;">NLV Başlangıç Değeri</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:20px;">USD cinsinden başlangıç portföy değerini girin. Kapatılan işlemler otomatik olarak bu değere eklenir/çıkarılır.</div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;">Başlangıç Değeri (USD)</div>
+      <div style="position:relative;">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text-3);font-size:14px;font-weight:600;">$</span>
+        <input id="nlv-start-input" type="number" step="100" min="0"
+          style="width:100%;background:rgba(255,255,255,0.06);border:1.5px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 14px 14px 32px;color:var(--text);font-size:18px;font-weight:700;font-family:var(--font-mono);outline:none;"
+          placeholder="50000">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="closeNlvModal()" style="flex:1;padding:14px;background:rgba(255,255,255,.06);border:none;border-radius:12px;color:var(--text-2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">İptal</button>
+      <button onclick="saveNlvStart()" style="flex:1;padding:14px;background:var(--profit);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── NLV (Net Liquidation Value) ───────────────────────────────────────────
+var NLV_START = 0;
+
+function nlvKey() { return profileKey('nlv_start'); }
+
+function loadNlv() {
+  try { var v = localStorage.getItem(nlvKey()); NLV_START = v ? parseFloat(v) : 0; } catch(e) { NLV_START = 0; }
+}
+
+function getLatestKur() {
+  var keys = Object.keys(kurlarData).sort();
+  if(!keys.length) return null;
+  return kurlarData[keys[keys.length - 1]];
+}
+
+function updateNlvCard() {
+  var card = document.getElementById('nlvCard');
+  if(!card) return;
+
+  loadNlv();
+
+  // NLV kartı sadece başlangıç değeri girilmişse göster
+  if(NLV_START <= 0) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  // Tüm kapatılmış trade'lerin toplam PnL'i
+  var allClosed = getAllTrades().filter(function(t){ return t.closed && t.pnl != null; });
+  var totalPnl = allClosed.reduce(function(s, t){ return s + (t.pnl || 0); }, 0);
+
+  var nlv = NLV_START + totalPnl;
+  var change = totalPnl;
+  var changePct = NLV_START > 0 ? (totalPnl / NLV_START * 100) : 0;
+
+  // USD göster
+  var usdEl = document.getElementById('nlvUsd');
+  if(usdEl) {
+    usdEl.textContent = fmtA$(nlv);
+    usdEl.style.color = nlv >= NLV_START ? 'var(--profit)' : 'var(--loss)';
+  }
+
+  // TRY göster
+  var kur = getLatestKur();
+  var tryEl = document.getElementById('nlvTry');
+  if(tryEl) {
+    if(kur) {
+      var nlvTry = nlv * kur;
+      tryEl.textContent = '≈ ₺' + Math.round(nlvTry).toLocaleString('tr-TR') + ' (kur: ' + kur.toFixed(4) + ')';
+      tryEl.style.display = 'block';
+    } else {
+      tryEl.textContent = 'Kur girilmemiş';
+      tryEl.style.color = 'var(--text-3)';
+    }
+  }
+
+  // Alt bilgi
+  var subEl = document.getElementById('nlvSub');
+  if(subEl) {
+    var sign = change >= 0 ? '+' : '';
+    subEl.textContent = 'Başlangıç: ' + fmtA$(NLV_START) + '  ·  Toplam PnL: ' + sign + fmt$(change) + ' (' + sign + changePct.toFixed(2) + '%)';
+  }
+}
+
+function openNlvModal() {
+  loadNlv();
+  document.getElementById('nlv-start-input').value = NLV_START > 0 ? NLV_START : '';
+  document.getElementById('nlv-modal').style.display = 'flex';
+}
+
+function closeNlvModal() {
+  document.getElementById('nlv-modal').style.display = 'none';
+}
+
+function saveNlvStart() {
+  var val = parseFloat(document.getElementById('nlv-start-input').value);
+  if(!val || val <= 0) { alert('Geçerli bir değer girin'); return; }
+  NLV_START = val;
+  try { localStorage.setItem(nlvKey(), val); } catch(e) {}
+  closeNlvModal();
+  updateNlvCard();
+}
+
+document.getElementById('nlv-modal').addEventListener('click', function(e) {
+  if(e.target === this) closeNlvModal();
+});
 </script>
 </body>
 </html>
