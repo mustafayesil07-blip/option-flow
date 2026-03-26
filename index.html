@@ -678,12 +678,39 @@
 <body>
 
 <!-- TOP BAR -->
+
+<!-- PROFILE SELECTOR -->
+<div id="profile-screen" style="display:none;position:fixed;inset:0;z-index:99999;background:#3D3530;align-items:center;justify-content:center;flex-direction:column;">
+  <div style="text-align:center;padding:40px 24px;width:100%;max-width:400px;">
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;color:#F5EDE0;margin-bottom:6px;">OptionFlow</div>
+    <div style="font-size:13px;color:#8A7A6A;margin-bottom:40px;">Profil seçin</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <button onclick="selectProfile('mustafa')" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
+        <div style="font-size:32px;margin-bottom:10px;">👨</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#F5EDE0;">Mustafa</div>
+      </button>
+      <button onclick="selectProfile('ayse')" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
+        <div style="font-size:32px;margin-bottom:10px;">👩</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#F5EDE0;">Ayşe</div>
+      </button>
+      <button onclick="selectProfile('sevi')" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
+        <div style="font-size:32px;margin-bottom:10px;">👩</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#F5EDE0;">Sevi</div>
+      </button>
+      <button onclick="selectProfile('ikbal')" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
+        <div style="font-size:32px;margin-bottom:10px;">👩</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#F5EDE0;">İkbal</div>
+      </button>
+    </div>
+  </div>
+</div>
 <header class="topbar">
   <div class="topbar-brand">
     <div class="topbar-logo">OF</div>
     <span class="topbar-name">OptionFlow</span>
   </div>
   <div class="topbar-right">
+    <button id="profileBtn" onclick="showProfileScreen()" title="Profil değiştir" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 10px;color:#C4AA90;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">👤 —</button>
     <button id="privacyBtn" onclick="togglePrivacy()" title="Tutarları gizle" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#6B5A4A;font-size:13px;cursor:pointer">👁</button>
     <button id="priceRefreshBtn" onclick="fetchOptionPrices()" style="background:rgba(16,212,142,0.12);border:1px solid rgba(16,212,142,0.22);border-radius:8px;padding:5px 11px;color:#10D48E;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📡 Fiyat</button>
     <button id="notifBtn" onclick="toggleNotifications()" title="Strike yaklasma bildirimleri" style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.20);border-radius:8px;padding:5px 9px;color:#9A8472;font-size:13px;cursor:pointer">🔔</button>
@@ -3914,6 +3941,112 @@ if ('serviceWorker' in navigator) {
   if ('Notification' in window && 'serviceWorker' in navigator) {
     setTimeout(initPush, 2000);
   }
+</script>
+
+<script>
+// ── PROFILE SYSTEM ────────────────────────────────────────────────────────
+var PROFILES = {
+  mustafa: { name: 'Mustafa', emoji: '👨' },
+  ayse:    { name: 'Ayşe',    emoji: '👩' },
+  sevi:    { name: 'Sevi',    emoji: '👩' },
+  ikbal:   { name: 'İkbal',   emoji: '👩' }
+};
+
+var ACTIVE_PROFILE = null;
+
+// localStorage key'lerini profil prefix'iyle güncelle
+var ALL_LS_KEYS = {
+  LS:               'opt_v22',
+  LEAPS_LS:         'leaps_v1',
+  KURLAR_LS:        'kurlar_v2',
+  TAX_LS:           'tax_v1',
+  PLAN_LS:          'planned_v1',
+  DELETED_IDS_LS:   'deleted_ids_v1',
+  LS_STOCK_PRICES:  'optflow_prices_v1',
+  LS_PREPOST:       'optflow_prepost_v1',
+  LS_ZONES:         'optflow_zones_v1',
+  PORT_SIZE_KEY:    'temH',
+  AUTO_REFRESH:     'optflow_autorefresh'
+};
+
+function profileKey(base) {
+  return ACTIVE_PROFILE + '_' + base;
+}
+
+function selectProfile(profile) {
+  ACTIVE_PROFILE = profile;
+  localStorage.setItem('optflow_active_profile', profile);
+
+  // Global key değişkenlerini profil prefix'iyle güncelle
+  LS              = profileKey('opt_v22');
+  LEAPS_LS        = profileKey('leaps_v1');
+  KURLAR_LS       = profileKey('kurlar_v2');
+  TAX_LS          = profileKey('tax_v1');
+  PLAN_LS         = profileKey('planned_v1');
+  DELETED_IDS_LS  = profileKey('deleted_ids_v1');
+  LS_STOCK_PRICES = profileKey('optflow_prices_v1');
+  LS_PREPOST      = profileKey('optflow_prepost_v1');
+  LS_ZONES        = profileKey('optflow_zones_v1');
+
+  // Profil butonunu güncelle
+  var p = PROFILES[profile];
+  var btn = document.getElementById('profileBtn');
+  if(btn) btn.textContent = p.emoji + ' ' + p.name;
+
+  // Profil ekranını kapat
+  document.getElementById('profile-screen').style.display = 'none';
+
+  // Veriyi profil için yeniden yükle
+  reloadProfileData();
+}
+
+function reloadProfileData() {
+  // tradesData
+  try {
+    var _d = localStorage.getItem(LS);
+    if(_d) { tradesData = JSON.parse(_d); }
+    else { tradesData = JSON.parse(JSON.stringify(SEED)); }
+  } catch(e) { tradesData = JSON.parse(JSON.stringify(SEED)); }
+
+  // leapsData
+  try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
+
+  // kurlarData
+  kurlarData = JSON.parse(JSON.stringify(KURLAR_SEED));
+  try { var _k = localStorage.getItem(KURLAR_LS); if(_k){ var _ks=JSON.parse(_k); Object.keys(_ks).forEach(function(d){ kurlarData[d]=_ks[d]; }); } } catch(e){}
+
+  // taxData
+  try { var _tx = localStorage.getItem(TAX_LS); taxData = _tx ? JSON.parse(_tx) : {}; } catch(e) { taxData = {}; }
+
+  // plannedTrades
+  try { var _pl = localStorage.getItem(PLAN_LS); plannedTrades = _pl ? JSON.parse(_pl) : []; } catch(e) { plannedTrades = []; }
+
+  // deletedIds
+  try { var _di = localStorage.getItem(DELETED_IDS_LS); deletedIds = _di ? JSON.parse(_di) : []; } catch(e) { deletedIds = []; }
+
+  // PORT_SIZE
+  try { var _h = localStorage.getItem(profileKey('temH')); if(_h) PORT_SIZE = parseInt(_h); } catch(e){}
+
+  // Ekranı yenile
+  switchScreen('dashboard');
+  setTimeout(function(){ updateDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
+}
+
+function showProfileScreen() {
+  document.getElementById('profile-screen').style.display = 'flex';
+}
+
+// Sayfa açılışında profil seç
+(function initProfile() {
+  var saved = localStorage.getItem('optflow_active_profile');
+  if(saved && PROFILES[saved]) {
+    // Kısa gecikme ile yükle (DOM hazır olsun)
+    setTimeout(function(){ selectProfile(saved); }, 50);
+  } else {
+    // Profil seçim ekranını göster
+    document.getElementById('profile-screen').style.display = 'flex';
+  }
+})();
 </script>
 </body>
 </html>
