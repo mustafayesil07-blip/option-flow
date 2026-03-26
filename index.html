@@ -2438,7 +2438,7 @@ function showAddTrade(existingTrade){
       '<!-- Row 2: Strike + Month -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Strike','<input id="nt_s" placeholder="50" style="'+s+'"'+(isEdit?' value="'+existingTrade.strike+'"':'')+'>') +
-        _fldWrap('Ay','<select id="nt_m" style="'+s+'">'+mo+'</select>')+
+        _fldWrap('Ay','<select id="nt_m" style="'+s+';color:#F5EDE0;background:#564C44;">'+mo+'</select>')+
       '</div>'+
 
       '<!-- Row 3: Qty + Collateral -->'+
@@ -3580,6 +3580,8 @@ var AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 dakika
 var _autoRefreshEnabled = false;
 
 try { _autoRefreshEnabled = localStorage.getItem('optflow_autorefresh') === '1'; } catch(e) {}
+// Mevcut ayı tradesData'ya ekle (yoksa)
+(function(){ var _m=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'][new Date().getMonth()]; if(tradesData && !tradesData[_m]) tradesData[_m]=[]; })();
 
 function startAutoRefresh() {
   if (_autoRefreshInterval) clearInterval(_autoRefreshInterval);
@@ -4033,6 +4035,11 @@ function reloadProfileData() {
 
   // PORT_SIZE
   try { var _h = localStorage.getItem(profileKey('temH')); if(_h) PORT_SIZE = parseInt(_h); } catch(e){}
+
+  // Mevcut ayı otomatik ekle
+  var _jsToApp2=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+  var _nowMonth = _jsToApp2[new Date().getMonth()];
+  if(!tradesData[_nowMonth]) { tradesData[_nowMonth] = []; }
 
   // Ekranı yenile
   switchScreen('dashboard');
