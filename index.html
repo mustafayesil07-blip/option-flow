@@ -2403,7 +2403,8 @@ function showAddTrade(existingTrade){
   var isEdit = !!existingTrade;
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
-  var mo=Object.keys(tradesData).map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
+  var _moKeys = Object.keys(tradesData).length > 0 ? Object.keys(tradesData) : ['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
+  var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=['LEAPS','Long Call'];
   var ALL_TYPES=['CSP','PCS','CC','PMCC','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'];
   var _initialType = isEdit ? existingTrade.type : 'CSP';
@@ -3982,7 +3983,8 @@ function selectProfile(profile) {
   // Global key değişkenlerini profil prefix'iyle güncelle
   LS              = profileKey('opt_v22');
   LEAPS_LS        = profileKey('leaps_v1');
-  KURLAR_LS       = profileKey('kurlar_v2');
+  // KURLAR_LS paylaşımlı — prefix YOK (tüm profiller aynı kuru kullanır)
+  KURLAR_LS = 'kurlar_v2';
   TAX_LS          = profileKey('tax_v1');
   PLAN_LS         = profileKey('planned_v1');
   DELETED_IDS_LS  = profileKey('deleted_ids_v1');
