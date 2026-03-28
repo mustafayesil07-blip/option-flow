@@ -3855,7 +3855,7 @@ if ('serviceWorker' in navigator) {
                   window.location.protocol !== 'file:';
   if (_isHosted) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/option-flow/sw.js', {scope: '/option-flow/'})
         .then(function(reg) { console.log('[PWA] SW registered'); })
         .catch(function() {});
     });
