@@ -1654,7 +1654,7 @@ function getDTE(exp){ if(!exp) return null; return Math.max(0, Math.round((new D
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
-function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; return'tag-other'; }
+function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; return'tag-other'; }
 function tcol(ticker){ var c=['rgba(59,130,246,.15)','rgba(139,92,246,.15)','rgba(34,197,94,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)','rgba(16,185,129,.15)']; var tc=['var(--info)','var(--purple)','var(--profit)','var(--warn)','var(--loss)','#10b981']; var i=Math.abs((ticker.charCodeAt(0)||0)*3+(ticker.charCodeAt(1)||0))%c.length; return {bg:c[i],color:tc[i]}; }
 
 // ═══════════════════ NAVIGATION ═══════════════════
@@ -2241,13 +2241,36 @@ document.addEventListener('click',function(e){
 document.querySelectorAll('.period-btn').forEach(function(b){b.addEventListener('click',function(){this.closest('.period-row').querySelectorAll('.period-btn').forEach(function(x){x.classList.remove('active');});this.classList.add('active');});});
 
 // ═══════════════════ STATISTICS ═══════════════════
+function getStatsFilteredTrades(month) {
+  var STATS_TYPES = ['CSP','PCS','IC','BCS'];
+  return getFilteredClosedTrades(month).filter(function(t){
+    return STATS_TYPES.indexOf(t.type) >= 0;
+  });
+}
+
+function calcStatsForStats(month) {
+  var closed = getStatsFilteredTrades(month);
+  var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
+  var winners  = closed.filter(function(t){ return t.pnl > 0; });
+  var losers   = closed.filter(function(t){ return t.pnl <= 0; });
+  var winRate  = closed.length ? winners.length/closed.length : 0;
+  var avgWin   = winners.length ? winners.reduce(function(s,t){return s+t.pnl;},0)/winners.length : 0;
+  var avgLoss  = losers.length  ? Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0)/losers.length) : 0;
+  var payoff   = avgLoss > 0 ? avgWin/avgLoss : 0;
+  var gP = winners.reduce(function(s,t){return s+t.pnl;},0);
+  var gL = Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0));
+  var pf = gL > 0 ? gP/gL : 0;
+  var ev = closed.length ? totalPnl/closed.length : 0;
+  return { totalPnl:totalPnl, winners:winners.length, losers:losers.length, total:closed.length, winRate:winRate, avgWin:avgWin, avgLoss:avgLoss, payoff:payoff, profitFactor:pf, ev:ev };
+}
+
 function renderStats(){
   var month = currentStatMonth;
-  var stats=calcStatsFor(month);
-  var closed=getFilteredClosedTrades(month);
+  var stats=calcStatsForStats(month);
+  var closed=getStatsFilteredTrades(month);
   var open=getOpenTrades();
   var label = month==='all' ? 'Tüm zamanlar' : month;
-  var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' kapatılan · '+open.length+' açık';
+  var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/BCS · '+open.length+' açık';
   var dctx=document.getElementById('donutChart');
   if(dctx){if(donutChartInst)donutChartInst.destroy();donutChartInst=new Chart(dctx.getContext('2d'),{type:'doughnut',data:{datasets:[{data:[stats.winners,stats.losers],backgroundColor:['rgba(34,197,94,.8)','rgba(239,68,68,.8)'],borderColor:['#22C55E','#EF4444'],borderWidth:1.5,hoverOffset:4}]},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});}
   var dl=document.getElementById('donutLegend');
@@ -2263,7 +2286,7 @@ function renderStats(){
     {l:'Payoff Ratio',v:stats.payoff.toFixed(2)+'×',sub:'Win:Loss size',c:'var(--warn)'},
     {l:'EV / Trade',v:fmt$(stats.ev),sub:'expected value',c:stats.ev>=0?'var(--profit)':'var(--loss)'},
     {l:'Total P&L',v:'<span class="privacy-val">'+fmt$(stats.totalPnl)+'</span>',sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true},
-    {l:'Ort. Elde Tutma',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' gün':'—';})(),sub:'CSP/PCS/IC/CC/PMCC',c:'var(--purple)',full:true},
+    {l:'Ort. Elde Tutma',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' gün':'—';})(),sub:'CSP/PCS/IC/BCS',c:'var(--purple)',full:true},
     (function(){
       var SPREAD=['CSP','PCS','IC'];
       var sp=closed.filter(function(t){return SPREAD.indexOf(t.type)>=0;});
@@ -2276,7 +2299,7 @@ function renderStats(){
     })()
   ].flat().map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
-  if(st){var rows=['CSP','CC','PMCC','PCS','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
+  if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
 }
 
 // ═══════════════════ RISK ═══════════════════
@@ -2432,7 +2455,7 @@ function showAddTrade(existingTrade){
   var _moKeys = Object.keys(tradesData).length > 0 ? Object.keys(tradesData) : ['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
   var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=['LEAPS','Long Call'];
-  var ALL_TYPES=['CSP','PCS','CC','PMCC','IC','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'];
+  var ALL_TYPES=['CSP','PCS','CC','PMCC','IC','BCS','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'];
   var _initialType = isEdit ? existingTrade.type : 'CSP';
 
   var sheet=document.createElement('div');
