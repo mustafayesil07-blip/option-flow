@@ -2746,7 +2746,7 @@ function calcTaxForTrade(t){
     var sumCloseMatrah = 0; // Σ kapanış tarafı (kur bazlı)
     partialCloses.forEach(function(pc){
       var pcKapanis = parseFloat(pc.closeCommission) || 0;
-      var pcKur = getKur(pc.date) || pc.kapanis_kur || 0;  // güncel kuru önce dene
+      var pcKur = getKur(pc.date) || 0;  // her zaman güncel kurlarData'dan al
       if(!pcKur || !hasExactKur(pc.date)) hasAllKur = false;
       var pcClosePrem = (pc.closePremium != null && !isNaN(pc.closePremium) && parseFloat(pc.closePremium) >= 0)
         ? parseFloat(pc.closePremium) : 0;
@@ -2789,7 +2789,7 @@ function calcTaxForTrade(t){
   return {
     matrah_try: matrah_try,
     acilis_kur: acilis_kur,
-    kapanis_kur: (partialCloses.length>0 ? (partialCloses[partialCloses.length-1].kapanis_kur||getKur(t.closed)||0) : (getKur(t.closed)||0)),
+    kapanis_kur: getKur(t.closed) || (partialCloses.length>0 ? (partialCloses[partialCloses.length-1].kapanis_kur||0) : 0),
     komAcilis: komAcilis,
     komKapanis: totalKomKapanis,
     openPrem: openPrem,
@@ -3356,7 +3356,7 @@ function openTradeDetail(tradeId, month){
       if(isPartialMode){
         var qty=closingQty;
         if(qty<1||qty>remainingQ){alert('Geçerli kontrat sayısı gir (1-'+remainingQ+')');return;}
-        var pcEntry={date:d,qty:qty,pnl:p,closePremium:Math.round(cpVal*100)/100,closeCommission:Math.round(komK*100)/100,acilis_kur:getKur(trade.opened)||0,kapanis_kur:getKur(d)||0};
+        var pcEntry={date:d,qty:qty,pnl:p,closePremium:Math.round(cpVal*100)/100,closeCommission:Math.round(komK*100)/100};
         for(var mi=0;mi<months.length;mi++){var arr=tradesData[months[mi]];for(var ti=0;ti<arr.length;ti++){if(String(arr[ti].id)===String(tradeId)){if(!arr[ti].partialCloses)arr[ti].partialCloses=[];arr[ti].partialCloses.push(pcEntry);var newCQ=arr[ti].partialCloses.reduce(function(s,x){return s+(x.qty||0);},0);if(newCQ>=(arr[ti].q||1)){var _op2=parseFloat(arr[ti].openPremium)||parseFloat(arr[ti].premium)||0;var _ok2=parseFloat(arr[ti].openCommission)||0;var _sumClose=arr[ti].partialCloses.reduce(function(s,x){return s+(x.closePremium||0);},0);var _sumKom=arr[ti].partialCloses.reduce(function(s,x){return s+(x.closeCommission||0);},0);var tPnl=isLong(arr[ti].type)?(_sumClose-_sumKom-_op2-_ok2):(_op2-_ok2-_sumClose-_sumKom);arr[ti].closed=d;arr[ti].pnl=Math.round(tPnl*100)/100;arr[ti].pct=arr[ti].premium?arr[ti].pnl/Math.abs(arr[ti].premium):null;}break;}}}
       } else {
         // TAM KAPAT: Son kapanışı partialCloses'a ekle
@@ -3375,7 +3375,7 @@ function openTradeDetail(tradeId, month){
                 closePremium:Math.round(cpVal*100)/100,
                 closeCommission:Math.round(komK*100)/100,
                 acilis_kur:getKur(_t.opened)||0,
-                kapanis_kur:getKur(d)||0
+                // kapanis_kur saklanmıyor — her zaman kurlarData'dan okunur
               };
               if(!_t.partialCloses)_t.partialCloses=[];
               _t.partialCloses.push(lastEntry);
