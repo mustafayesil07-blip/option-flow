@@ -1407,7 +1407,7 @@ function getTradeDistPct(trade, spot) {
   if (isNaN(stk)) return null;
   var type = (trade.type || '').toUpperCase();
   var isShortPut  = type === 'CSP' || type === 'PCS';
-  var isShortCall = type === 'CC'  || type === 'PMCC';
+  var isShortCall = type === 'CC'  || type === 'PMCC' || type === 'BCS';
   if (type === 'IC') {
     // Iron condor: two strikes "260/330" — use nearest
     var parts = trade.strike.split('/');
@@ -2058,7 +2058,7 @@ function renderTradeList(filter, month){
             var _extColorL='var(--text-3)';
             var _stk=parseFloat(t.strike);
             var _shortPuts=['CSP','PCS','COLLAR PUT'];
-            var _shortCalls=['CC','PMCC','HEDGE','COLLAR CALL'];
+            var _shortCalls=['CC','PMCC','BCS','HEDGE','COLLAR CALL'];
             var _isIC=t.type==='IC';
             var _isShortPut=_shortPuts.indexOf(t.type)>=0;
             var _isShortCall=_shortCalls.indexOf(t.type)>=0;
@@ -2167,7 +2167,7 @@ function renderTradeList(filter, month){
   var _showColor='var(--text-3)';
   var _stk=parseFloat(t.strike);
   var _sPuts=['CSP','PCS','COLLAR PUT'];
-  var _sCalls=['CC','PMCC','HEDGE','COLLAR CALL'];
+  var _sCalls=['CC','PMCC','BCS','HEDGE','COLLAR CALL'];
   var _isIC = t.type==='IC';
   var _isSP=_sPuts.indexOf(t.type)>=0;
   var _isSC=_sCalls.indexOf(t.type)>=0;
