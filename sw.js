@@ -1,12 +1,11 @@
-const CACHE = 'optflow-v4';
-const CORE = [
-  '/option-flow/',
-  '/option-flow/index.html'
-];
+const CACHE = 'optflow-v5';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
-    caches.open(CACHE).then(function(c) { return c.addAll(CORE); })
+    caches.open(CACHE).then(function(c) {
+      // Sadece index.html'i cache'le — hata olursa install başarısız olmasın
+      return c.add('/option-flow/index.html').catch(function(){});
+    })
   );
   self.skipWaiting();
 });
@@ -27,12 +26,12 @@ self.addEventListener('fetch', function(e) {
   if (e.request.method !== 'GET') return;
   var url = new URL(e.request.url);
 
-  // Dış API isteklerini (Vercel proxy vs.) cache'leme
+  // Dış domain isteklerini pas geç (Firebase, Vercel proxy vs.)
   if (url.origin !== self.location.origin) return;
 
   e.respondWith(
     caches.match(e.request).then(function(cached) {
-      if (cached) return cached;
+      // Network-first: önce network, cache fallback
       return fetch(e.request).then(function(response) {
         if (response && response.status === 200) {
           var clone = response.clone();
@@ -40,6 +39,8 @@ self.addEventListener('fetch', function(e) {
         }
         return response;
       }).catch(function() {
+        // Offline: cache'den sun
+        if (cached) return cached;
         if (e.request.mode === 'navigate') {
           return caches.match('/option-flow/index.html');
         }
