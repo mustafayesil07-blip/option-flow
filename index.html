@@ -2728,7 +2728,7 @@ function calcTaxForTrade(t){
   var matrah_try = 0;
   var totalKomKapanis = 0;
   var totalClosePrem  = 0;
-  var hasAllKur = acilis_kur > 0 && hasExactKur(t.opened);
+  var hasAllKur = acilis_kur > 0;  // getKur fallback değer döndürüyorsa eksik sayma
 
   if(partialCloses.length > 0){
     // partialCloses her biri için kendi kapanış kuruyla matrah hesapla
@@ -2747,7 +2747,7 @@ function calcTaxForTrade(t){
     partialCloses.forEach(function(pc){
       var pcKapanis = parseFloat(pc.closeCommission) || 0;
       var pcKur = getKur(pc.date) || 0;  // her zaman güncel kurlarData'dan al
-      if(!pcKur || !hasExactKur(pc.date)) hasAllKur = false;
+      if(!pcKur) hasAllKur = false;
       var pcClosePrem = (pc.closePremium != null && !isNaN(pc.closePremium) && parseFloat(pc.closePremium) >= 0)
         ? parseFloat(pc.closePremium) : 0;
       totalKomKapanis += pcKapanis;
@@ -2770,7 +2770,7 @@ function calcTaxForTrade(t){
     // Kısmi kapanma yok — standart hesap
     var komKapanis = parseFloat(t.closeCommission)||parseFloat(td.komKapanis)||0;
     var kapanis_kur = getKur(t.closed) || 0;
-    if(!kapanis_kur || !hasExactKur(t.closed)) hasAllKur = false;
+    if(!kapanis_kur) hasAllKur = false;
     var closePrem = parseFloat(t.closePremium);
     var pnl = parseFloat(t.pnl)||0;
     if(isNaN(closePrem)||closePrem<0){closePrem=isLong(t.type)?openPrem+pnl:openPrem-pnl;}
