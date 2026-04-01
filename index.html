@@ -740,10 +740,6 @@
 <div class="screen active" id="screen-dashboard">
   <div class="filter-row" id="dashMonthFilter" style="padding:12px 20px 4px;">
     <div class="filter-pill active" data-dash-month="all" onclick="setDashMonth(this,'all')">Tüm Zamanlar</div>
-    <div class="filter-pill" data-dash-month="Aralik" onclick="setDashMonth(this,'Aralik')">Aralık</div>
-    <div class="filter-pill" data-dash-month="Ocak" onclick="setDashMonth(this,'Ocak')">Ocak</div>
-    <div class="filter-pill" data-dash-month="Subat" onclick="setDashMonth(this,'Subat')">Şubat</div>
-    <div class="filter-pill" data-dash-month="Mart" onclick="setDashMonth(this,'Mart')">Mart</div>
   </div>
   <div class="hero-strip">
     <div id="nlvCard" class="nlv-card">
@@ -868,11 +864,7 @@
     <div class="filter-pill" data-filter="IC">IC</div>
   </div>
   <div class="filter-row" id="monthFilterRow">
-    <div class="filter-pill active" data-month="all">Tum Aylar</div>
-    <div class="filter-pill" data-month="Aralik">Aralik</div>
-    <div class="filter-pill" data-month="Ocak">Ocak</div>
-    <div class="filter-pill" data-month="Subat">Subat</div>
-    <div class="filter-pill" data-month="Mart">Mart</div>
+    <div class="filter-pill active" data-month="all">Tüm Aylar</div>
   </div>
   <div class="trade-list" id="tradeList"></div>
 
@@ -891,12 +883,8 @@
   <div class="section-head">
     <div><div class="section-title">Statistics</div><div class="section-sub" id="statsSub">Loading...</div></div>
   </div>
-  <div class="filter-row" style="padding:4px 20px 8px;">
+  <div class="filter-row" id="statMonthFilter" style="padding:4px 20px 8px;">
     <div class="filter-pill active" data-stat-month="all" onclick="setStatMonth(this,'all')">Tüm Zamanlar</div>
-    <div class="filter-pill" data-stat-month="Aralik" onclick="setStatMonth(this,'Aralik')">Aralık</div>
-    <div class="filter-pill" data-stat-month="Ocak" onclick="setStatMonth(this,'Ocak')">Ocak</div>
-    <div class="filter-pill" data-stat-month="Subat" onclick="setStatMonth(this,'Subat')">Şubat</div>
-    <div class="filter-pill" data-stat-month="Mart" onclick="setStatMonth(this,'Mart')">Mart</div>
   </div>
   <div class="donut-section">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:12px;">Win/Loss Breakdown</div>
@@ -1558,7 +1546,7 @@ try {
 }
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
 
-function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); }
+function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); if(typeof buildMonthPills==='function') buildMonthPills(); }
 function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} syncFirestoreIfReady(); }
 
 var _fcmToken = null;
@@ -1741,6 +1729,85 @@ function setStatMonth(el, month){
   el.classList.add('active');
   currentStatMonth = month;
   renderStats();
+}
+
+// ── Ay pilllerini dinamik oluştur ─────────────────────────────────────────
+var _ALL_MONTHS = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+var _MONTH_TR   = {
+  'Ocak':'Ocak','Subat':'Şubat','Mart':'Mart','Nisan':'Nisan',
+  'Mayis':'Mayıs','Haziran':'Haziran','Temmuz':'Temmuz','Agustos':'Ağustos',
+  'Eylul':'Eylül','Ekim':'Ekim','Kasim':'Kasım','Aralik':'Aralık'
+};
+
+function buildMonthPills() {
+  var nowIdx    = new Date().getMonth(); // 0=Ocak … 11=Aralik
+  var nowMonth  = _ALL_MONTHS[nowIdx];
+  var dataMonths = {};
+  Object.keys(tradesData || {}).forEach(function(m){ dataMonths[m] = true; });
+  dataMonths[nowMonth] = true;
+
+  // Mevcut aydan geriye doğru sıralı liste (maks 12 ay, sadece verisi olanlar + bu ay)
+  var ordered = [];
+  for (var i = 0; i < 12; i++) {
+    var idx = ((nowIdx - i) % 12 + 12) % 12;
+    var m   = _ALL_MONTHS[idx];
+    if (dataMonths[m]) ordered.push(m);
+  }
+
+  // Dashboard
+  var dashRow = document.getElementById('dashMonthFilter');
+  if (dashRow) {
+    var dashAll = dashRow.querySelector('[data-dash-month="all"]');
+    dashRow.innerHTML = '';
+    if (dashAll) dashRow.appendChild(dashAll);
+    ordered.forEach(function(m) {
+      var p = document.createElement('div');
+      p.className = 'filter-pill' + (currentDashMonth === m ? ' active' : '');
+      p.setAttribute('data-dash-month', m);
+      p.textContent = _MONTH_TR[m] || m;
+      p.onclick = function(){ setDashMonth(p, m); };
+      dashRow.appendChild(p);
+    });
+    if (currentDashMonth !== 'all' && !dataMonths[currentDashMonth]) {
+      dashRow.querySelector('[data-dash-month="all"]').classList.add('active');
+      currentDashMonth = 'all';
+    }
+  }
+
+  // Trades
+  var tradeRow = document.getElementById('monthFilterRow');
+  if (tradeRow) {
+    var tradeAll = tradeRow.querySelector('[data-month="all"]');
+    tradeRow.innerHTML = '';
+    if (tradeAll) tradeRow.appendChild(tradeAll);
+    ordered.forEach(function(m) {
+      var p = document.createElement('div');
+      p.className = 'filter-pill';
+      p.setAttribute('data-month', m);
+      p.textContent = _MONTH_TR[m] || m;
+      tradeRow.appendChild(p);
+    });
+  }
+
+  // Statistics
+  var statRow = document.getElementById('statMonthFilter');
+  if (statRow) {
+    var statAll = statRow.querySelector('[data-stat-month="all"]');
+    statRow.innerHTML = '';
+    if (statAll) statRow.appendChild(statAll);
+    ordered.forEach(function(m) {
+      var p = document.createElement('div');
+      p.className = 'filter-pill' + (currentStatMonth === m ? ' active' : '');
+      p.setAttribute('data-stat-month', m);
+      p.textContent = _MONTH_TR[m] || m;
+      p.onclick = function(){ setStatMonth(p, m); };
+      statRow.appendChild(p);
+    });
+    if (currentStatMonth !== 'all' && !dataMonths[currentStatMonth]) {
+      statRow.querySelector('[data-stat-month="all"]').classList.add('active');
+      currentStatMonth = 'all';
+    }
+  }
 }
 
 function getFilteredTrades(month){
@@ -4152,7 +4219,7 @@ function reloadProfileData() {
   if(typeof loadNlv === 'function') loadNlv();
   // Ekranı yenile
   switchScreen('dashboard');
-  setTimeout(function(){ renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
+  setTimeout(function(){ buildMonthPills(); renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
 }
 
 window.reloadProfileData = reloadProfileData;
