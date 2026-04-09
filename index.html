@@ -717,6 +717,12 @@
         <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#F5EDE0;">İkbal</div>
       </button>
     </div>
+    <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
+      <div style="font-size:11px;color:#8A7A6A;margin-bottom:10px;text-align:center;">Baska cihazda kaydedilen verileri yukle</div>
+      <button id="cloudSyncBtn" onclick="syncFromCloud()" style="width:100%;background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:12px;padding:13px;color:#3B82F6;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
+        Buluttan Yukle
+      </button>
+    </div>
   </div>
 </div>
 <header class="topbar">
@@ -1563,7 +1569,8 @@ function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leaps
 
 var _fcmToken = null;
 function syncFirestoreIfReady() {
-  if(_fcmToken) syncPositionsToFirestore(_fcmToken);
+  if(window._fcmToken && typeof window.syncPositionsToFirestore === 'function')
+    window.syncPositionsToFirestore(window._fcmToken);
 }
 
 // ── Helpers ──────────────────────────────────────────
@@ -3890,7 +3897,7 @@ if ('serviceWorker' in navigator) {
   import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import { getMessaging, getToken, onMessage }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
-  import { getFirestore, doc, setDoc }
+  import { getFirestore, doc, setDoc, getDoc }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   const firebaseConfig = {
@@ -3907,16 +3914,20 @@ if ('serviceWorker' in navigator) {
   const db        = getFirestore(app);
   const VAPID_KEY = "BDcNMAd0E107KD5mOEBPKV1pMAvGZJv0AK1x7_u2Gq1-ylhCjmxLrgjaMueAILZSDRr6EGJTLduKm9BtgTtQTJw";
 
-  // ── Açık pozisyonları Firestore'a yaz ──────────────────────────────────
+  // ── Pozisyonları + tam profil yedeğini Firestore'a yaz ─────────────────
   async function syncPositionsToFirestore(token) {
     try {
-      // localStorage'dan tüm verileri oku
-      const tradesRaw = localStorage.getItem('opt_v22');
-      const leapsRaw  = localStorage.getItem('leaps_v1');
+      const profile  = window.ACTIVE_PROFILE || 'mustafa';
+      const lsKey    = window.LS       || 'opt_v22';
+      const leapsKey = window.LEAPS_LS || 'leaps_v1';
+      const pfx      = (profile === 'mustafa') ? '' : profile + '_';
+
+      const tradesRaw  = localStorage.getItem(lsKey);
+      const leapsRaw   = localStorage.getItem(leapsKey);
       const tradesData = tradesRaw ? JSON.parse(tradesRaw) : {};
       const leapsData  = leapsRaw  ? JSON.parse(leapsRaw)  : [];
 
-      // Açık trade pozisyonlarını topla
+      // Açık pozisyonları topla (check.js için)
       const openTrades = [];
       Object.values(tradesData).forEach(month => {
         month.forEach(t => {
@@ -3926,8 +3937,6 @@ if ('serviceWorker' in navigator) {
           });
         });
       });
-
-      // Açık LEAPS pozisyonlarını ekle
       leapsData.forEach(l => {
         if (!l.closed) openTrades.push({
           id: 'L' + l.id, ticker: l.ticker, type: 'LEAPS',
@@ -3935,18 +3944,68 @@ if ('serviceWorker' in navigator) {
         });
       });
 
-      // Firestore'a kaydet
+      // Ana doc — check.js bunu okur
       await setDoc(doc(db, 'optionflow', 'main'), {
-        positions:   openTrades,
-        token:       token,
-        updatedAt:   new Date().toISOString()
+        positions: openTrades,
+        token:     token,
+        updatedAt: new Date().toISOString()
       });
 
-      console.info('[FCM] Firestore senkronize edildi:', openTrades.length, 'açık pozisyon');
+      // Profil başına tam yedek
+      await setDoc(doc(db, 'optionflow', 'backup_' + profile), {
+        trades:   localStorage.getItem(lsKey)              || null,
+        leaps:    localStorage.getItem(leapsKey)            || null,
+        kurlar:   localStorage.getItem('kurlar_v2')         || null,
+        tax:      localStorage.getItem(pfx + 'tax_v1')      || null,
+        planned:  localStorage.getItem(pfx + 'planned_v1')  || null,
+        nlv:      localStorage.getItem(pfx + 'nlv_start')   || null,
+        portSize: localStorage.getItem(pfx + 'temH')        || null,
+        savedAt:  new Date().toISOString()
+      });
+
+      console.info('[Sync] Firestore yedeklendi — profil:', profile, '| açık pozisyon:', openTrades.length);
     } catch (err) {
-      console.warn('[FCM] Firestore sync hatası:', err.message);
+      console.warn('[Sync] Firestore hata:', err.message);
     }
   }
+
+  // ── Firestore yedeğinden localStorage'a geri yükle ─────────────────────
+  async function restoreFromFirestore(profile) {
+    try {
+      const snap = await getDoc(doc(db, 'optionflow', 'backup_' + profile));
+      if (!snap.exists()) return false;
+      const d   = snap.data();
+      const pfx = (profile === 'mustafa') ? '' : profile + '_';
+      if (d.trades)   localStorage.setItem(pfx + 'opt_v22',    d.trades);
+      if (d.leaps)    localStorage.setItem(pfx + 'leaps_v1',   d.leaps);
+      if (d.kurlar)   localStorage.setItem('kurlar_v2',          d.kurlar);
+      if (d.tax)      localStorage.setItem(pfx + 'tax_v1',      d.tax);
+      if (d.planned)  localStorage.setItem(pfx + 'planned_v1',  d.planned);
+      if (d.nlv)      localStorage.setItem(pfx + 'nlv_start',   d.nlv);
+      if (d.portSize) localStorage.setItem(pfx + 'temH',        d.portSize);
+      console.info('[Sync] Firestore geri yuklendi — profil:', profile, '| tarih:', d.savedAt);
+      return true;
+    } catch (err) {
+      console.warn('[Sync] Restore hata:', err.message);
+      return false;
+    }
+  }
+
+  // Global'e aktar
+  window.syncPositionsToFirestore = syncPositionsToFirestore;
+  window.restoreFromFirestore      = restoreFromFirestore;
+
+  // Modül yüklenince: localStorage boşsa Firestore'dan otomatik geri yükle
+  (async () => {
+    const profile = window.ACTIVE_PROFILE;
+    if (!profile) return;
+    const lsKey = window.LS || (profile === 'mustafa' ? 'opt_v22' : profile + '_opt_v22');
+    if (localStorage.getItem(lsKey)) return;
+    const ok = await restoreFromFirestore(profile);
+    if (ok && typeof window.reloadProfileData === 'function') {
+      window.reloadProfileData();
+    }
+  })();
 
   // ── Push bildirim izni ve token al ─────────────────────────────────────
   async function initPush() {
@@ -4101,8 +4160,33 @@ function reloadProfileData() {
   setTimeout(function(){ renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
 }
 
+window.reloadProfileData = reloadProfileData;
+
 function showProfileScreen() {
   document.getElementById('profile-screen').style.display = 'flex';
+}
+
+function syncFromCloud() {
+  if(!ACTIVE_PROFILE){ alert('Profil secili degil.'); return; }
+  if(typeof window.restoreFromFirestore !== 'function'){
+    alert('Bulut baglantisi hazir degil, birka saniye bekleyip tekrar deneyin.');
+    return;
+  }
+  var btn = document.getElementById('cloudSyncBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Yukleniyor...'; }
+  window.restoreFromFirestore(ACTIVE_PROFILE).then(function(ok){
+    if(ok){
+      if(btn){ btn.textContent = 'Yuklendi!'; }
+      document.getElementById('profile-screen').style.display = 'none';
+      reloadProfileData();
+    } else {
+      if(btn){ btn.disabled = false; btn.textContent = 'Buluttan Yukle'; }
+      alert('Bu profil icin bulut yedegi bulunamadi.');
+    }
+  }).catch(function(){
+    if(btn){ btn.disabled = false; btn.textContent = 'Buluttan Yukle'; }
+    alert('Baglanti hatasi. Interneti kontrol edin.');
+  });
 }
 
 // Sayfa açılışında profil seç
