@@ -2154,10 +2154,10 @@ function renderTradeList(filter, month){
             var _itm=_dist!==null&&_dist<0;
             var _dc=_dist===null?'var(--text-2)':_itm?'#ef4444':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
             return '<td style="padding:9px 8px;text-align:right;white-space:nowrap;">'+
-              '<div style="font-family:var(--font-mono);color:var(--text);font-size:12px;">$'+t.strike+'</div>'+
-              (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:12px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
-               _sp?'<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-3);">$'+_sp+'</div>':'')+
-              (_extPL?'<div style="font-family:var(--font-mono);font-size:11px;color:'+_extColorL+';">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+' </div>':'')+
+              '<div style="font-family:var(--font-mono);color:var(--text);font-size:16px;font-weight:700;letter-spacing:-0.3px;">$'+t.strike+'</div>'+
+              (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:13px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
+               _sp?'<div style="font-family:var(--font-mono);font-size:13px;color:var(--text-3);">$'+_sp+'</div>':'')+
+              (_extPL?'<div style="font-family:var(--font-mono);font-size:12px;color:'+_extColorL+';">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+' </div>':'')+
               '</td>';
           })()+
           '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiry(t.expiry)+'</td>'+
