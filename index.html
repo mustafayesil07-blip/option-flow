@@ -3013,7 +3013,7 @@ function _renderVergiInner(){
   // Mustafa profilinde subOwner'a göre filtrele (subOwner yoksa Mustafa sayılır)
   if (ACTIVE_PROFILE === 'mustafa') {
     closedRows = closedRows.filter(function(t) {
-      return (t.subOwner || 'Mustafa') === VERGI_SUBOWNER;
+      return (t.subOwner || 'Eda') === VERGI_SUBOWNER;
     });
   }
 
@@ -4309,6 +4309,17 @@ function reloadProfileData() {
   var _jsToApp2=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
   var _nowMonth = _jsToApp2[new Date().getMonth()];
   if(!tradesData[_nowMonth]) { tradesData[_nowMonth] = []; }
+
+  // Migration: Mustafa profilindeki subOwner'sız trade'ler → Eda
+  if (ACTIVE_PROFILE === 'mustafa') {
+    var _migrated = false;
+    Object.keys(tradesData).forEach(function(mon) {
+      tradesData[mon].forEach(function(t) {
+        if (!t.subOwner) { t.subOwner = 'Eda'; _migrated = true; }
+      });
+    });
+    if (_migrated) { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} }
+  }
 
   // NLV yükle
   if(typeof loadNlv === 'function') loadNlv();
