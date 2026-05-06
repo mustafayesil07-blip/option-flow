@@ -4310,6 +4310,17 @@ function reloadProfileData() {
   var _nowMonth = _jsToApp2[new Date().getMonth()];
   if(!tradesData[_nowMonth]) { tradesData[_nowMonth] = []; }
 
+  // Migration: Mustafa profilindeki subOwner'sız trade'ler → Eda
+  if (ACTIVE_PROFILE === 'mustafa') {
+    var _migrated = false;
+    Object.keys(tradesData).forEach(function(mon) {
+      tradesData[mon].forEach(function(t) {
+        if (!t.subOwner) { t.subOwner = 'Eda'; _migrated = true; }
+      });
+    });
+    if (_migrated) { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} }
+  }
+
   // NLV yükle
   if(typeof loadNlv === 'function') loadNlv();
   // Ekranı yenile
