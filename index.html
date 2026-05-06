@@ -1054,15 +1054,6 @@
     </div>
   </div>
 
-  <!-- KOMISYON GIRISI -->
-  <div style="margin:0 20px 12px;">
-    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💸 Komisyon Girişi</div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
-      <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.5;">Her kapatılan trade için açılış ve kapanış komisyonlarını gir. Komisyonlar vergi matrahından düşülür.</div>
-      <div id="komisyonListesi"></div>
-    </div>
-  </div>
-
   <!-- VERGI TABLOSU -->
   <div style="margin:0 20px 12px;">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">📋 Trade Bazlı Vergi Tablosu</div>
@@ -3050,37 +3041,6 @@ function _renderVergiInner(){
 
   // ── Kur listesi ──
   renderKurListesi();
-
-  // ── Komisyon listesi ──
-  var kl = document.getElementById('komisyonListesi');
-  if(kl){
-    while(kl.firstChild) kl.removeChild(kl.firstChild);
-    if(!closedRows.length){
-      var _e=document.createElement('div');_e.style.cssText='color:var(--text-3);font-size:13px;text-align:center;padding:10px';_e.textContent='Kapatılan trade yok';kl.appendChild(_e);
-    } else {
-      var _h=document.createElement('div');_h.style.cssText='display:grid;grid-template-columns:1fr 90px 90px;gap:6px;margin-bottom:8px';
-      ['Trade','Açılış Kom ($)','Kapanış Kom ($)'].forEach(function(txt){var d=document.createElement('div');d.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600';d.textContent=txt;_h.appendChild(d);});
-      kl.appendChild(_h);
-      closedRows.forEach(function(trade){
-        var tid=trade.id; var td2=taxData[tid]||{};
-        var row=document.createElement('div');row.style.cssText='display:grid;grid-template-columns:1fr 90px 90px;gap:6px;margin-bottom:10px;align-items:center';
-        var lbl=document.createElement('div');
-        var ns=document.createElement('span');ns.style.cssText='font-size:12px;font-weight:700;color:var(--text);font-family:var(--font-head)';ns.textContent=trade.ticker;
-        var tb=document.createElement('span');tb.style.cssText='font-size:9px;background:rgba(255,255,255,.07);padding:1px 5px;border-radius:3px;color:var(--text-2);margin-left:5px';tb.textContent=trade.type;
-        var dd=document.createElement('div');dd.style.cssText='font-size:9px;color:var(--text-3);margin-top:2px';dd.textContent=(trade.opened||'')+' → '+(trade.closed||'devam ediyor');
-        lbl.appendChild(ns);lbl.appendChild(tb);lbl.appendChild(dd);
-        var inpA=document.createElement('input');inpA.type='number';inpA.step='0.01';inpA.placeholder='0';
-        inpA.value=trade.openCommission||td2.komAcilis||'';
-        inpA.style.cssText='background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;font-family:var(--font-mono);-webkit-appearance:none';
-        (function(t,f){inpA.oninput=function(){var v=parseFloat(this.value)||0;if(!taxData[t])taxData[t]={};taxData[t][f]=v;saveTaxData();renderVergi();};})(tid,'komAcilis');
-        var inpK=document.createElement('input');inpK.type='number';inpK.step='0.01';inpK.placeholder='0';
-        inpK.value=trade.closeCommission||td2.komKapanis||'';
-        inpK.style.cssText='background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;width:100%;font-family:var(--font-mono);-webkit-appearance:none';
-        (function(t,f){inpK.oninput=function(){var v=parseFloat(this.value)||0;if(!taxData[t])taxData[t]={};taxData[t][f]=v;saveTaxData();renderVergi();};})(tid,'komKapanis');
-        row.appendChild(lbl);row.appendChild(inpA);row.appendChild(inpK);kl.appendChild(row);
-      });
-    }
-  }
 
   // ── Vergi tablosu ──
   var vt = document.getElementById('vergiTablosu');
