@@ -2220,13 +2220,26 @@ function renderTradeList(filter, month){
       partialSummaryHtml = '<div style="margin:0 14px 10px;padding:7px 10px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:11px;color:var(--warn);">'+
         '📊 Kısmen kapalı: '+_closedQty+'/'+t.q+' kontrat · Kısmi P&L: <span style="color:'+((_partialPnl>=0)?'var(--profit)':'var(--loss)')+'">'+fmt$(_partialPnl)+'</span></div>';
     }
+    // Monthly annualized return — closed premium-selling positions only
+    var _monthlyHtml = '';
+    var _mSellers = ['CSP','CC','PCS','BCS','IC'];
+    if (!isOpen && displayPnl !== null && _mSellers.indexOf(t.type) >= 0) {
+      var _mDays = (t.opened && t.closed) ? Math.round((new Date(t.closed) - new Date(t.opened)) / 86400000) : 0;
+      var _mBasis = parseFloat(t.teminat) > 0 ? parseFloat(t.teminat) : (t.type === 'CSP' ? parseFloat(String(t.strike).replace(',','.')) * (t.q||1) * 100 : 0);
+      if (_mDays > 0 && _mBasis > 0 && _mDays <= 90) {
+        var _mRet = (displayPnl / _mBasis) / _mDays * 30 * 100;
+        var _mCol = _mRet >= 0 ? 'var(--profit)' : 'var(--loss)';
+        _monthlyHtml = '<div style="font-size:11px;color:'+_mCol+';font-weight:700;letter-spacing:0.2px;margin-top:2px;">'+(_mRet>=0?'+':'')+_mRet.toFixed(1)+'%<span style="font-size:10px;font-weight:500;opacity:0.7">/ay</span></div>';
+      }
+    }
     return'<div class="trade-card" style="'+ab+'" data-tid="'+t.id+'" data-tmonth="'+t.month+'">'+
       '<div class="trade-card-head"><div class="trade-card-left">'+
         '<div class="trade-ticker-badge" style="background:'+tc.bg+';color:'+tc.color+'">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
         '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
         '<div class="trade-date">'+t.opened+(t.closed?' > '+t.closed:' > open')+'</div></div></div>'+
         '<div><div class="trade-pnl-val" style="color:'+pc+'">'+(isOpen?(_partlyOpen?fmt$(shownPnl):'Open'):fmt$(displayPnl))+'</div>'+
-        '<div class="trade-pnl-pct" style="color:'+pc+'">'+(_pct2!=null?fmtP(_pct2):(_partlyOpen?(_remainingQty+' kontrat açık'):(isOpen?'pending':'')))+'</div></div></div>'+
+        '<div class="trade-pnl-pct" style="color:'+pc+'">'+(_pct2!=null?fmtP(_pct2):(_partlyOpen?(_remainingQty+' kontrat açık'):(isOpen?'pending':'')))+'</div>'+
+        _monthlyHtml+'</div></div>'+
       '<div class="trade-card-body">'+
         (function(){
   var _tk=t.ticker.split(' ')[0].toUpperCase();
