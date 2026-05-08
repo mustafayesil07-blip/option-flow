@@ -3200,8 +3200,8 @@ function showAddLeap(existingLeap){
       '<input id="lf_tg" type="number" placeholder="Hedef fiyat ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
     '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Kapatıldıysa Doldur (Vergi için)</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_opened" type="date" placeholder="Alış Tarihi" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_closed" type="date" placeholder="Satış Tarihi" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      '<div><div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">Alış Tarihi</div><input id="lf_opened" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%"></div>'+
+      '<div><div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">Satış Tarihi</div><input id="lf_closed" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%"></div></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
       '<input id="lf_sell" type="number" placeholder="Satış fiyatı ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
       '<input id="lf_pnl" type="number" placeholder="P&L ($) opsiyonel" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
@@ -4002,7 +4002,7 @@ if ('serviceWorker' in navigator) {
                   window.location.protocol !== 'file:';
   if (_isHosted) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/option-flow/sw.js', {scope: '/option-flow/'})
+      navigator.serviceWorker.register('/option-flow/firebase-messaging-sw.js', {scope: '/option-flow/'})
         .then(function(reg) { console.log('[PWA] SW registered'); })
         .catch(function() {});
     });

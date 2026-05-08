@@ -1,6 +1,54 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
+// ── Offline cache ─────────────────────────────────────────────────────────
+var CACHE = 'optflow-v7';
+
+self.addEventListener('install', function(e) {
+  e.waitUntil(
+    caches.open(CACHE).then(function(c) {
+      return c.add('/option-flow/index.html').catch(function(){});
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function(e) {
+  e.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys.filter(function(k) { return k !== CACHE; })
+            .map(function(k) { return caches.delete(k); })
+      );
+    })
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', function(e) {
+  if (e.request.method !== 'GET') return;
+  var url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  e.respondWith(
+    caches.match(e.request).then(function(cached) {
+      return fetch(e.request).then(function(response) {
+        if (response && response.status === 200) {
+          var clone = response.clone();
+          caches.open(CACHE).then(function(c) { c.put(e.request, clone); });
+        }
+        return response;
+      }).catch(function() {
+        if (cached) return cached;
+        if (e.request.mode === 'navigate') {
+          return caches.match('/option-flow/index.html');
+        }
+      });
+    })
+  );
+});
+
+// ── Firebase Cloud Messaging ──────────────────────────────────────────────
 firebase.initializeApp({
   apiKey:            "AIzaSyDQQ7GlZ0j6kR_FSTSN06RRGdxY5GMHrHs",
   authDomain:        "optionflow-ef59d.firebaseapp.com",
@@ -12,7 +60,6 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Uygulama kapalıyken gelen bildirimler
 messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification ?? {};
   self.registration.showNotification(title ?? 'OptionFlow', {
@@ -24,7 +71,6 @@ messaging.onBackgroundMessage((payload) => {
   });
 });
 
-// Bildirime tıklanınca uygulamayı aç
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data?.url ?? '/option-flow/';
