@@ -1561,12 +1561,17 @@ function getAllTrades() {
   Object.keys(tradesData).forEach(function(m){ (tradesData[m]||[]).forEach(function(t){ a.push(Object.assign({},t,{month:m})); }); });
   (leapsData||[]).forEach(function(l){
     if(l.closed && l.pnl != null){
+      var _cp=parseFloat(l.costPer)||0; var _sp=parseFloat(l.sellPer)||0; var _qty=parseInt(l.qty)||1;
       a.push({
         id:l.id, ticker:l.ticker, type:'LEAPS',
         opened:l.opened||'', closed:l.closed,
         pnl:parseFloat(l.pnl)||0,
-        premium:l.costPer?-(parseFloat(l.costPer)*(parseInt(l.qty)||1)*100):0,
-        teminat:0, q:parseInt(l.qty)||1,
+        openPremium:_cp*_qty*100,
+        closePremium:_sp*_qty*100,
+        openCommission:parseFloat(l.openCommission)||0,
+        closeCommission:parseFloat(l.closeCommission)||0,
+        premium:_cp*_qty*100,
+        teminat:0, q:_qty,
         strike:l.strike||'', expiry:l.expiry||'',
         delta:null, ivr:null, month:'LEAPS', _isLeap:true
       });
@@ -3140,103 +3145,162 @@ function refreshVergiCalc(){ renderVergi(); }
 function renderLeaps(){
   var leaps=leapsData||[];
   var ti=leaps.reduce(function(s,l){return s+(parseFloat(l.costPer)||0)*(parseInt(l.qty)||1)*100;},0);
-  var tc=leaps.reduce(function(s,l){var hc=l.currentPer!==undefined&&l.currentPer!==null&&l.currentPer!==''&&parseFloat(l.currentPer)>0;return s+(hc?parseFloat(l.currentPer)*(parseInt(l.qty)||1)*100:0);},0);
-  var tg=tc-ti;
+  var tg=leaps.reduce(function(s,l){
+    if(l.closed&&l.pnl!=null) return s+parseFloat(l.pnl);
+    var hasCur=l.currentPer!==''&&l.currentPer!=null&&parseFloat(l.currentPer)>0;
+    if(hasCur) return s+(parseFloat(l.currentPer)-parseFloat(l.costPer||0))*(parseInt(l.qty)||1)*100;
+    return s;
+  },0);
   var lm=document.getElementById('leapsMetrics');
   if(lm)lm.innerHTML=[
-    {v:fmt$(tg),l:'Unrealized Gain',c:tg>=0?'var(--profit)':'var(--loss)'},
-    {v:fmtA$(ti),l:'Total Invested',c:'var(--text)'},
-    {v:ti>0?(tg/ti*100).toFixed(1)+'%':'—',l:'Return',c:tg>=0?'var(--profit)':'var(--loss)'},
-    {v:leaps.length,l:'Positions',c:'var(--info)'}
+    {v:fmt$(tg),l:'Toplam P&L',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:fmtA$(ti),l:'Yatırılan',c:'var(--text)'},
+    {v:ti>0?(tg/ti*100).toFixed(1)+'%':'—',l:'Getiri',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:leaps.length,l:'Pozisyon',c:'var(--info)'}
   ].map(function(x){return'<div><div class="leaps-m-val" style="color:'+x.c+'">'+x.v+'</div><div class="leaps-m-lbl">'+x.l+'</div></div>';}).join('');
   var ll=document.getElementById('leapsList');
   if(!ll)return;
   if(!leaps.length){ll.innerHTML='<div class="empty-state"><div class="empty-icon">⏰</div>Henüz LEAPS pozisyonu yok.<br><br><div style="font-size:12px;color:var(--text-3);">+ Add butonuna basarak ekleyebilirsin.</div></div>';return;}
   ll.innerHTML=leaps.map(function(l){
     var cost=(parseFloat(l.costPer)||0)*(parseInt(l.qty)||1)*100;
-    var hasCur=l.currentPer!==undefined&&l.currentPer!==null&&l.currentPer!==''&&parseFloat(l.currentPer)>0;
-    var cur=hasCur?(parseFloat(l.currentPer))*(parseInt(l.qty)||1)*100:null;
-    var gain=cur!==null?cur-cost:null;
-    var gp=(gain!==null&&cost>0)?gain/cost:null;
+    var isClosed=!!l.closed;
+    var gain,gp;
+    if(isClosed){
+      gain=parseFloat(l.pnl)||0;
+      gp=cost>0?gain/cost:0;
+    } else {
+      var hasCur=l.currentPer!==''&&l.currentPer!=null&&parseFloat(l.currentPer)>0;
+      gain=hasCur?(parseFloat(l.currentPer)-parseFloat(l.costPer||0))*(parseInt(l.qty)||1)*100:null;
+      gp=(gain!==null&&cost>0)?gain/cost:null;
+    }
     var dte=getDTE(l.expiry); var tc2=tcol(l.ticker);
-    return'<div class="leap-card"><div class="leap-head">'+
-      '<div><div class="leap-ticker" style="color:'+tc2.color+'">'+l.ticker+'</div><div class="leap-type">'+(l.expiry||'')+ ' $'+(l.strike||'')+' '+(l.direction||'')+'</div></div>'+
-      '<div><div class="leap-value" style="color:'+(gain===null?'var(--text-2)':gain>=0?'var(--profit)':'var(--loss)')+'">'+(cur!==null?fmtA$(cur):'Güncel fiyat gir')+'</div>'+
-      '<div class="leap-gain" style="color:'+(gain>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(gain)+' · '+(gp*100).toFixed(1)+'%</div></div></div>'+
-      '<div class="leap-body">'+
-        '<div><div class="leap-metric-lbl">Paid</div><div class="leap-metric-val">$'+(l.costPer||'—')+'</div></div>'+
-        '<div><div class="leap-metric-lbl">Current</div><div class="leap-metric-val" style="color:'+(gain>=0?'var(--profit)':'var(--loss)')+'">$'+(l.currentPer||'—')+'</div></div>'+
-        '<div><div class="leap-metric-lbl">Qty</div><div class="leap-metric-val">'+(l.qty||1)+'</div></div>'+
-        '<div><div class="leap-metric-lbl">DTE</div><div class="leap-metric-val" style="color:'+(dte===null?'var(--text-3)':dte<=60?'var(--loss)':dte<=90?'var(--warn)':'var(--profit)')+';font-weight:700">'+(dte!==null?dte+'d':'—')+'</div></div>'+
+    var pc=isClosed?(gain>=0?'var(--profit)':'var(--loss)'):(gain===null?'var(--text-2)':gain>=0?'var(--profit)':'var(--loss)');
+    var tagCls2=l.direction==='Put'?'tag-put':'tag-call';
+    var _sellAmt=(parseFloat(l.sellPer)||0)*(parseInt(l.qty)||1)*100;
+    var _dteFill=dte!==null?Math.min(100,Math.max(0,100-dte/730*100)):100;
+    var _dteColor=dte===null?'var(--text-3)':dte<=60?'var(--loss)':dte<=90?'var(--warn)':'var(--profit)';
+    return '<div class="trade-card">'+
+      '<div class="trade-card-head"><div class="trade-card-left">'+
+        '<div class="trade-ticker-badge" style="background:'+tc2.bg+';color:'+tc2.color+'">'+l.ticker.slice(0,4)+'</div>'+
+        '<div><div class="trade-ticker">'+l.ticker+' <span class="strategy-tag '+tagCls2+'">LEAPS '+l.direction+'</span></div>'+
+        '<div class="trade-date">'+(l.opened||'')+(isClosed?' > '+l.closed:' > open')+'</div></div></div>'+
+        '<div><div class="trade-pnl-val" style="color:'+pc+'">'+(isClosed?fmt$(gain):(gain!==null?fmt$(gain):'Open'))+'</div>'+
+        '<div class="trade-pnl-pct" style="color:'+pc+'">'+(gp!==null?((gp>=0?'+':'')+(gp*100).toFixed(1)+'%'):'')+'</div></div></div>'+
+      '<div class="trade-card-body">'+
+        '<div><div class="trade-metric-lbl">Strike</div><div class="trade-metric-val" style="font-size:14px;font-weight:700">$'+(l.strike||'—')+'</div></div>'+
+        '<div><div class="trade-metric-lbl">Ödenen Prim</div><div class="trade-metric-val">'+fmtA$(cost)+'</div></div>'+
+        '<div><div class="trade-metric-lbl">Qty</div><div class="trade-metric-val">'+(l.qty||1)+' × 100</div></div>'+
+        (isClosed?
+          '<div><div class="trade-metric-lbl">Alınan Prim</div><div class="trade-metric-val" style="color:'+pc+'">'+(_sellAmt>0?fmtA$(_sellAmt):'—')+'</div></div>':
+          '<div><div class="trade-metric-lbl">Güncel</div><div class="trade-metric-val" style="color:'+pc+'">'+(gain!==null?'$'+parseFloat(l.currentPer).toFixed(2):'—')+'</div></div>'
+        )+
+        '<div><div class="trade-metric-lbl">Vade</div><div class="trade-metric-val">'+(l.expiry||'—')+'</div></div>'+
+        '<div><div class="trade-metric-lbl">DTE</div><div class="trade-metric-val" style="color:'+_dteColor+';font-weight:700">'+(dte!==null?dte+'d':'—')+'</div></div>'+
       '</div>'+
-      '<div class="leap-progress-wrap">'+
-        '<div class="leap-progress-label"><span>Hedef: '+(l.target?'$'+l.target:'—')+'</span><span>'+(gain>=0?'+':'')+((gp*100).toFixed(1))+'%</span></div>'+
-        '<div class="leap-progress-bar"><div class="leap-progress-fill" style="width:'+(gp!==null?Math.min(100,Math.abs(gp)*100):0)+'%;background:'+(gain>=0?'linear-gradient(90deg,var(--info),var(--purple))':'var(--loss)')+'"></div></div>'+
-      '</div>'+
+      '<div class="trade-card-foot"><div class="dte-bar-wrap">'+
+        '<div class="dte-label"><span>'+(isClosed?'Sonuç':'Hedefe')+'</span>'+
+        '<span style="color:var(--text-3);font-family:var(--font-mono);font-size:12px;">'+(l.target?'$'+l.target:'—')+'</span></div>'+
+        '<div class="dte-bar"><div class="dte-fill" style="width:'+(isClosed?Math.min(100,Math.abs(gp||0)*100):_dteFill)+'%;background:'+(isClosed?(gain>=0?'var(--profit)':'var(--loss)'):'linear-gradient(90deg,var(--info),var(--purple))')+'"></div></div></div>'+
+        '<div class="status-label"><div class="status-dot" style="background:'+(isClosed?'var(--loss)':'#22c55e')+'"></div>'+
+        '<span style="color:'+(isClosed?'var(--loss)':'#22c55e')+'">'+(isClosed?'CLOSED':'OPEN')+'</span></div></div>'+
       '<div style="padding:0 16px 14px;display:flex;gap:8px;">'+
         '<button onclick="event.stopPropagation();showAddLeap(leapsData.find(function(x){return x.id==='+l.id+'}))" style="flex:1;padding:9px;background:rgba(79,127,255,0.12);border:1px solid rgba(79,127,255,0.25);border-radius:10px;color:#4F7FFF;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✎ Düzenle</button>'+
         '<button onclick="event.stopPropagation();deleteLeap('+l.id+')" style="padding:9px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✕</button>'+
-      '</div></div>';
+      '</div>'+
+    '</div>';
   }).join('');
 }
 
 function showAddLeap(existingLeap){
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
-  m.innerHTML='<div style="width:100%;max-width:500px;background:#635850;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
+  var _IS='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%;box-sizing:border-box;';
+  var _LB=function(t){return'<div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">'+t+'</div>';};
+  var _FW=function(lbl,inp){return'<div>'+_LB(lbl)+inp+'</div>';};
+  m.innerHTML='<div style="width:100%;max-width:500px;background:#1e293b;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
-    '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Pozisyonu Ekle</div>'+
+    '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Pozisyonu</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_t" placeholder="Ticker (e.g. NVDA)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<select id="lf_d" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"><option>Call</option><option>Put</option></select></div>'+
+      _FW('Ticker','<input id="lf_t" style="'+_IS+'">')+
+      _FW('Yön','<select id="lf_d" style="'+_IS+'"><option>Call</option><option>Put</option></select>')+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_s" placeholder="Strike" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<div><div style="font-size:10px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">Vade (Expiry)</div><input id="lf_e" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%"></div></div>'+
+      _FW('Strike','<input id="lf_s" style="'+_IS+'">')+
+      _FW('Vade (Expiry)','<input id="lf_e" type="date" style="'+_IS+'">')+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_c" type="number" placeholder="Alış fiyatı ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_cur" type="number" placeholder="Güncel fiyat ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      _FW('Alış Tarihi','<input id="lf_opened" type="date" style="'+_IS+'">')+
+      _FW('Kontrat','<input id="lf_q" type="number" value="1" style="'+_IS+'">')+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_q" type="number" placeholder="Kontrat sayısı" value="1" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_tg" type="number" placeholder="Hedef fiyat ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
-    '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Kapatıldıysa Doldur (Vergi için)</div>'+
+      _FW('Ödenen Prim ($/kontrat)','<input id="lf_c" type="number" style="'+_IS+'">')+
+      _FW('Hedef ($/kontrat)','<input id="lf_tg" type="number" style="'+_IS+'">')+
+    '</div>'+
+    '<div id="lf_cur_wrap" style="margin-bottom:12px;">'+
+      _FW('Güncel Fiyat ($/kontrat)','<input id="lf_cur" type="number" style="'+_IS+'">')+
+    '</div>'+
+    '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Kapanış Bilgileri (Vergi için)</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<div><div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">Alış Tarihi</div><input id="lf_opened" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%"></div>'+
-      '<div><div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">Satış Tarihi</div><input id="lf_closed" type="date" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;width:100%"></div></div>'+
+      _FW('Satış Tarihi','<input id="lf_closed" type="date" style="'+_IS+'">')+
+      _FW('Alınan Prim ($/kontrat)','<input id="lf_sell" type="number" style="'+_IS+'">')+
+    '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      '<input id="lf_sell" type="number" placeholder="Satış fiyatı ($)" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;">'+
-      '<input id="lf_pnl" type="number" placeholder="P&L ($) opsiyonel" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#F1F5F9;font-size:14px;outline:none;"></div>'+
+      _FW('Komisyon - Alış ($)','<input id="lf_okm" type="number" value="0" style="'+_IS+'">')+
+      _FW('Komisyon - Satış ($)','<input id="lf_ckm" type="number" value="0" style="'+_IS+'">')+
+    '</div>'+
     '<button id="lfSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
     '<button id="lfCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button></div>';
   document.body.appendChild(m);
-  // Pre-fill for edit mode
+  var _q=function(id){return m.querySelector('#'+id);};
+  function _toggleCur(){var cw=_q('lf_cur_wrap');if(cw)cw.style.display=_q('lf_closed').value?'none':'block';}
+  _q('lf_closed').addEventListener('change',_toggleCur);
   if(existingLeap){
-    var _q=function(id){return m.querySelector('#'+id);};
-    if(_q('lf_t'))  _q('lf_t').value  = existingLeap.ticker||'';
-    if(_q('lf_d'))  _q('lf_d').value  = existingLeap.direction||'Call';
-    if(_q('lf_s'))  _q('lf_s').value  = existingLeap.strike||'';
-    if(_q('lf_e'))  _q('lf_e').value  = existingLeap.expiry||'';
-    if(_q('lf_c'))  _q('lf_c').value  = existingLeap.costPer||'';
-    if(_q('lf_cur'))_q('lf_cur').value = existingLeap.currentPer||'';
-    if(_q('lf_q'))  _q('lf_q').value  = existingLeap.qty||1;
-    if(_q('lf_tg')) _q('lf_tg').value = existingLeap.target||'';
+    if(_q('lf_t'))      _q('lf_t').value      = existingLeap.ticker||'';
+    if(_q('lf_d'))      _q('lf_d').value      = existingLeap.direction||'Call';
+    if(_q('lf_s'))      _q('lf_s').value      = existingLeap.strike||'';
+    if(_q('lf_e'))      _q('lf_e').value      = existingLeap.expiry||'';
+    if(_q('lf_c'))      _q('lf_c').value      = existingLeap.costPer||'';
+    if(_q('lf_cur'))    _q('lf_cur').value    = existingLeap.currentPer||'';
+    if(_q('lf_q'))      _q('lf_q').value      = existingLeap.qty||1;
+    if(_q('lf_tg'))     _q('lf_tg').value     = existingLeap.target||'';
     if(_q('lf_opened')) _q('lf_opened').value = existingLeap.opened||'';
     if(_q('lf_closed')) _q('lf_closed').value = existingLeap.closed||'';
     if(_q('lf_sell'))   _q('lf_sell').value   = existingLeap.sellPer||'';
-    if(_q('lf_pnl')&&existingLeap.pnl!=null) _q('lf_pnl').value = existingLeap.pnl;
+    if(_q('lf_okm'))    _q('lf_okm').value    = existingLeap.openCommission||0;
+    if(_q('lf_ckm'))    _q('lf_ckm').value    = existingLeap.closeCommission||0;
   }
-  m.querySelector('#lfCancel').onclick=function(){m.remove();};
+  _toggleCur();
+  _q('lfCancel').onclick=function(){m.remove();};
   m.addEventListener('click',function(e){if(e.target===m)m.remove();});
-  m.querySelector('#lfSave').onclick=function(){
-    var ticker=m.querySelector('#lf_t').value.trim().toUpperCase();
+  _q('lfSave').onclick=function(){
+    var ticker=_q('lf_t').value.trim().toUpperCase();
     if(!ticker){alert('Ticker gerekli');return;}
-    var _lf_sell=parseFloat(m.querySelector('#lf_sell').value)||0;
-    var _lf_cost=parseFloat(m.querySelector('#lf_c').value)||0;
-    var _lf_qty=parseInt(m.querySelector('#lf_q').value)||1;
-    var _lf_closed=m.querySelector('#lf_closed').value||'';
-    var _lf_opened=m.querySelector('#lf_opened').value||'';
-    var _lf_pnl_inp=m.querySelector('#lf_pnl').value;
-    var _lf_pnl=_lf_pnl_inp!==''?parseFloat(_lf_pnl_inp):(_lf_sell&&_lf_cost?(_lf_sell-_lf_cost)*_lf_qty*100:null);
-    var leap={id:existingLeap?existingLeap.id:Date.now(),ticker,direction:m.querySelector('#lf_d').value,strike:m.querySelector('#lf_s').value,expiry:m.querySelector('#lf_e').value,costPer:m.querySelector('#lf_c').value,currentPer:m.querySelector('#lf_cur').value,qty:_lf_qty,target:m.querySelector('#lf_tg').value,notes:'',opened:_lf_opened,closed:_lf_closed,sellPer:_lf_sell||'',pnl:_lf_pnl,type:'LEAPS'};
+    var _sell=parseFloat(_q('lf_sell').value)||0;
+    var _cost=parseFloat(_q('lf_c').value)||0;
+    var _qty=parseInt(_q('lf_q').value)||1;
+    var _okm=parseFloat(_q('lf_okm').value)||0;
+    var _ckm=parseFloat(_q('lf_ckm').value)||0;
+    var _closedVal=_q('lf_closed').value||'';
+    var _pnl=(_sell&&_cost)?(_sell-_cost)*_qty*100-_okm-_ckm:null;
+    var leap={
+      id:existingLeap?existingLeap.id:Date.now(),
+      ticker:ticker,
+      direction:_q('lf_d').value,
+      strike:_q('lf_s').value,
+      expiry:_q('lf_e').value,
+      costPer:_q('lf_c').value,
+      currentPer:_closedVal?'':(_q('lf_cur').value||''),
+      qty:_qty,
+      target:_q('lf_tg').value,
+      notes:'',
+      opened:_q('lf_opened').value||'',
+      closed:_closedVal,
+      sellPer:_sell||'',
+      pnl:_pnl,
+      openCommission:_okm,
+      closeCommission:_ckm,
+      type:'LEAPS'
+    };
     if(existingLeap){
       var _idx=leapsData.findIndex(function(l){return l.id===existingLeap.id;});
       if(_idx>=0) leapsData[_idx]=leap;
