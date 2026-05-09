@@ -3192,7 +3192,7 @@ function renderLeaps(){
         '<div><div class="trade-metric-lbl">Qty</div><div class="trade-metric-val">'+(l.qty||1)+' × 100</div></div>'+
         (isClosed?
           '<div><div class="trade-metric-lbl">Alınan Prim</div><div class="trade-metric-val" style="color:'+pc+'">'+(_sellAmt>0?fmtA$(_sellAmt):'—')+'</div></div>':
-          '<div><div class="trade-metric-lbl">Güncel</div><div class="trade-metric-val" style="color:'+pc+'">'+(gain!==null?'$'+parseFloat(l.currentPer).toFixed(2):'—')+'</div></div>'
+          '<div><div class="trade-metric-lbl">Güncel</div><div class="trade-metric-val" style="color:'+pc+'">'+(gain!==null?fmtA$((parseFloat(l.currentPer)||0)*(parseInt(l.qty)||1)*100):'—')+'</div></div>'
         )+
         '<div><div class="trade-metric-lbl">Vade</div><div class="trade-metric-val">'+(l.expiry||'—')+'</div></div>'+
         '<div><div class="trade-metric-lbl">DTE</div><div class="trade-metric-val" style="color:'+_dteColor+';font-weight:700">'+(dte!==null?dte+'d':'—')+'</div></div>'+
@@ -3233,16 +3233,16 @@ function showAddLeap(existingLeap){
       _FW('Kontrat','<input id="lf_q" type="number" value="1" style="'+_IS+'">')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      _FW('Ödenen Prim ($/kontrat)','<input id="lf_c" type="number" style="'+_IS+'">')+
+      _FW('Ödenen Prim (Toplam $)','<input id="lf_c" type="number" style="'+_IS+'">')+
       _FW('Hedef ($/kontrat)','<input id="lf_tg" type="number" style="'+_IS+'">')+
     '</div>'+
     '<div id="lf_cur_wrap" style="margin-bottom:12px;">'+
-      _FW('Güncel Fiyat ($/kontrat)','<input id="lf_cur" type="number" style="'+_IS+'">')+
+      _FW('Güncel Değer (Toplam $)','<input id="lf_cur" type="number" style="'+_IS+'">')+
     '</div>'+
     '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Kapanış Bilgileri (Vergi için)</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
       _FW('Satış Tarihi','<input id="lf_closed" type="date" style="'+_IS+'">')+
-      _FW('Alınan Prim ($/kontrat)','<input id="lf_sell" type="number" style="'+_IS+'">')+
+      _FW('Alınan Prim (Toplam $)','<input id="lf_sell" type="number" style="'+_IS+'">')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
       _FW('Komisyon - Alış ($)','<input id="lf_okm" type="number" value="0" style="'+_IS+'">')+
@@ -3255,17 +3255,18 @@ function showAddLeap(existingLeap){
   function _toggleCur(){var cw=_q('lf_cur_wrap');if(cw)cw.style.display=_q('lf_closed').value?'none':'block';}
   _q('lf_closed').addEventListener('change',_toggleCur);
   if(existingLeap){
+    var _eQty=(parseInt(existingLeap.qty)||1);
     if(_q('lf_t'))      _q('lf_t').value      = existingLeap.ticker||'';
     if(_q('lf_d'))      _q('lf_d').value      = existingLeap.direction||'Call';
     if(_q('lf_s'))      _q('lf_s').value      = existingLeap.strike||'';
     if(_q('lf_e'))      _q('lf_e').value      = existingLeap.expiry||'';
-    if(_q('lf_c'))      _q('lf_c').value      = existingLeap.costPer||'';
-    if(_q('lf_cur'))    _q('lf_cur').value    = existingLeap.currentPer||'';
-    if(_q('lf_q'))      _q('lf_q').value      = existingLeap.qty||1;
+    if(_q('lf_q'))      _q('lf_q').value      = _eQty;
+    if(_q('lf_c')&&existingLeap.costPer)    _q('lf_c').value    = (parseFloat(existingLeap.costPer)*_eQty*100).toFixed(2);
+    if(_q('lf_cur')&&existingLeap.currentPer) _q('lf_cur').value = (parseFloat(existingLeap.currentPer)*_eQty*100).toFixed(2);
     if(_q('lf_tg'))     _q('lf_tg').value     = existingLeap.target||'';
     if(_q('lf_opened')) _q('lf_opened').value = existingLeap.opened||'';
     if(_q('lf_closed')) _q('lf_closed').value = existingLeap.closed||'';
-    if(_q('lf_sell'))   _q('lf_sell').value   = existingLeap.sellPer||'';
+    if(_q('lf_sell')&&existingLeap.sellPer)  _q('lf_sell').value = (parseFloat(existingLeap.sellPer)*_eQty*100).toFixed(2);
     if(_q('lf_okm'))    _q('lf_okm').value    = existingLeap.openCommission||0;
     if(_q('lf_ckm'))    _q('lf_ckm').value    = existingLeap.closeCommission||0;
   }
@@ -3275,27 +3276,29 @@ function showAddLeap(existingLeap){
   _q('lfSave').onclick=function(){
     var ticker=_q('lf_t').value.trim().toUpperCase();
     if(!ticker){alert('Ticker gerekli');return;}
-    var _sell=parseFloat(_q('lf_sell').value)||0;
-    var _cost=parseFloat(_q('lf_c').value)||0;
+    var _sellTotal=parseFloat(_q('lf_sell').value)||0;
+    var _costTotal=parseFloat(_q('lf_c').value)||0;
+    var _curTotal=parseFloat(_q('lf_cur').value)||0;
     var _qty=parseInt(_q('lf_q').value)||1;
     var _okm=parseFloat(_q('lf_okm').value)||0;
     var _ckm=parseFloat(_q('lf_ckm').value)||0;
     var _closedVal=_q('lf_closed').value||'';
-    var _pnl=(_sell&&_cost)?(_sell-_cost)*_qty*100-_okm-_ckm:null;
+    var _pnl=(_sellTotal&&_costTotal)?_sellTotal-_costTotal-_okm-_ckm:null;
+    var _unit=_qty*100;
     var leap={
       id:existingLeap?existingLeap.id:Date.now(),
       ticker:ticker,
       direction:_q('lf_d').value,
       strike:_q('lf_s').value,
       expiry:_q('lf_e').value,
-      costPer:_q('lf_c').value,
-      currentPer:_closedVal?'':(_q('lf_cur').value||''),
+      costPer:_costTotal?(_costTotal/_unit):0,
+      currentPer:_closedVal?'':(_curTotal?(_curTotal/_unit):0),
       qty:_qty,
       target:_q('lf_tg').value,
       notes:'',
       opened:_q('lf_opened').value||'',
       closed:_closedVal,
-      sellPer:_sell||'',
+      sellPer:_sellTotal?(_sellTotal/_unit):0,
       pnl:_pnl,
       openCommission:_okm,
       closeCommission:_ckm,
