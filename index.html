@@ -2361,6 +2361,14 @@ function renderStats(){
   if(dl)dl.innerHTML='<div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div><span class="legend-txt">Winners</span><span class="legend-pct" style="color:var(--profit)">'+Math.round(stats.winRate*100)+'% · '+stats.winners+'</span></div>'+
     '<div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div><span class="legend-txt">Losers</span><span class="legend-pct" style="color:var(--loss)">'+Math.round((1-stats.winRate)*100)+'% · '+stats.losers+'</span></div>'+
     (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+month+' ayı · '+stats.total+' trade</div>':'');
+  var totalTeminat = closed.reduce(function(s,t){return s+(parseFloat(t.teminat)||0);},0);
+  var avgTeminat   = closed.length ? totalTeminat/closed.length : 0;
+  var teminatROC   = totalTeminat > 0 ? stats.totalPnl/totalTeminat : null;
+  var tradesWithColl = closed.filter(function(t){return parseFloat(t.teminat)>0;});
+  var avgPerTradeROC = tradesWithColl.length
+    ? tradesWithColl.reduce(function(s,t){return s+(t.pnl/(parseFloat(t.teminat)||1));},0)/tradesWithColl.length
+    : null;
+
   var sg=document.getElementById('statsGrid');
   if(sg)sg.innerHTML=[
     {l:'Win Rate',v:Math.round(stats.winRate*100)+'%',sub:stats.winners+' of '+stats.total,bar:stats.winRate,bc:'var(--info)',c:'var(--info)'},
@@ -2380,7 +2388,9 @@ function renderStats(){
         {l:'CSP/PCS/IC Win Rate',v:wr!==null?Math.round(wr*100)+'%':'—',sub:sp.length+' islem',bar:wr||0,bc:'var(--profit)',c:wr===null?'var(--text-3)':wr>=0.7?'var(--profit)':wr>=0.5?'var(--warn)':'var(--loss)'},
         {l:'CSP/PCS/IC Elde Tutma',v:hd!==null?hd+' gün':'—',sub:'ort. gün sayisi',c:'var(--purple)'}
       ];
-    })()
+    })(),
+    {l:'Toplam Teminat',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'ort. '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' teminatlı trade',c:'var(--info)',full:true},
+    {l:'Teminat Getirisi',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:avgPerTradeROC!==null?('ort. trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'teminat bilgisi eksik',bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true}
   ].flat().map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
   if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
