@@ -695,7 +695,7 @@
 <!-- TOP BAR -->
 
 <!-- PROFILE SELECTOR -->
-<div id="profile-screen" style="display:none;position:fixed;inset:0;z-index:99999;background:#5C5049;align-items:center;justify-content:center;flex-direction:column;">
+<div id="profile-screen" style="display:none;position:fixed;inset:0;z-index:99999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;">
   <div style="text-align:center;padding:40px 24px;width:100%;max-width:400px;">
     <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;color:#F5EDE0;margin-bottom:6px;">OptionFlow</div>
     <div style="font-size:13px;color:#8A7A6A;margin-bottom:40px;">Profil seçin</div>
@@ -718,9 +718,13 @@
       </button>
     </div>
     <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
-      <div style="font-size:11px;color:#8A7A6A;margin-bottom:10px;text-align:center;">Baska cihazda kaydedilen verileri yukle</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center;">Baska cihazda kaydedilen verileri yukle</div>
       <button id="cloudSyncBtn" onclick="syncFromCloud()" style="width:100%;background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:12px;padding:13px;color:#3B82F6;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
-        Buluttan Yukle
+        ↓ Buluttan Yukle
+      </button>
+      <div style="font-size:11px;color:var(--text-3);margin:12px 0 8px;text-align:center;">Bu cihazdaki verileri buluta gönder</div>
+      <button id="cloudPushBtn" onclick="pushToCloud()" style="width:100%;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:13px;color:#22C55E;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
+        ↑ Buluta Gönder
       </button>
     </div>
   </div>
@@ -4376,6 +4380,23 @@ window.reloadProfileData = reloadProfileData;
 
 function showProfileScreen() {
   document.getElementById('profile-screen').style.display = 'flex';
+}
+
+function pushToCloud() {
+  if(!ACTIVE_PROFILE){ alert('Profil secili degil.'); return; }
+  if(typeof window.syncPositionsToFirestore !== 'function'){
+    alert('Bulut baglantisi hazir degil, birka saniye bekleyip tekrar deneyin.');
+    return;
+  }
+  var btn = document.getElementById('cloudPushBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Gönderiliyor...'; }
+  window.syncPositionsToFirestore(window._fcmToken || null).then(function(){
+    if(btn){ btn.textContent = '✅ Gönderildi!'; }
+    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; } }, 2500);
+  }).catch(function(e){
+    if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; }
+    alert('Gönderme basarisiz: ' + (e&&e.message?e.message:'Baglanti hatasi'));
+  });
 }
 
 function syncFromCloud() {
