@@ -2,7 +2,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
 // ── Offline cache ─────────────────────────────────────────────────────────
-var CACHE = 'optflow-v7';
+var CACHE = 'optflow-v8';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(

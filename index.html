@@ -1556,7 +1556,8 @@ function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leaps
 var _fcmToken = null;
 function syncFirestoreIfReady() {
   if(typeof window.syncPositionsToFirestore === 'function')
-    window.syncPositionsToFirestore(window._fcmToken || null);
+    window.syncPositionsToFirestore(window._fcmToken || null)
+      .catch(function(e){ console.warn('[AutoSync]', e && e.message); });
 }
 
 // ── Helpers ──────────────────────────────────────────
@@ -4166,6 +4167,7 @@ if ('serviceWorker' in navigator) {
       console.info('[Sync] Firestore yedeklendi — profil:', profile, '| açık pozisyon:', openTrades.length);
     } catch (err) {
       console.warn('[Sync] Firestore hata:', err.message);
+      throw err;
     }
   }
 
@@ -4392,10 +4394,11 @@ function pushToCloud() {
   if(btn){ btn.disabled = true; btn.textContent = 'Gönderiliyor...'; }
   window.syncPositionsToFirestore(window._fcmToken || null).then(function(){
     if(btn){ btn.textContent = '✅ Gönderildi!'; }
-    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; } }, 2500);
+    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; } }, 3000);
   }).catch(function(e){
     if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; }
-    alert('Gönderme basarisiz: ' + (e&&e.message?e.message:'Baglanti hatasi'));
+    var msg = (e && e.message) ? e.message : String(e);
+    alert('❌ Gönderme basarisiz:\n\n' + msg + '\n\nInternet baglantisini kontrol edin.');
   });
 }
 
