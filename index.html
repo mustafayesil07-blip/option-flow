@@ -1551,8 +1551,8 @@ function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leaps
 
 var _fcmToken = null;
 function syncFirestoreIfReady() {
-  if(window._fcmToken && typeof window.syncPositionsToFirestore === 'function')
-    window.syncPositionsToFirestore(window._fcmToken);
+  if(typeof window.syncPositionsToFirestore === 'function')
+    window.syncPositionsToFirestore(window._fcmToken || null);
 }
 
 // ── Helpers ──────────────────────────────────────────
@@ -4138,14 +4138,16 @@ if ('serviceWorker' in navigator) {
         });
       });
 
-      // Ana doc — check.js bunu okur
-      await setDoc(doc(db, 'optionflow', 'main'), {
-        positions: openTrades,
-        token:     token,
-        updatedAt: new Date().toISOString()
-      });
+      // Ana doc — check.js bunu okur (sadece FCM token varsa)
+      if (token) {
+        await setDoc(doc(db, 'optionflow', 'main'), {
+          positions: openTrades,
+          token:     token,
+          updatedAt: new Date().toISOString()
+        });
+      }
 
-      // Profil başına tam yedek
+      // Profil başına tam yedek — token olmasa da her zaman yaz
       await setDoc(doc(db, 'optionflow', 'backup_' + profile), {
         trades:   localStorage.getItem(lsKey)              || null,
         leaps:    localStorage.getItem(leapsKey)            || null,
@@ -4189,15 +4191,20 @@ if ('serviceWorker' in navigator) {
   window.syncPositionsToFirestore = syncPositionsToFirestore;
   window.restoreFromFirestore      = restoreFromFirestore;
 
-  // Modül yüklenince: localStorage boşsa Firestore'dan otomatik geri yükle
+  // Modül yüklenince: yerel veri varsa cloud'a yaz, yoksa cloud'dan geri yükle
   (async () => {
     const profile = window.ACTIVE_PROFILE;
     if (!profile) return;
     const lsKey = window.LS || (profile === 'mustafa' ? 'opt_v22' : profile + '_opt_v22');
-    if (localStorage.getItem(lsKey)) return;
-    const ok = await restoreFromFirestore(profile);
-    if (ok && typeof window.reloadProfileData === 'function') {
-      window.reloadProfileData();
+    if (localStorage.getItem(lsKey)) {
+      // Yerel veri var → cloud'a pushla (FCM token olmasa da)
+      await syncPositionsToFirestore(window._fcmToken || null);
+    } else {
+      // Yerel veri yok → cloud'dan geri yükle
+      const ok = await restoreFromFirestore(profile);
+      if (ok && typeof window.reloadProfileData === 'function') {
+        window.reloadProfileData();
+      }
     }
   })();
 
