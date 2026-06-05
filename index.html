@@ -4197,16 +4197,14 @@ if ('serviceWorker' in navigator) {
   window.syncPositionsToFirestore = syncPositionsToFirestore;
   window.restoreFromFirestore      = restoreFromFirestore;
 
-  // Modül yüklenince: yerel veri varsa cloud'a yaz, yoksa cloud'dan geri yükle
+  // Modül yüklenince: yerel veri YOKSA cloud'dan geri yükle
+  // NOT: Yerel veri varsa otomatik cloud'a YAZMA — her cihaz kendi ESKİ
+  // verisini yazarsa yeni veri silinir. Manuel "Buluta Gönder" kullan.
   (async () => {
     const profile = window.ACTIVE_PROFILE;
     if (!profile) return;
     const lsKey = window.LS || (profile === 'mustafa' ? 'opt_v22' : profile + '_opt_v22');
-    if (localStorage.getItem(lsKey)) {
-      // Yerel veri var → cloud'a pushla (FCM token olmasa da)
-      await syncPositionsToFirestore(window._fcmToken || null);
-    } else {
-      // Yerel veri yok → cloud'dan geri yükle
+    if (!localStorage.getItem(lsKey)) {
       const ok = await restoreFromFirestore(profile);
       if (ok && typeof window.reloadProfileData === 'function') {
         window.reloadProfileData();
