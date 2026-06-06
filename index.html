@@ -698,7 +698,7 @@
 <div id="profile-screen" style="display:none;position:fixed;inset:0;z-index:99999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;">
   <div style="text-align:center;padding:40px 24px;width:100%;max-width:400px;">
     <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;color:#F5EDE0;margin-bottom:6px;">OptionFlow</div>
-    <div style="font-size:13px;color:#8A7A6A;margin-bottom:40px;">Profil seçin</div>
+    <div style="font-size:13px;color:#8A7A6A;margin-bottom:40px;">Select Profile</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <button onclick="selectProfile('mustafa')" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:24px 16px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
         <div style="font-size:32px;margin-bottom:10px;">👨</div>
@@ -718,13 +718,13 @@
       </button>
     </div>
     <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center;">Baska cihazda kaydedilen verileri yukle</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center;">Pull data saved on another device</div>
       <button id="cloudSyncBtn" onclick="syncFromCloud()" style="width:100%;background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:12px;padding:13px;color:#3B82F6;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
-        ↓ Buluttan Yukle
+        ↓ Pull from Cloud
       </button>
-      <div style="font-size:11px;color:var(--text-3);margin:12px 0 8px;text-align:center;">Bu cihazdaki verileri buluta gönder</div>
+      <div style="font-size:11px;color:var(--text-3);margin:12px 0 8px;text-align:center;">Push data from this device to cloud</div>
       <button id="cloudPushBtn" onclick="pushToCloud()" style="width:100%;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:13px;color:#22C55E;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
-        ↑ Buluta Gönder
+        ↑ Push to Cloud
       </button>
     </div>
   </div>
@@ -735,8 +735,8 @@
     <span class="topbar-name">OptionFlow</span>
   </div>
   <div class="topbar-right">
-    <button id="profileBtn" onclick="showProfileScreen()" title="Profil değiştir" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 10px;color:#EDD090;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">👤 —</button>
-    <button id="privacyBtn" onclick="togglePrivacy()" title="Tutarları gizle" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#C8A060;font-size:13px;cursor:pointer">👁</button>
+    <button id="profileBtn" onclick="showProfileScreen()" title="Switch Profile" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 10px;color:#EDD090;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">👤 —</button>
+    <button id="privacyBtn" onclick="togglePrivacy()" title="Hide Amounts" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#C8A060;font-size:13px;cursor:pointer">👁</button>
     <button id="priceRefreshBtn" onclick="fetchOptionPrices()" style="background:rgba(16,212,142,0.12);border:1px solid rgba(16,212,142,0.22);border-radius:8px;padding:5px 11px;color:#10D48E;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📡 Fiyat</button>
     <button id="notifBtn" onclick="toggleNotifications()" title="Strike yaklasma bildirimleri" style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.20);border-radius:8px;padding:5px 9px;color:#9A8472;font-size:13px;cursor:pointer">🔔</button>
     <button id="autoRefreshBtn" onclick="toggleAutoRefresh()" title="Otomatik yenileme" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#C8A060;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">&#9201;</button>
@@ -749,13 +749,13 @@
 <!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
 <div class="screen active" id="screen-dashboard">
   <div class="filter-row" id="dashMonthFilter" style="padding:12px 20px 4px;">
-    <div class="filter-pill active" data-dash-month="all" onclick="setDashMonth(this,'all')">Tüm Zamanlar</div>
+    <div class="filter-pill active" data-dash-month="all" onclick="setDashMonth(this,'all')">All Time</div>
   </div>
   <div class="hero-strip">
     <div id="nlvCard" class="nlv-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div class="nlv-label">Net Liquidation Value</div>
-        <button class="nlv-edit-btn" onclick="openNlvModal()">✎ Başlangıç</button>
+        <button class="nlv-edit-btn" onclick="openNlvModal()">✎ Start</button>
       </div>
       <div class="nlv-usd privacy-val" id="nlvUsd">—</div>
       <div class="nlv-try privacy-val" id="nlvTry">—</div>
@@ -777,14 +777,14 @@
       <div class="hero-change" id="heroOpenSub"></div>
     </div>
     <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.06));border-color:rgba(59,130,246,0.2);">
-      <div class="hero-label">Açık Pozisyon Primleri</div>
+      <div class="hero-label">Open Position Premiums</div>
       <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <div>
           <div class="hero-val privacy-val" id="heroOpenPrem" style="color:var(--info)">—</div>
           <div class="hero-change" id="heroOpenPremSub" style="margin-top:6px;"></div>
         </div>
         <div style="text-align:right;">
-          <div style="font-size:12px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Toplam Prim</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Total Premium</div>
           <div class="hero-val privacy-val" id="heroOpenPremTotal" style="font-size:20px;color:var(--purple)">—</div>
         </div>
       </div>
@@ -799,7 +799,7 @@
       <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:12px;color:var(--text-3);"><span>$0</span><span style="color:var(--profit)">Comfortable zone</span><span id="portSizeLabel" style="color:var(--text-2)">$180K</span></div>
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div>
-          <div style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Ort. Günlük Teminat <span id="avgCollMonthLabel" style="color:var(--info)">(Bu Ay)</span></div>
+          <div style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Avg Daily Collateral <span id="avgCollMonthLabel" style="color:var(--info)">(This Month)</span></div>
           <div style="display:flex;align-items:baseline;gap:8px;">
             <div class="hero-val" id="heroAvgColl" style="font-size:22px;color:var(--warn);">—</div>
             <div style="font-size:13px;color:var(--text-3)" id="heroAvgCollSub"></div>
@@ -807,7 +807,7 @@
         </div>
         <div style="text-align:right;display:flex;flex-direction:column;gap:10px;">
           <div>
-            <div style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Ort. Kullanım</div>
+            <div style="font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Avg Usage</div>
             <div style="font-size:16px;font-weight:700;font-family:var(--font-head)" id="heroAvgCollPct">—</div>
           </div>
           <div>
@@ -818,7 +818,7 @@
         </div>
       </div>
       <div style="margin-top:10px;text-align:right">
-        <button id="editPortBtn" style="background:var(--info);border:none;border-radius:8px;padding:7px 16px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">✎ Portföy Boyutunu Düzenle</button>
+        <button id="editPortBtn" style="background:var(--info);border:none;border-radius:8px;padding:7px 16px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">✎ Edit Portfolio Size</button>
       </div>
     </div>
   </div>
@@ -874,15 +874,15 @@
     <div class="filter-pill" data-filter="IC">IC</div>
   </div>
   <div class="filter-row" id="monthFilterRow">
-    <div class="filter-pill active" data-month="all">Tüm Aylar</div>
+    <div class="filter-pill active" data-month="all">All Months</div>
   </div>
   <div class="trade-list" id="tradeList"></div>
 
   <!-- PLANNED TRADES -->
   <div style="padding:0 16px 20px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 12px">
-      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">📋 Planlanan İşlemler</div>
-      <button id="addPlanBtn" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:6px 14px;color:var(--info);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Plan Ekle</button>
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">📋 Planned Trades</div>
+      <button id="addPlanBtn" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:6px 14px;color:var(--info);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Add Plan</button>
     </div>
     <div id="plannedList"></div>
   </div>
@@ -894,7 +894,7 @@
     <div><div class="section-title">Statistics</div><div class="section-sub" id="statsSub">Loading...</div></div>
   </div>
   <div class="filter-row" style="padding:4px 20px 8px;">
-    <div class="filter-pill active" data-stat-month="all" onclick="setStatMonth(this,'all')" id="statAllPill">Tüm Zamanlar</div>
+    <div class="filter-pill active" data-stat-month="all" onclick="setStatMonth(this,'all')" id="statAllPill">All Time</div>
   </div>
   <div class="donut-section">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:12px;">Win/Loss Breakdown</div>
@@ -1026,7 +1026,7 @@
 <!-- VERGI -->
 <div class="screen" id="screen-vergi">
   <div class="section-head">
-    <div><div class="section-title">Vergi</div><div class="section-sub" id="vergiSub">Yükleniyor...</div></div>
+    <div><div class="section-title">Tax</div><div class="section-sub" id="vergiSub">Loading...</div></div>
     <select id="vergiYilSec" onchange="renderVergi()" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:7px 12px;color:var(--text);font-family:var(--font-head);font-size:13px;font-weight:600;outline:none;">
       <option value="2026">2026</option>
       <option value="2025">2025</option>
@@ -1041,18 +1041,18 @@
 
   <!-- KUR YONETIMI -->
   <div style="margin:0 20px 12px;">
-    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💱 Kur Yönetimi (USD/TRY)</div>
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💱 Exchange Rate (USD/TRY)</div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end;">
         <div>
-          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Tarih</div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Date</div>
           <input type="date" id="kurTarih" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
         <div>
-          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Kur (₺)</div>
-          <input type="number" id="kurDeger" placeholder="örn: 38.4271" step="0.0001" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Rate (₺)</div>
+          <input type="number" id="kurDeger" placeholder="e.g. 38.4271" step="0.0001" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
-        <button onclick="kurEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Ekle</button>
+        <button onclick="kurEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
       </div>
       <div id="kurListesi" style="max-height:200px;overflow-y:auto;"></div>
     </div>
@@ -1060,12 +1060,12 @@
 
   <!-- VERGI TABLOSU -->
   <div style="margin:0 20px 12px;">
-    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">📋 Trade Bazlı Vergi Tablosu</div>
+    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">📋 Trade Tax Table</div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <div style="min-width:740px;">
           <div style="display:grid;grid-template-columns:150px 52px 80px 80px 60px 60px 80px 80px 100px;padding:10px 12px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.08);font-size:9px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;gap:4px;">
-            <div>Trade</div><div>Tür</div><div>Alınan Prim</div><div>Ödenen Prim</div><div>Kom. Açılış</div><div>Kom. Kapanış</div><div>Açılış Kur</div><div>Kapanış Kur</div><div>TRY Matrah</div>
+            <div>Trade</div><div>Type</div><div>Premium Received</div><div>Premium Paid</div><div>Open Comm.</div><div>Close Comm.</div><div>Open Rate</div><div>Close Rate</div><div>TRY Tax Base</div>
           </div>
           <div id="vergiTablosu"></div>
         </div>
@@ -1080,39 +1080,44 @@
 function showStatInfo(key){
   var INFO = {
     "Avg Win": {
-      title: "Ortalama Kazanc (Avg Win)",
-      desc: "Karli kapanan tum islemlerin ortalama kazanci. Tum winning trade'lerin P&L toplaminin kazanc sayisina bolunmesiyle hesaplanir.",
-      tip: "Yuksek olmasi iyidir. Avg Loss ile birlikte degerlendirin — Avg Win, Avg Loss'tan buyuk olursa payoff ratio 1'in uzerinde olur ve daha az trade ile karlilik saglanir."
+      title: "Average Win (Avg Win)",
+      desc: "The average gain from all profitable closed trades. Calculated as the total P&L of all winning trades divided by the number of wins.",
+      tip: "Higher is better. Evaluate alongside Avg Loss — if Avg Win exceeds Avg Loss, the payoff ratio exceeds 1, meaning profitability is achievable with fewer trades."
     },
     "Avg Loss": {
-      title: "Ortalama Kayip (Avg Loss)",
-      desc: "Zararli kapanan tum islemlerin ortalama kaybi. Tum losing trade'lerin P&L mutlak degerinin kayip sayisina bolunmesiyle bulunur.",
-      tip: "Dusuk olmasi iyidir. Kayiplari kucuk tutmak sistemin en onemli disiplinlerinden biridir. Buyuk kayiplar toplam karliligi ciddi sekilde olumsuz etkiler."
+      title: "Average Loss (Avg Loss)",
+      desc: "The average loss from all losing closed trades. Calculated as the total absolute P&L of losing trades divided by the number of losses.",
+      tip: "Lower is better. Keeping losses small is one of the most important disciplines of any system. Large losses significantly undermine overall profitability."
     },
     "Payoff R": {
-      title: "Kazanc/Kayip Orani (Payoff Ratio)",
-      desc: "Avg Win / Avg Loss. Ortalama bir kazancin, ortalama bir kayba oranini gosterir.",
-      tip: "Opsiyon saticilarinda genellikle 1'in altindadir — bu normaldir cunku yuksek win rate bunu telafi eder. Ornegin %80 win rate ile 0.5 payoff ratio hala cok karlidir."
+      title: "Win/Loss Ratio (Payoff Ratio)",
+      desc: "Avg Win / Avg Loss. Shows how much the average win compares to the average loss.",
+      tip: "Typically below 1 for options sellers — this is normal because a high win rate compensates. For example, an 80% win rate with a 0.5 payoff ratio is still very profitable."
     },
     "P Factor": {
-      title: "Kar Faktoru (Profit Factor)",
-      desc: "Toplam kazanc / Toplam kayip. Sistemin bir butun olarak ne kadar verimli oldugunun en onemli gostergesidir.",
-      tip: "2.0 ve uzeri mukemmel, 1.5+ iyi, 1.0-1.5 arasi kabul edilebilir, 1.0 altinda sistem para kaybediyor demektir. Hedef: 1.5 ve uzeri."
+      title: "Profit Factor",
+      desc: "Total gains / Total losses. The single most important indicator of how efficiently the system performs as a whole.",
+      tip: "2.0+ is excellent, 1.5+ is good, 1.0–1.5 is acceptable, below 1.0 means the system is losing money. Target: 1.5 and above."
     },
     "EV/Trade": {
-      title: "Beklenen Deger / Trade (EV/Trade)",
-      desc: "Toplam P&L / Trade sayisi. Her bir islemden ortalama olarak ne kadar kazanildigini gosterir.",
-      tip: "Pozitif olmali. Ne kadar yuksekse her trade o kadar degerlidir. Bu rakam negatifse, daha fazla islem yapmaniz kaybi buyutecektir."
+      title: "Expected Value / Trade (EV/Trade)",
+      desc: "Total P&L / Number of trades. Shows the average profit earned per trade.",
+      tip: "Should be positive. The higher it is, the more valuable each trade is. If negative, placing more trades will only increase losses."
     },
     "Trades": {
-      title: "Islem Sayisi",
-      desc: "Secili donemde tamamen kapatilan toplam islem sayisi.",
-      tip: "Istatistiklerin istatistiksel olarak anlamli olmasi icin en az 20-30 islem onerilir. Az sayida islemde win rate ve profit factor cok oynak olup yaniltici sonuclar verebilir."
+      title: "Trade Count",
+      desc: "Total number of fully closed trades in the selected period.",
+      tip: "At least 20–30 trades are recommended for statistically meaningful results. With a small sample, win rate and profit factor can be highly volatile and misleading."
     },
     "Ort. Elde Tutma": {
-      title: "Ortalama Elde Tutma Suresi",
-      desc: "CSP, PCS, IC, CC ve PMCC pozisyonlarinin acilis ile kapanis tarihleri arasindaki ortalama gun sayisi. LEAPS ve Long Call dahil edilmez.",
-      tip: "Theta decay en hizli son 21 gunde gerceklesir. 14-21 gun araliginda kapamak optimal kabul edilir. Cok kisa (3-5 gun) olmasi agresif, cok uzun (45+ gun) olmasi theta avantajini kaybettirebilir."
+      title: "Average Hold Duration",
+      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. LEAPS and Long Call are excluded.",
+      tip: "Theta decay is fastest in the last 21 days. Closing between 14–21 days is considered optimal. Very short (3–5 days) is aggressive; very long (45+ days) may forfeit the theta advantage."
+    },
+    "Avg Hold Days": {
+      title: "Average Hold Duration",
+      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. LEAPS and Long Call are excluded.",
+      tip: "Theta decay is fastest in the last 21 days. Closing between 14–21 days is considered optimal. Very short (3–5 days) is aggressive; very long (45+ days) may forfeit the theta advantage."
     }
   };
   var key2 = key.indexOf('Trades') === 0 ? 'Trades' : key;
@@ -1136,7 +1141,7 @@ function showStatInfo(key){
 
   var _dl = document.createElement('div');
   _dl.style.cssText = 'font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:7px';
-  _dl.textContent = 'Ne anlama gelir?';
+  _dl.textContent = 'What does it mean?';
 
   var _desc = document.createElement('div');
   _desc.style.cssText = 'font-size:14px;color:var(--text-2);line-height:1.65;margin-bottom:16px';
@@ -1147,7 +1152,7 @@ function showStatInfo(key){
 
   var _tl = document.createElement('div');
   _tl.style.cssText = 'font-size:12px;color:var(--info);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:7px';
-  _tl.textContent = 'Nasil yorumlanir?';
+  _tl.textContent = 'How to interpret?';
 
   var _tip = document.createElement('div');
   _tip.style.cssText = 'font-size:13px;color:var(--text-2);line-height:1.65';
@@ -1257,7 +1262,7 @@ function fetchOptionPrices(){
   if(!tickers.length){ _setPriceBtn('📡 Fiyat', '#10D48E', false); return; }
 
   _pricesFetching = true;
-  _setPriceBtn('⟳ Güncelleniyor...', '#FFB020', true);
+  _setPriceBtn('⟳ Updating...', '#FFB020', true);
 
   _fetchBulkQuotes(tickers)
     .then(function(map){
@@ -1290,7 +1295,7 @@ function fetchOptionPrices(){
       renderDashboard();
       var total = tickers.length;
       if(updated === 0){
-        _setPriceBtn('✗ Fiyat alınamadı', '#FF4F7B', false);
+        _setPriceBtn('✗ Price fetch failed', '#FF4F7B', false);
       } else if(updated < total){
         _setPriceBtn('⚠ '+updated+'/'+total, '#FFB020', false);
       } else {
@@ -1315,19 +1320,19 @@ function showDeleteConfirm(onConfirm){
   box.style.cssText='background:#3C2718;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center';
 
   var icon=document.createElement('div');icon.style.cssText='font-size:32px;margin-bottom:10px';icon.textContent='🗑';
-  var title=document.createElement('div');title.style.cssText='font-size:16px;font-weight:700;color:#F5EDE0;margin-bottom:8px';title.textContent='Pozisyonu Sil';
-  var msg=document.createElement('div');msg.style.cssText='font-size:13px;color:#EDD090;margin-bottom:20px;line-height:1.5';msg.textContent='Bu pozisyon kalıcı olarak silinecek. Emin misin?';
+  var title=document.createElement('div');title.style.cssText='font-size:16px;font-weight:700;color:#F5EDE0;margin-bottom:8px';title.textContent='Delete Position';
+  var msg=document.createElement('div');msg.style.cssText='font-size:13px;color:#EDD090;margin-bottom:20px;line-height:1.5';msg.textContent='This position will be permanently deleted. Are you sure?';
 
   var btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:10px';
 
   var btnNo=document.createElement('button');
   btnNo.style.cssText='flex:1;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#EDD090;font-size:14px;font-family:inherit;cursor:pointer';
-  btnNo.textContent='İptal';
+  btnNo.textContent='Cancel';
   btnNo.onclick=function(e){ e.stopPropagation(); _delOv.remove(); };
 
   var btnYes=document.createElement('button');
   btnYes.style.cssText='flex:1;padding:13px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);border-radius:10px;color:#EF4444;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer';
-  btnYes.textContent='Sil';
+  btnYes.textContent='Delete';
   btnYes.onclick=function(e){ e.stopPropagation(); _delOv.remove(); onConfirm(); };
 
   btnRow.appendChild(btnNo);btnRow.appendChild(btnYes);
@@ -1431,14 +1436,14 @@ function checkZoneAlerts(openTrades) {
       var title = '', body = '';
       var stk = t.strike + ' ' + t.type;
       if (prev === 'green' && zone === 'amber') {
-        title = '⚠️ ' + t.ticker + ' — Amber Bölge';
-        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike %' + Math.abs(dist).toFixed(1) + ' kaldi - 6pct alti';
+        title = '⚠️ ' + t.ticker + ' — Amber Zone';
+        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike ' + Math.abs(dist).toFixed(1) + '% away - under 6%';
       } else if (prev === 'amber' && (zone === 'red' || zone === 'itm')) {
-        title = '🔴 ' + t.ticker + ' — Kırmızı Bölge!';
-        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike %' + Math.abs(dist).toFixed(1) + ' kaldi - aksiyon gerekebilir!';
+        title = '🔴 ' + t.ticker + ' — Red Zone!';
+        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike ' + Math.abs(dist).toFixed(1) + '% away - action may be required!';
       } else if (zone === 'itm' && prev !== 'itm') {
-        title = '🚨 ' + t.ticker + ' — ITM GİRDİ!';
-        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike kirildi! Hemen kontrol et.';
+        title = '🚨 ' + t.ticker + ' — WENT ITM!';
+        body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike breached! Check immediately.';
       }
       if (title) sendNotif(title, body, 'zone-' + key);
     }
@@ -1743,7 +1748,7 @@ function setStatMonth(el, month){
 
 // ── Ay pillerini dinamik olarak oluştur (mevcut aydan geriye doğru) ──────
 var _MONTHS_KEY  = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
-var _MONTHS_DISP = {'Ocak':'Ocak','Subat':'Subat','Mart':'Mart','Nisan':'Nisan','Mayis':'Mayis','Haziran':'Haziran','Temmuz':'Temmuz','Agustos':'Agustos','Eylul':'Eylul','Ekim':'Ekim','Kasim':'Kasim','Aralik':'Aralik'};
+var _MONTHS_DISP = {'Ocak':'Jan','Subat':'Feb','Mart':'Mar','Nisan':'Apr','Mayis':'May','Haziran':'Jun','Temmuz':'Jul','Agustos':'Aug','Eylul':'Sep','Ekim':'Oct','Kasim':'Nov','Aralik':'Dec'};
 
 function buildMonthPills() {
   var nowIdx   = new Date().getMonth();
@@ -1951,7 +1956,7 @@ function renderDashboard(){
     if(el){ el.textContent = fmtA$(_avgColl); el.style.color = _avgPct>0.6?'var(--loss)':_avgPct>0.4?'var(--warn)':'var(--info)'; }
 
     el = document.getElementById('heroAvgCollSub');
-    if(el) el.textContent = _dayCount + ' gün ort.';
+    if(el) el.textContent = _dayCount + ' day avg';
 
     el = document.getElementById('heroAvgCollPct');
     if(el){ el.textContent = (_avgPct*100).toFixed(0)+'%'; el.style.color = _avgPct>0.6?'var(--loss)':_avgPct>0.4?'var(--warn)':'var(--info)'; }
@@ -1991,7 +1996,7 @@ function renderDashboard(){
     {v:stats.profitFactor.toFixed(2),l:'P Factor',c:'var(--warn)'},
     {v:fmt$(stats.ev),l:'EV/Trade',c:'var(--text)'},
     {v:stats.total,l:month==='all'?'Trades':'Trades ('+month+')',c:'var(--info)'},
-    {v:_holdDays!==null?_holdDays+' gün':'—',l:'Ort. Elde Tutma',c:'var(--purple)'}
+    {v:_holdDays!==null?_holdDays+' days':'—',l:'Avg Hold Days',c:'var(--purple)'}
   ].map(function(x){
     var _k=x.l.indexOf('Trades')===0?'Trades':x.l;
     return '<div class="stat-cell" onclick="showStatInfo(&quot;'+_k+'&quot;)" style="cursor:pointer;-webkit-user-select:none;user-select:none">'+
@@ -2079,13 +2084,13 @@ function renderTradeList(filter, month){
       '<table style="width:100%;min-width:520px;border-collapse:collapse;font-size:12px;">' +
       '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">' +
         '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap;position:sticky;left:0;z-index:3;background:#5C5049;">Ticker</th>' +
-        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Tür</th>' +
+        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Type</th>' +
         '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Strike</th>' +
-        '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Vade</th>' +
-        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Qty</th>'+'<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Prim</th>' +
+        '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Expiry</th>' +
+        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Qty</th>'+'<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Premium</th>' +
         '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">P&L</th>' +
         '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">DTE</th>' +
-        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Durum</th>' +
+        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Status</th>' +
       '</tr></thead><tbody>' +
       f.map(function(t){
         var isOpen=!t.closed;
@@ -2222,7 +2227,7 @@ function renderTradeList(filter, month){
     var partialSummaryHtml = '';
     if(_partlyOpen && _closedQty>0){
       partialSummaryHtml = '<div style="margin:0 14px 10px;padding:7px 10px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:11px;color:var(--warn);">'+
-        '📊 Kısmen kapalı: '+_closedQty+'/'+t.q+' kontrat · Kısmi P&L: <span style="color:'+((_partialPnl>=0)?'var(--profit)':'var(--loss)')+'">'+fmt$(_partialPnl)+'</span></div>';
+        '📊 Partially closed: '+_closedQty+'/'+t.q+' contracts · Partial P&L: <span style="color:'+((_partialPnl>=0)?'var(--profit)':'var(--loss)')+'">'+fmt$(_partialPnl)+'</span></div>';
     }
     // Monthly annualized return — closed premium-selling positions only
     var _monthlyHtml = '';
@@ -2242,7 +2247,7 @@ function renderTradeList(filter, month){
         '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
         '<div class="trade-date">'+t.opened+(t.closed?' > '+t.closed:' > open')+'</div></div></div>'+
         '<div><div class="trade-pnl-val" style="color:'+pc+'">'+(isOpen?(_partlyOpen?fmt$(shownPnl):'Open'):fmt$(displayPnl))+'</div>'+
-        '<div class="trade-pnl-pct" style="color:'+pc+'">'+(_pct2!=null?fmtP(_pct2):(_partlyOpen?(_remainingQty+' kontrat açık'):(isOpen?'pending':'')))+'</div>'+
+        '<div class="trade-pnl-pct" style="color:'+pc+'">'+(_pct2!=null?fmtP(_pct2):(_partlyOpen?(_remainingQty+' contracts open'):(isOpen?'pending':'')))+'</div>'+
         _monthlyHtml+'</div></div>'+
       '<div class="trade-card-body">'+
         (function(){
@@ -2358,14 +2363,14 @@ function renderStats(){
   var stats=calcStatsForStats(month);
   var closed=getStatsFilteredTrades(month);
   var open=getOpenTrades();
-  var label = month==='all' ? 'Tüm zamanlar' : month;
-  var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/BCS · '+open.length+' açık';
+  var label = month==='all' ? 'All Time' : (_MONTHS_DISP[month]||month);
+  var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/BCS · '+open.length+' open';
   var dctx=document.getElementById('donutChart');
   if(dctx){if(donutChartInst)donutChartInst.destroy();donutChartInst=new Chart(dctx.getContext('2d'),{type:'doughnut',data:{datasets:[{data:[stats.winners,stats.losers],backgroundColor:['rgba(34,197,94,.8)','rgba(239,68,68,.8)'],borderColor:['#22C55E','#EF4444'],borderWidth:1.5,hoverOffset:4}]},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});}
   var dl=document.getElementById('donutLegend');
   if(dl)dl.innerHTML='<div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div><span class="legend-txt">Winners</span><span class="legend-pct" style="color:var(--profit)">'+Math.round(stats.winRate*100)+'% · '+stats.winners+'</span></div>'+
     '<div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div><span class="legend-txt">Losers</span><span class="legend-pct" style="color:var(--loss)">'+Math.round((1-stats.winRate)*100)+'% · '+stats.losers+'</span></div>'+
-    (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+month+' ayı · '+stats.total+' trade</div>':'');
+    (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+(_MONTHS_DISP[month]||month)+' · '+stats.total+' trades</div>':'');
   var totalTeminat = closed.reduce(function(s,t){return s+(parseFloat(t.teminat)||0);},0);
   var avgTeminat   = closed.length ? totalTeminat/closed.length : 0;
   var teminatROC   = totalTeminat > 0 ? stats.totalPnl/totalTeminat : null;
@@ -2383,20 +2388,42 @@ function renderStats(){
     {l:'Payoff Ratio',v:stats.payoff.toFixed(2)+'×',sub:'Win:Loss size',c:'var(--warn)'},
     {l:'EV / Trade',v:fmt$(stats.ev),sub:'expected value',c:stats.ev>=0?'var(--profit)':'var(--loss)'},
     {l:'Total P&L',v:'<span class="privacy-val">'+fmt$(stats.totalPnl)+'</span>',sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true},
-    {l:'Ort. Elde Tutma',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' gün':'—';})(),sub:'CSP/PCS/IC/BCS',c:'var(--purple)',full:true},
+    {l:'Avg Hold Days',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' days':'—';})(),sub:'CSP/PCS/IC/BCS avg',c:'var(--purple)',full:true},
     (function(){
-      var SPREAD=['CSP','PCS','IC'];
+      var SPREAD=['CSP','PCS','IC','BCS'];
       var sp=closed.filter(function(t){return SPREAD.indexOf(t.type)>=0;});
       var wr=sp.length?sp.filter(function(t){return t.pnl>0;}).length/sp.length:null;
       var hd=calcAvgHoldDays(sp);
       return [
-        {l:'CSP/PCS/IC Win Rate',v:wr!==null?Math.round(wr*100)+'%':'—',sub:sp.length+' islem',bar:wr||0,bc:'var(--profit)',c:wr===null?'var(--text-3)':wr>=0.7?'var(--profit)':wr>=0.5?'var(--warn)':'var(--loss)'},
-        {l:'CSP/PCS/IC Elde Tutma',v:hd!==null?hd+' gün':'—',sub:'ort. gün sayisi',c:'var(--purple)'}
+        {l:'Strategy Win Rate',v:wr!==null?Math.round(wr*100)+'%':'—',sub:sp.length+' trades',bar:wr||0,bc:'var(--profit)',c:wr===null?'var(--text-3)':wr>=0.7?'var(--profit)':wr>=0.5?'var(--warn)':'var(--loss)'},
+        {l:'Avg Hold Days',v:hd!==null?hd+' days':'—',sub:'CSP/PCS/IC/BCS avg',c:'var(--purple)'}
       ];
     })(),
-    {l:'Toplam Teminat',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'ort. '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' teminatlı trade',c:'var(--info)',full:true},
-    {l:'Teminat Getirisi',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:avgPerTradeROC!==null?('ort. trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'teminat bilgisi eksik',bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true}
-  ].flat().map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
+    {l:'Total Collateral',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'avg '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' trades with collateral',c:'var(--info)',full:true},
+    {l:'Collateral Return',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:avgPerTradeROC!==null?('avg trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'collateral data missing',bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true},
+    (function(){
+      var _mn = month === 'all' ? (function(){ var _jn = new Date(); var _jta = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik']; return _jta[_jn.getMonth()]; })() : month;
+      var _mIdx = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'].indexOf(_mn);
+      if(_mIdx === -1) return null;
+      var _year = new Date().getFullYear();
+      var _monthStart = new Date(_year, _mIdx, 1);
+      var _monthEnd = new Date(_year, _mIdx+1, 0);
+      var _dayCount = Math.round((_monthEnd - _monthStart) / 86400000) + 1;
+      var _allOpen = getAllTrades().filter(function(t){ return !LONG_TYPES || LONG_TYPES.indexOf((t.type||'').trim()) === -1; });
+      var _daySum = 0;
+      for(var _d = 0; _d < _dayCount; _d++){
+        var _dt = new Date(_year, _mIdx, _d+1);
+        var _dtStr = _dt.toISOString().split('T')[0];
+        _allOpen.forEach(function(t){
+          var _op = t.opened || ''; var _cl = t.closed || '';
+          var _isOpen2 = _op <= _dtStr && (!_cl || _cl >= _dtStr);
+          if(_isOpen2) _daySum += parseFloat(t.teminat)||0;
+        });
+      }
+      var _avg = _dayCount > 0 ? _daySum / _dayCount : 0;
+      return _avg > 0 ? {l:'Avg Daily Collateral',v:'<span class="privacy-val">'+fmtA$(_avg)+'</span>',sub:(_MONTHS_DISP[_mn]||_mn)+' · daily avg capital at risk',c:'var(--info)',full:true} : null;
+    })()
+  ].flat().filter(function(x){return x!=null;}).map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
   if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
 }
@@ -2417,12 +2444,12 @@ function renderRisk(){
     if(d<=60){
       alerts.push({type:'danger',icon:'⏳',
         title:'LEAPS Expiry Critical — '+l.ticker,
-        desc:l.ticker+' '+l.direction+' $'+l.strike+' vadesi '+(d===0?'bugün doluyor':d+' gün içinde doluyor')+'. Acil aksiyon gerekebilir.',
+        desc:l.ticker+' '+l.direction+' $'+l.strike+' expires '+(d===0?'today':' in '+d+' days')+'. Urgent action may be needed.',
         meta:l.ticker+' · '+d+' DTE · '+l.expiry});
     } else if(d<=90){
       alerts.push({type:'warn',icon:'📅',
         title:'LEAPS Expiry Approaching — '+l.ticker,
-        desc:l.ticker+' '+l.direction+' $'+l.strike+' vadesi '+d+' gün içinde doluyor. Değerlendirme zamanı.',
+        desc:l.ticker+' '+l.direction+' $'+l.strike+' expires in '+d+' days. Time to evaluate.',
         meta:l.ticker+' · '+d+' DTE · '+l.expiry});
     }
   });
@@ -2467,21 +2494,21 @@ function importData(){
 
   var ttl=document.createElement('div');
   ttl.style.cssText='font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:6px;color:var(--text)';
-  ttl.textContent='📥 Yedek Yükle';
+  ttl.textContent='📥 Load Backup';
 
   var desc=document.createElement('div');
   desc.style.cssText='font-size:12px;color:var(--text-3);margin-bottom:16px;line-height:1.5';
-  desc.textContent='Export ile aldığın JSON dosyasını seç veya içeriğini yapıştır.';
+  desc.textContent='Select a JSON file from Export, or paste its contents below.';
 
   var fileBtn=document.createElement('button');
   fileBtn.style.cssText='width:100%;padding:12px;background:rgba(59,130,246,0.12);border:1px dashed rgba(59,130,246,0.4);border-radius:10px;color:var(--info);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px';
-  fileBtn.textContent='📂 JSON Dosyası Seç';
+  fileBtn.textContent='📂 Select JSON File';
 
   var fileInp=document.createElement('input');
   fileInp.type='file'; fileInp.accept='.json'; fileInp.style.display='none';
 
   var ta=document.createElement('textarea');
-  ta.placeholder='veya JSON içeriğini buraya yapıştır...';
+  ta.placeholder='or paste JSON contents here...';
   ta.style.cssText='width:100%;height:120px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;color:var(--text);font-size:12px;font-family:var(--font-mono);outline:none;resize:none;margin-bottom:14px;-webkit-appearance:none';
 
   fileInp.onchange=function(e){
@@ -2500,18 +2527,18 @@ function importData(){
 
   var cancelBtn=document.createElement('button');
   cancelBtn.style.cssText='flex:1;padding:13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:var(--text-2);font-size:14px;cursor:pointer;font-family:inherit';
-  cancelBtn.textContent='İptal';
+  cancelBtn.textContent='Cancel';
   cancelBtn.onclick=function(){m.remove();};
 
   var saveBtn=document.createElement('button');
   saveBtn.style.cssText='flex:2;padding:13px;background:var(--info);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit';
-  saveBtn.textContent='✅ Yükle';
+  saveBtn.textContent='✅ Load';
   saveBtn.onclick=function(){
     try{
       var raw=ta.value.trim();
-      if(!raw){alert('Dosya seç veya JSON yapıştır');return;}
+      if(!raw){alert('Select a file or paste JSON');return;}
       var d=JSON.parse(raw);
-      if(typeof d!=='object'||Array.isArray(d)){alert('Geçersiz format.');return;}
+      if(typeof d!=='object'||Array.isArray(d)){alert('Invalid format.');return;}
       tradesData=d;
       saveData();
       if(typeof deletedIds!=='undefined'){deletedIds=[];saveDeletedIds();}
@@ -2522,10 +2549,10 @@ function importData(){
       var tot=getAllTrades().length;
       var t=document.createElement('div');
       t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--profit);color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
-      t.textContent='✅ '+Object.keys(d).length+' ay, '+tot+' trade yüklendi';
+      t.textContent='✅ '+Object.keys(d).length+' months, '+tot+' trades loaded';
       document.body.appendChild(t);
       setTimeout(function(){t.remove();},3000);
-    }catch(e){alert('Geçersiz JSON: '+e.message);}
+    }catch(e){alert('Invalid JSON: '+e.message);}
   };
 
   btnRow.appendChild(cancelBtn);btnRow.appendChild(saveBtn);
@@ -2571,43 +2598,43 @@ function showAddTrade(existingTrade){
     var subOwnerVal = sheet.querySelector('#nt_owner') ? sheet.querySelector('#nt_owner').value : (isEdit && existingTrade.subOwner ? existingTrade.subOwner : 'Mustafa');
     var typeOpts = ALL_TYPES.map(function(t){return'<option'+(t===typeVal?' selected':'')+'>'+t+'</option>';}).join('');
     var isLongPos = longTypes.indexOf(typeVal) !== -1;
-    var openPremLabel = isLongPos ? 'Ödenen Prim — Açılış ($)' : 'Alınan Prim — Açılış ($)';
-    var closePremLabel = isLongPos ? 'Alınan Prim — Kapanış ($)' : 'Ödenen Prim — Kapanış ($)';
+    var openPremLabel = isLongPos ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
+    var closePremLabel = isLongPos ? 'Premium Received — Close ($)' : 'Premium Paid — Close ($)';
 
     var s=_fldStyle();
     sheet.innerHTML=
       '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
-      '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:18px;">'+(isEdit?'✎ Trade Düzenle':'Log New Trade')+'</div>'+
+      '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:18px;">'+(isEdit?'✎ Edit Trade':'Log New Trade')+'</div>'+
 
       (ACTIVE_PROFILE === 'mustafa' ? '<div id="nt_owner_wrap" style="margin-bottom:16px;"></div>' : '')+
 
       '<!-- Row 1: Ticker + Type -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Ticker','<input id="nt_t" placeholder="SOFI" autocapitalize="characters" style="'+s+'"'+(isEdit?' value="'+existingTrade.ticker+'"':'')+'>') +
-        _fldWrap('Tür','<div id="nt_ty_wrap" style="position:relative"></div>')+
+        _fldWrap('Type','<div id="nt_ty_wrap" style="position:relative"></div>')+
       '</div>'+
 
       '<!-- Row 2: Strike + Month -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Strike','<input id="nt_s" placeholder="50" style="'+s+'"'+(isEdit?' value="'+existingTrade.strike+'"':'')+'>') +
-        _fldWrap('Ay','<select id="nt_m" style="'+s+';color:#F5EDE0;background:#796D66;">'+mo+'</select>')+
+        _fldWrap('Month','<select id="nt_m" style="'+s+';color:#F5EDE0;background:#796D66;">'+mo+'</select>')+
       '</div>'+
 
       '<!-- Row 3: Qty + Collateral -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap('Kontrat Adedi','<input id="nt_q" type="number" placeholder="1" value="'+(isEdit?existingTrade.q:1)+'" style="'+s+'">') +
-        _fldWrap('Teminat ($)','<input id="nt_c" type="number" placeholder="14000" style="'+s+'"'+(isEdit&&existingTrade.teminat?' value="'+existingTrade.teminat+'"':'')+'>') +
+        _fldWrap('Contracts','<input id="nt_q" type="number" placeholder="1" value="'+(isEdit?existingTrade.q:1)+'" style="'+s+'">') +
+        _fldWrap('Collateral ($)','<input id="nt_c" type="number" placeholder="14000" style="'+s+'"'+(isEdit&&existingTrade.teminat?' value="'+existingTrade.teminat+'"':'')+'>') +
       '</div>'+
 
       '<!-- AÇILIŞ BÖLÜMÜ -->'+
-      '<div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:4px 0 10px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">📅 Açılış Bilgileri</div>'+
+      '<div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:4px 0 10px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">📅 Open Details</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap('Açılış Tarihi','<input id="nt_o" type="date" style="'+s+'"'+(isEdit?' value="'+existingTrade.opened+'"':'')+'>') +
-        _fldWrap('Vade (Expiry)','<input id="nt_e" type="date" style="'+s+'"'+(isEdit&&existingTrade.expiry?' value="'+existingTrade.expiry+'"':'')+'>') +
+        _fldWrap('Open Date','<input id="nt_o" type="date" style="'+s+'"'+(isEdit?' value="'+existingTrade.opened+'"':'')+'>') +
+        _fldWrap('Expiry','<input id="nt_e" type="date" style="'+s+'"'+(isEdit&&existingTrade.expiry?' value="'+existingTrade.expiry+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap(openPremLabel,'<input id="nt_p" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.premium!==undefined?' value="'+Math.abs(existingTrade.openPremium||existingTrade.premium||0)+'"':'')+'>') +
-        _fldWrap('Komisyon — Açılış ($)','<input id="nt_kom_a" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.openCommission?' value="'+existingTrade.openCommission+'"':'')+'>') +
+        _fldWrap('Commission — Open ($)','<input id="nt_kom_a" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.openCommission?' value="'+existingTrade.openCommission+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Delta','<input id="nt_d" type="number" placeholder="20" style="'+s+'"'+(isEdit&&existingTrade.delta!=null?' value="'+existingTrade.delta+'"':'')+'>') +
@@ -2615,31 +2642,31 @@ function showAddTrade(existingTrade){
       '</div>'+
 
       '<!-- KAPANIŞ BÖLÜMÜ -->'+
-      '<div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:4px 0 10px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">📌 Kapanış Bilgileri <span style="color:rgba(255,255,255,.2);font-weight:400;">(Açık pozisyon için boş bırak)</span></div>'+
+      '<div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:4px 0 10px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">📌 Close Details <span style="color:rgba(255,255,255,.2);font-weight:400;">(leave blank for open position)</span></div>'+
       (isEdit&&existingTrade.partialCloses&&existingTrade.partialCloses.length>0?
         '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:10px 12px;margin-bottom:12px;">'+
-        '<div style="font-size:10px;color:var(--warn);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📊 Kapanış Geçmişi (salt okunur)</div>'+
+        '<div style="font-size:10px;color:var(--warn);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📊 Close History (read-only)</div>'+
         existingTrade.partialCloses.map(function(pc,i){
           return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px;">'+
-            '<span style="color:var(--text-2)">'+(i+1)+'. '+pc.date+' · '+pc.qty+' kontrat · Kom: $'+(pc.closeCommission||0)+'</span>'+
+            '<span style="color:var(--text-2)">'+(i+1)+'. '+pc.date+' · '+pc.qty+' contracts · Comm: $'+(pc.closeCommission||0)+'</span>'+
             '<span style="font-family:monospace;font-weight:600;color:'+(pc.pnl>=0?'var(--profit)':'var(--loss)')+'">'+((pc.pnl>=0?'+':'')+pc.pnl.toFixed(2))+'</span>'+
           '</div>';
         }).join('')+
-        '<div style="display:flex;justify-content:space-between;padding:5px 0 0;font-size:11px;font-weight:700;"><span style="color:var(--text-2)">Toplam</span>'+
+        '<div style="display:flex;justify-content:space-between;padding:5px 0 0;font-size:11px;font-weight:700;"><span style="color:var(--text-2)">Total</span>'+
         '<span style="font-family:monospace;color:'+(existingTrade.pnl>=0?'var(--profit)':'var(--loss)')+'">'+((existingTrade.pnl>=0?'+':'')+existingTrade.pnl.toFixed(2))+'</span></div>'+
         '</div>'
       :'')+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap('Kapanış Tarihi','<input id="nt_cd" type="date" style="'+s+'"'+(isEdit&&existingTrade.closed?' value="'+existingTrade.closed+'"':'')+'>') +
-        _fldWrap('P&L ($)','<input id="nt_pnl" type="number" step="0.01" placeholder="boş = açık pozisyon" style="'+s+'"'+(isEdit&&existingTrade.pnl!=null?' value="'+existingTrade.pnl+'"':'')+'>') +
+        _fldWrap('Close Date','<input id="nt_cd" type="date" style="'+s+'"'+(isEdit&&existingTrade.closed?' value="'+existingTrade.closed+'"':'')+'>') +
+        _fldWrap('P&L ($)','<input id="nt_pnl" type="number" step="0.01" placeholder="blank = open position" style="'+s+'"'+(isEdit&&existingTrade.pnl!=null?' value="'+existingTrade.pnl+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap(closePremLabel,'<input id="nt_cp" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closePremium!=null?' value="'+Math.abs(existingTrade.closePremium)+'"':'')+'>') +
-        _fldWrap('Komisyon — Kapanış ($)','<input id="nt_kom_k" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closeCommission?' value="'+existingTrade.closeCommission+'"':'')+'>') +
+        _fldWrap('Commission — Close ($)','<input id="nt_kom_k" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closeCommission?' value="'+existingTrade.closeCommission+'"':'')+'>') +
       '</div>'+
 
-      '<button id="ntSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
-      '<button id="ntCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button>';
+      '<button id="ntSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Save</button>'+
+      '<button id="ntCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">Cancel</button>';
 
     // Set today as default for open date if new trade
     if(!isEdit && sheet.querySelector('#nt_o') && !sheet.querySelector('#nt_o').value){
@@ -2656,7 +2683,7 @@ function showAddTrade(existingTrade){
       _ownerHid.type = 'hidden'; _ownerHid.id = 'nt_owner'; _ownerHid.value = subOwnerVal;
       var _ownerLbl = document.createElement('div');
       _ownerLbl.style.cssText = _lblStyle() + ';margin-bottom:8px';
-      _ownerLbl.textContent = 'Hesap Sahibi';
+      _ownerLbl.textContent = 'Account Owner';
       var _ownerBtnRow = document.createElement('div');
       _ownerBtnRow.style.cssText = 'display:flex;gap:8px;';
       ['Mustafa','Eda'].forEach(function(name) {
@@ -2732,11 +2759,11 @@ function showAddTrade(existingTrade){
             // Prim label'larını güncelle
             var allLabels = sheet.querySelectorAll('label');
             allLabels.forEach(function(lbl){
-              if(lbl.textContent.indexOf('Prim') !== -1 && lbl.textContent.indexOf('Açılış') !== -1){
-                lbl.textContent = _isLong2 ? 'Ödenen Prim — Açılış ($)' : 'Alınan Prim — Açılış ($)';
+              if(lbl.textContent.indexOf('Premium') !== -1 && lbl.textContent.indexOf('Open') !== -1){
+                lbl.textContent = _isLong2 ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
               }
-              if(lbl.textContent.indexOf('Prim') !== -1 && lbl.textContent.indexOf('Kapanış') !== -1){
-                lbl.textContent = _isLong2 ? 'Alınan Prim — Kapanış ($)' : 'Ödenen Prim — Kapanış ($)';
+              if(lbl.textContent.indexOf('Premium') !== -1 && lbl.textContent.indexOf('Close') !== -1){
+                lbl.textContent = _isLong2 ? 'Premium Received — Close ($)' : 'Premium Paid — Close ($)';
               }
             });
           };
@@ -2758,7 +2785,7 @@ function showAddTrade(existingTrade){
     // Save
     sheet.querySelector('#ntSave').onclick=function(){
       var ticker=(sheet.querySelector('#nt_t').value||'').trim().toUpperCase();
-      if(!ticker){alert('Ticker gerekli');return;}
+      if(!ticker){alert('Ticker required');return;}
       var month=sheet.querySelector('#nt_m').value;
       var pnlStr=sheet.querySelector('#nt_pnl').value;
       var openPrem=parseFloat(sheet.querySelector('#nt_p').value)||0;
@@ -3039,17 +3066,17 @@ function _renderVergiInner(){
 
   // ── Sub text ──
   var sub = document.getElementById('vergiSub');
-  if(sub) sub.textContent = closedRows.length + ' kapatilan trade | ' + (missingKur>0 ? missingKur+' kur eksik' : 'tum kurlar girilmis');
+  if(sub) sub.textContent = closedRows.length + ' closed trades | ' + (missingKur>0 ? missingKur+' rates missing' : 'all rates entered');
 
   // ── Özet kartlar ──
   var oc = document.getElementById('vergiOzetCards');
   if(oc){
     while(oc.firstChild) oc.removeChild(oc.firstChild);
     var ozData=[
-      {l:'Toplam Matrah',v:totalMatrah.toFixed(2)+' TRY',c:totalMatrah>=0?'var(--profit)':'var(--loss)'},
-      {l:'Toplam P&L (USD)',v:fmt$(totalUSD),c:totalUSD>=0?'var(--profit)':'var(--loss)'},
-      {l:'Eksik Kur',v:missingKur,c:missingKur>0?'var(--warn)':'var(--profit)'},
-      {l:'İşlem Sayısı',v:closedRows.length,c:'var(--info)'}
+      {l:'Total Tax Base',v:totalMatrah.toFixed(2)+' TRY',c:totalMatrah>=0?'var(--profit)':'var(--loss)'},
+      {l:'Total P&L (USD)',v:fmt$(totalUSD),c:totalUSD>=0?'var(--profit)':'var(--loss)'},
+      {l:'Missing Rate',v:missingKur,c:missingKur>0?'var(--warn)':'var(--profit)'},
+      {l:'Trade Count',v:closedRows.length,c:'var(--info)'}
     ];
     ozData.forEach(function(x){
       var card=document.createElement('div');card.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px';
@@ -3067,13 +3094,13 @@ function _renderVergiInner(){
   if(vt){
     while(vt.firstChild) vt.removeChild(vt.firstChild);
     if(!rows.length){
-      var emp=document.createElement('div');emp.style.cssText='text-align:center;padding:20px;color:var(--text-3)';emp.textContent='Kapatılan trade yok';vt.appendChild(emp);
+      var emp=document.createElement('div');emp.style.cssText='text-align:center;padding:20px;color:var(--text-3)';emp.textContent='No closed trades';vt.appendChild(emp);
     } else {
       rows.forEach(function(r){
         var tr=r.t; var res=r.res;
         var tc2=tcol(tr.ticker.split(' ')[0]);
         var matrahColor=!res.hasKur?'var(--warn)':res.matrah_try>=0?'var(--profit)':'var(--loss)';
-        var matrahVal=!res.hasKur?'Kur eksik':res.matrah_try.toFixed(2)+' ₺';
+        var matrahVal=!res.hasKur?'Rate missing':res.matrah_try.toFixed(2)+' ₺';
         var alinan = isLong(tr.type) ? res.closePrem : res.openPrem;
         var odenen = isLong(tr.type) ? res.openPrem  : res.closePrem;
         var lastCloseDate = res.isPartialOnly
@@ -3085,7 +3112,7 @@ function _renderVergiInner(){
 
         var c1=document.createElement('div');
         var sp=document.createElement('span');sp.style.cssText='font-family:var(--font-head);font-weight:600;color:'+tc2.color;sp.textContent=tr.ticker;
-        if(res.isPartialOnly){var pb=document.createElement('span');pb.style.cssText='font-size:8px;background:rgba(245,158,11,0.2);color:var(--warn);border-radius:3px;padding:1px 4px;margin-left:4px';pb.textContent='KISMI';sp.appendChild(pb);}
+        if(res.isPartialOnly){var pb=document.createElement('span');pb.style.cssText='font-size:8px;background:rgba(245,158,11,0.2);color:var(--warn);border-radius:3px;padding:1px 4px;margin-left:4px';pb.textContent='PARTIAL';sp.appendChild(pb);}
         var dt=document.createElement('div');dt.style.cssText='font-size:9px;color:var(--text-3);margin-top:1px';dt.textContent=(tr.opened||'')+' → '+lastCloseDate;
         c1.appendChild(sp);c1.appendChild(dt);
 
@@ -3111,7 +3138,7 @@ function renderKurListesi(){
   if(!el) return;
   var keys = Object.keys(kurlarData).sort().reverse();
   if(!keys.length){
-    el.innerHTML='<div style="color:var(--text-3);font-size:12px;text-align:center;padding:8px;">Henüz kur girilmedi</div>';
+    el.innerHTML='<div style="color:var(--text-3);font-size:12px;text-align:center;padding:8px;">No rates entered yet</div>';
     return;
   }
   el.innerHTML = keys.slice(0,30).map(function(d){
@@ -3119,7 +3146,7 @@ function renderKurListesi(){
       '<div style="font-family:var(--font-mono);font-size:13px;">'+d+'</div>'+
       '<div style="display:flex;align-items:center;gap:10px;">'+
         '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--warn);">'+parseFloat(kurlarData[d]).toFixed(4)+' ₺</div>'+
-        '<button onclick="kurSil(this.dataset.d)" data-d="'+d+'" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Sil</button>'+
+        '<button onclick="kurSil(this.dataset.d)" data-d="'+d+'" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Delete</button>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -3128,8 +3155,8 @@ function renderKurListesi(){
 function kurEkle(){
   var tarih = document.getElementById('kurTarih').value;
   var deger = parseFloat(document.getElementById('kurDeger').value);
-  if(!tarih){ alert('Tarih seçin'); return; }
-  if(!deger || deger <= 0){ alert('Geçerli bir kur girin'); return; }
+  if(!tarih){ alert('Select a date'); return; }
+  if(!deger || deger <= 0){ alert('Enter a valid rate'); return; }
   // Store exact value truncated to 4 decimal places (no rounding)
   var factor = 10000;
   kurlarData[tarih] = Math.trunc(deger * factor) / factor;
@@ -3168,14 +3195,14 @@ function renderLeaps(){
   },0);
   var lm=document.getElementById('leapsMetrics');
   if(lm)lm.innerHTML=[
-    {v:fmt$(tg),l:'Toplam P&L',c:tg>=0?'var(--profit)':'var(--loss)'},
-    {v:fmtA$(ti),l:'Yatırılan',c:'var(--text)'},
-    {v:ti>0?(tg/ti*100).toFixed(1)+'%':'—',l:'Getiri',c:tg>=0?'var(--profit)':'var(--loss)'},
-    {v:leaps.length,l:'Pozisyon',c:'var(--info)'}
+    {v:fmt$(tg),l:'Total P&L',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:fmtA$(ti),l:'Invested',c:'var(--text)'},
+    {v:ti>0?(tg/ti*100).toFixed(1)+'%':'—',l:'Return',c:tg>=0?'var(--profit)':'var(--loss)'},
+    {v:leaps.length,l:'Positions',c:'var(--info)'}
   ].map(function(x){return'<div><div class="leaps-m-val" style="color:'+x.c+'">'+x.v+'</div><div class="leaps-m-lbl">'+x.l+'</div></div>';}).join('');
   var ll=document.getElementById('leapsList');
   if(!ll)return;
-  if(!leaps.length){ll.innerHTML='<div class="empty-state"><div class="empty-icon">⏰</div>Henüz LEAPS pozisyonu yok.<br><br><div style="font-size:12px;color:var(--text-3);">+ Add butonuna basarak ekleyebilirsin.</div></div>';return;}
+  if(!leaps.length){ll.innerHTML='<div class="empty-state"><div class="empty-icon">⏰</div>No LEAPS positions yet.<br><br><div style="font-size:12px;color:var(--text-3);">Tap + Add to get started.</div></div>';return;}
   ll.innerHTML=leaps.map(function(l){
     var cost=(parseFloat(l.costPer)||0)*(parseInt(l.qty)||1)*100;
     var isClosed=!!l.closed;
@@ -3203,23 +3230,23 @@ function renderLeaps(){
         '<div class="trade-pnl-pct" style="color:'+pc+'">'+(gp!==null?((gp>=0?'+':'')+(gp*100).toFixed(1)+'%'):'')+'</div></div></div>'+
       '<div class="trade-card-body">'+
         '<div><div class="trade-metric-lbl">Strike</div><div class="trade-metric-val" style="font-size:14px;font-weight:700">$'+(l.strike||'—')+'</div></div>'+
-        '<div><div class="trade-metric-lbl">Ödenen Prim</div><div class="trade-metric-val">'+fmtA$(cost)+'</div></div>'+
+        '<div><div class="trade-metric-lbl">Premium Paid</div><div class="trade-metric-val">'+fmtA$(cost)+'</div></div>'+
         '<div><div class="trade-metric-lbl">Qty</div><div class="trade-metric-val">'+(l.qty||1)+' × 100</div></div>'+
         (isClosed?
-          '<div><div class="trade-metric-lbl">Alınan Prim</div><div class="trade-metric-val" style="color:'+pc+'">'+(_sellAmt>0?fmtA$(_sellAmt):'—')+'</div></div>':
-          '<div><div class="trade-metric-lbl">Güncel</div><div class="trade-metric-val" style="color:'+pc+'">'+(gain!==null?fmtA$((parseFloat(l.currentPer)||0)*(parseInt(l.qty)||1)*100):'—')+'</div></div>'
+          '<div><div class="trade-metric-lbl">Premium Received</div><div class="trade-metric-val" style="color:'+pc+'">'+(_sellAmt>0?fmtA$(_sellAmt):'—')+'</div></div>':
+          '<div><div class="trade-metric-lbl">Current</div><div class="trade-metric-val" style="color:'+pc+'">'+(gain!==null?fmtA$((parseFloat(l.currentPer)||0)*(parseInt(l.qty)||1)*100):'—')+'</div></div>'
         )+
-        '<div><div class="trade-metric-lbl">Vade</div><div class="trade-metric-val">'+(l.expiry||'—')+'</div></div>'+
+        '<div><div class="trade-metric-lbl">Expiry</div><div class="trade-metric-val">'+(l.expiry||'—')+'</div></div>'+
         '<div><div class="trade-metric-lbl">DTE</div><div class="trade-metric-val" style="color:'+_dteColor+';font-weight:700">'+(dte!==null?dte+'d':'—')+'</div></div>'+
       '</div>'+
       '<div class="trade-card-foot"><div class="dte-bar-wrap">'+
-        '<div class="dte-label"><span>'+(isClosed?'Sonuç':'Hedefe')+'</span>'+
+        '<div class="dte-label"><span>'+(isClosed?'Result':'To Target')+'</span>'+
         '<span style="color:var(--text-3);font-family:var(--font-mono);font-size:12px;">'+(l.target?'$'+l.target:'—')+'</span></div>'+
         '<div class="dte-bar"><div class="dte-fill" style="width:'+(isClosed?Math.min(100,Math.abs(gp||0)*100):_dteFill)+'%;background:'+(isClosed?(gain>=0?'var(--profit)':'var(--loss)'):'linear-gradient(90deg,var(--info),var(--purple))')+'"></div></div></div>'+
         '<div class="status-label"><div class="status-dot" style="background:'+(isClosed?'var(--loss)':'#22c55e')+'"></div>'+
         '<span style="color:'+(isClosed?'var(--loss)':'#22c55e')+'">'+(isClosed?'CLOSED':'OPEN')+'</span></div></div>'+
       '<div style="padding:0 16px 14px;display:flex;gap:8px;">'+
-        '<button onclick="event.stopPropagation();showAddLeap(leapsData.find(function(x){return x.id==='+l.id+'}))" style="flex:1;padding:9px;background:rgba(79,127,255,0.12);border:1px solid rgba(79,127,255,0.25);border-radius:10px;color:#4F7FFF;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✎ Düzenle</button>'+
+        '<button onclick="event.stopPropagation();showAddLeap(leapsData.find(function(x){return x.id==='+l.id+'}))" style="flex:1;padding:9px;background:rgba(79,127,255,0.12);border:1px solid rgba(79,127,255,0.25);border-radius:10px;color:#4F7FFF;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✎ Edit</button>'+
         '<button onclick="event.stopPropagation();deleteLeap('+l.id+')" style="padding:9px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✕</button>'+
       '</div>'+
     '</div>';
@@ -3234,37 +3261,37 @@ function showAddLeap(existingLeap){
   var _FW=function(lbl,inp){return'<div>'+_LB(lbl)+inp+'</div>';};
   m.innerHTML='<div style="width:100%;max-width:500px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
-    '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Pozisyonu</div>'+
+    '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Position</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
       _FW('Ticker','<input id="lf_t" style="'+_IS+'">')+
-      _FW('Yön','<select id="lf_d" style="'+_IS+'"><option>Call</option><option>Put</option></select>')+
+      _FW('Direction','<select id="lf_d" style="'+_IS+'"><option>Call</option><option>Put</option></select>')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
       _FW('Strike','<input id="lf_s" style="'+_IS+'">')+
-      _FW('Vade (Expiry)','<input id="lf_e" type="date" style="'+_IS+'">')+
+      _FW('Expiry','<input id="lf_e" type="date" style="'+_IS+'">')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      _FW('Alış Tarihi','<input id="lf_opened" type="date" style="'+_IS+'">')+
-      _FW('Kontrat','<input id="lf_q" type="number" value="1" style="'+_IS+'">')+
+      _FW('Open Date','<input id="lf_opened" type="date" style="'+_IS+'">')+
+      _FW('Contracts','<input id="lf_q" type="number" value="1" style="'+_IS+'">')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      _FW('Ödenen Prim (Toplam $)','<input id="lf_c" type="number" style="'+_IS+'">')+
-      _FW('Hedef ($/kontrat)','<input id="lf_tg" type="number" style="'+_IS+'">')+
+      _FW('Premium Paid (Total $)','<input id="lf_c" type="number" style="'+_IS+'">')+
+      _FW('Target ($/contract)','<input id="lf_tg" type="number" style="'+_IS+'">')+
     '</div>'+
     '<div id="lf_cur_wrap" style="margin-bottom:12px;">'+
-      _FW('Güncel Değer (Toplam $)','<input id="lf_cur" type="number" style="'+_IS+'">')+
+      _FW('Current Value (Total $)','<input id="lf_cur" type="number" style="'+_IS+'">')+
     '</div>'+
-    '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Kapanış Bilgileri (Vergi için)</div>'+
+    '<div style="font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:8px 0 6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">Close Details (for Tax)</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      _FW('Satış Tarihi','<input id="lf_closed" type="date" style="'+_IS+'">')+
-      _FW('Alınan Prim (Toplam $)','<input id="lf_sell" type="number" style="'+_IS+'">')+
+      _FW('Close Date','<input id="lf_closed" type="date" style="'+_IS+'">')+
+      _FW('Premium Received (Total $)','<input id="lf_sell" type="number" style="'+_IS+'">')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-      _FW('Komisyon - Alış ($)','<input id="lf_okm" type="number" value="0" style="'+_IS+'">')+
-      _FW('Komisyon - Satış ($)','<input id="lf_ckm" type="number" value="0" style="'+_IS+'">')+
+      _FW('Commission — Open ($)','<input id="lf_okm" type="number" value="0" style="'+_IS+'">')+
+      _FW('Commission — Close ($)','<input id="lf_ckm" type="number" value="0" style="'+_IS+'">')+
     '</div>'+
-    '<button id="lfSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Kaydet</button>'+
-    '<button id="lfCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">İptal</button></div>';
+    '<button id="lfSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Save</button>'+
+    '<button id="lfCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">Cancel</button></div>';
   document.body.appendChild(m);
   var _q=function(id){return m.querySelector('#'+id);};
   function _toggleCur(){var cw=_q('lf_cur_wrap');if(cw)cw.style.display=_q('lf_closed').value?'none':'block';}
@@ -3290,7 +3317,7 @@ function showAddLeap(existingLeap){
   m.addEventListener('click',function(e){if(e.target===m)m.remove();});
   _q('lfSave').onclick=function(){
     var ticker=_q('lf_t').value.trim().toUpperCase();
-    if(!ticker){alert('Ticker gerekli');return;}
+    if(!ticker){alert('Ticker required');return;}
     var _sellTotal=parseFloat(_q('lf_sell').value)||0;
     var _costTotal=parseFloat(_q('lf_c').value)||0;
     var _curTotal=parseFloat(_q('lf_cur').value)||0;
@@ -3368,11 +3395,11 @@ function openTradeDetail(tradeId, month){
   var inf=document.createElement('div');inf.style.flex='1';
   var tn=document.createElement('div');tn.style.cssText='font-size:17px;font-weight:700;color:var(--text)';tn.textContent=trade.ticker+' ('+trade.type+')';
   var td2=document.createElement('div');td2.style.cssText='font-size:11px;color:var(--text-3);margin-top:3px';
-  td2.textContent=trade.opened+(trade.closed?' > '+trade.closed:' - Acik');
+  td2.textContent=trade.opened+(trade.closed?' > '+trade.closed:' - Open');
   inf.appendChild(tn);inf.appendChild(td2);
   var badge=document.createElement('div');
   badge.style.cssText='font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;'+(isOpen?'background:var(--profit-dim);color:var(--profit)':'background:rgba(255,255,255,0.05);color:var(--text-3)');
-  badge.textContent=isOpen?'ACIK':'KAPALI';
+  badge.textContent=isOpen?'OPEN':'CLOSED';
   hdr.appendChild(ico);hdr.appendChild(inf);hdr.appendChild(badge);
   sh.appendChild(hdr);
 
@@ -3380,11 +3407,11 @@ function openTradeDetail(tradeId, month){
   var box=document.createElement('div');
   box.style.cssText='background:rgba(255,255,255,0.03);border-radius:12px;padding:4px 14px;margin-bottom:14px';
   box.appendChild(row('Strike','$'+trade.strike));
-  var premLabel = isOpen ? 'Açılış Primi' : 'Açılış Primi';
+  var premLabel = isOpen ? 'Open Premium' : 'Open Premium';
   box.appendChild(row(premLabel, fmtA$(trade.openPremium||trade.premium)));
-  if(!isOpen && trade.closePremium!=null) box.appendChild(row('Kapanış Primi', fmtA$(trade.closePremium)));
-  if(trade.openCommission) box.appendChild(row('Kom. Açılış', fmtA$(trade.openCommission)));
-  if(!isOpen && trade.closeCommission) box.appendChild(row('Kom. Kapanış', fmtA$(trade.closeCommission)));
+  if(!isOpen && trade.closePremium!=null) box.appendChild(row('Close Premium', fmtA$(trade.closePremium)));
+  if(trade.openCommission) box.appendChild(row('Comm. Open', fmtA$(trade.openCommission)));
+  if(!isOpen && trade.closeCommission) box.appendChild(row('Comm. Close', fmtA$(trade.closeCommission)));
   box.appendChild(row('Qty / Expiry',trade.q+' x 100  |  '+trade.expiry));
   box.appendChild(row('Delta / IVR',(trade.delta||'-')+' D  |  '+(trade.ivr||'-')));
   if(trade.pnl!=null){
@@ -3401,7 +3428,7 @@ function openTradeDetail(tradeId, month){
     pcBox.style.cssText='background:rgba(255,255,255,0.03);border-radius:12px;padding:10px 14px;margin-bottom:12px';
     var pcHdr=document.createElement('div');
     pcHdr.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px';
-    pcHdr.textContent='Kapanış Geçmişi';
+    pcHdr.textContent='Close History';
     pcBox.appendChild(pcHdr);
     var _cumPnl=0;
     _pcs.forEach(function(pc,idx){
@@ -3410,9 +3437,9 @@ function openTradeDetail(tradeId, month){
       pcRow.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)';
       var pcL=document.createElement('div');
       var pcDate=document.createElement('div');pcDate.style.cssText='font-size:12px;color:var(--text-2)';
-      pcDate.textContent=(idx===_pcs.length-1&&trade.closed&&pc.date===trade.closed?'🔒 ':'')+(pc.date||'')+' · '+pc.qty+' kontrat';
+      pcDate.textContent=(idx===_pcs.length-1&&trade.closed&&pc.date===trade.closed?'🔒 ':'')+(pc.date||'')+' · '+pc.qty+' contracts';
       var pcKur=document.createElement('div');pcKur.style.cssText='font-size:10px;color:var(--text-3);margin-top:1px';
-      pcKur.textContent='Kur: '+(pc.kapanis_kur>0?pc.kapanis_kur.toFixed(4):'?')+' · Kom: $'+(pc.closeCommission||0);
+      pcKur.textContent='Rate: '+(pc.kapanis_kur>0?pc.kapanis_kur.toFixed(4):'?')+' · Comm: $'+(pc.closeCommission||0);
       pcL.appendChild(pcDate);pcL.appendChild(pcKur);
       var pcR=document.createElement('div');pcR.style.cssText='font-family:var(--font-mono);font-weight:600;font-size:13px;color:'+(pc.pnl>=0?'var(--profit)':'var(--loss)');
       pcR.textContent=(pc.pnl>=0?'+':'')+fmt$(pc.pnl);
@@ -3422,7 +3449,7 @@ function openTradeDetail(tradeId, month){
     // Toplam
     var totRow=document.createElement('div');
     totRow.style.cssText='display:flex;justify-content:space-between;padding:7px 0 2px;font-size:12px;font-weight:700';
-    var totL=document.createElement('span');totL.style.cssText='color:var(--text-2)';totL.textContent='Toplam P&L';
+    var totL=document.createElement('span');totL.style.cssText='color:var(--text-2)';totL.textContent='Total P&L';
     var totR=document.createElement('span');totR.style.cssText='font-family:var(--font-mono);color:'+(_cumPnl>=0?'var(--profit)':'var(--loss)');totR.textContent=(_cumPnl>=0?'+':'')+fmt$(_cumPnl);
     totRow.appendChild(totL);totRow.appendChild(totR);
     pcBox.appendChild(totRow);
@@ -3433,18 +3460,18 @@ function openTradeDetail(tradeId, month){
     var sec=document.createElement('div');
     sec.style.cssText='margin-top:4px;padding-top:16px;border-top:1px solid var(--border)';
     var isLongPos2=LONG_TYPES.indexOf((trade.type||'').trim())!==-1;
-    var closePremLabel2=isLongPos2?'Alınan Prim — Kapanış ($)':'Ödenen Prim — Kapanış ($)';
+    var closePremLabel2=isLongPos2?'Premium Received — Close ($)':'Premium Paid — Close ($)';
     var currentPC=trade.partialCloses||[];
     var alreadyClosedQty=currentPC.reduce(function(s,pc){return s+(pc.qty||0);},0);
     var remainingQ=(trade.q||1)-alreadyClosedQty;
 
     var stitle=document.createElement('div');stitle.style.cssText='font-size:12px;font-weight:700;letter-spacing:.5px;color:var(--text-3);margin-bottom:10px;text-transform:uppercase';
-    stitle.textContent='Pozisyonu Kapat ('+remainingQ+' kontrat kaldı)';
+    stitle.textContent='Close Position ('+remainingQ+' contracts remaining)';
     sec.appendChild(stitle);
     // Tam / Kısmi butonları
     var typeRow=document.createElement('div');typeRow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px';
-    var btnTam=document.createElement('button');btnTam.style.cssText='padding:9px;background:rgba(34,197,94,0.15);border:2px solid rgba(34,197,94,0.5);border-radius:9px;color:var(--profit);font-size:12px;font-weight:700;cursor:pointer';btnTam.textContent='✅ Tam Kapat';
-    var btnKismi=document.createElement('button');btnKismi.style.cssText='padding:9px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.3);border-radius:9px;color:var(--warn);font-size:12px;font-weight:700;cursor:pointer';btnKismi.textContent='⚡ Kısmi Kapat';
+    var btnTam=document.createElement('button');btnTam.style.cssText='padding:9px;background:rgba(34,197,94,0.15);border:2px solid rgba(34,197,94,0.5);border-radius:9px;color:var(--profit);font-size:12px;font-weight:700;cursor:pointer';btnTam.textContent='✅ Full Close';
+    var btnKismi=document.createElement('button');btnKismi.style.cssText='padding:9px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.3);border-radius:9px;color:var(--warn);font-size:12px;font-weight:700;cursor:pointer';btnKismi.textContent='⚡ Partial Close';
     typeRow.appendChild(btnTam);typeRow.appendChild(btnKismi);sec.appendChild(typeRow);
     // Form
     function mkInp(id,type,ph,lbl){
@@ -3457,12 +3484,12 @@ function openTradeDetail(tradeId, month){
       wrap.appendChild(label);wrap.appendChild(input);return wrap;
     }
     var grow1=document.createElement('div');grow1.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px';
-    grow1.appendChild(mkInp('td_date','date','','Kapanış Tarihi'));grow1.appendChild(mkInp('td_pnl','number','opsiyonel','P&L ($) — opsiyonel'));
+    grow1.appendChild(mkInp('td_date','date','','Close Date'));grow1.appendChild(mkInp('td_pnl','number','optional','P&L ($) — optional'));
     var grow2=document.createElement('div');grow2.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px';
     // Kapanış primi — referansı sakla
-    var _cpWrap=mkInp('td_cp','number','0.00',closePremLabel2+' (toplam)');
+    var _cpWrap=mkInp('td_cp','number','0.00',closePremLabel2+' (total)');
     var _cpInp=_cpWrap.querySelector('input'); _cpInp.value='';
-    var _ckWrap=mkInp('td_kom_k','number','0.00','Komisyon ($) (toplam)');
+    var _ckWrap=mkInp('td_kom_k','number','0.00','Commission ($) (total)');
     var _ckInp=_ckWrap.querySelector('input'); _ckInp.value='';
     grow2.appendChild(_cpWrap);grow2.appendChild(_ckWrap);
 
@@ -3474,7 +3501,7 @@ function openTradeDetail(tradeId, month){
     sec.appendChild(grow1);sec.appendChild(grow2);sec.appendChild(pnlPreview);
 
     var qWrap=document.createElement('div');qWrap.style.cssText='margin-bottom:10px;display:none';
-    var qLbl=document.createElement('label');qLbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px;display:block';qLbl.textContent='Kapatılan Kontrat Adedi (max '+remainingQ+')';
+    var qLbl=document.createElement('label');qLbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px;display:block';qLbl.textContent='Contracts to Close (max '+remainingQ+')';
     var qInp=document.createElement('input');qInp.id='td_qty';qInp.type='number';qInp.min='1';qInp.max=String(remainingQ);qInp.value=String(remainingQ);qInp.step='1';
     qInp.style.cssText='background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:9px;padding:11px 12px;color:var(--text);font-size:13px;outline:none;width:100%';
     qWrap.appendChild(qLbl);qWrap.appendChild(qInp);
@@ -3491,7 +3518,7 @@ function openTradeDetail(tradeId, month){
       var _prev=document.getElementById('td_pnl_preview'); if(!_prev)return;
       if(_pStr!==''&&!isNaN(_pk)){
         _prev.style.display='block';
-        _prev.innerHTML='<span style="color:var(--text-3)">P&L (girilen): </span><span style="font-family:monospace;font-weight:700;color:'+(_pk>=0?'var(--profit)':'var(--loss)')+'">'+(_pk>=0?'+':'')+_pk.toFixed(2)+'</span>';
+        _prev.innerHTML='<span style="color:var(--text-3)">P&L (entered): </span><span style="font-family:monospace;font-weight:700;color:'+(_pk>=0?'var(--profit)':'var(--loss)')+'">'+(_pk>=0?'+':'')+_pk.toFixed(2)+'</span>';
         return;
       }
       if(!isNaN(_cp)&&_cp>=0){
@@ -3513,11 +3540,11 @@ function openTradeDetail(tradeId, month){
         _est=Math.round(_est*100)/100;
         var _thisEst=isLong(trade.type)?(_cp-_km):(-_cp-_km);
         _prev.style.display='block';
-        _prev.innerHTML='<div style="margin-bottom:4px"><span style="color:var(--text-3)">Bu kapanış: </span>'+
+        _prev.innerHTML='<div style="margin-bottom:4px"><span style="color:var(--text-3)">This close: </span>'+
           '<span style="font-family:monospace;font-weight:600;color:'+(_thisEst>=0?'var(--profit)':'var(--loss)')+'">'+(_thisEst>=0?'+':'')+_thisEst.toFixed(2)+'</span></div>'+
-          '<div><span style="color:var(--text-3)">Toplam tahmini P&L: </span>'+
+          '<div><span style="color:var(--text-3)">Estimated total P&L: </span>'+
           '<span style="font-family:monospace;font-weight:700;color:'+(_est>=0?'var(--profit)':'var(--loss)')+'">'+(_est>=0?'+':'')+_est.toFixed(2)+'</span></div>'+
-          '<div style="font-size:10px;color:var(--text-3);margin-top:3px">Açılış: '+_opFull2+' | Toplam kapanış: '+_totalCP.toFixed(2)+' | Toplam kom: '+(_okFull2+_totalCK).toFixed(2)+'</div>';
+          '<div style="font-size:10px;color:var(--text-3);margin-top:3px">Open: '+_opFull2+' | Total close: '+_totalCP.toFixed(2)+' | Total comm: '+(_okFull2+_totalCK).toFixed(2)+'</div>';
       } else {
         _prev.style.display='none';
       }
@@ -3530,9 +3557,9 @@ function openTradeDetail(tradeId, month){
       var _qtyEl=document.getElementById('td_qty'); if(_qtyEl) _qtyEl.oninput=updatePnlPreview;
     },50);
     var isPartialMode=false;
-    btnTam.onclick=function(){isPartialMode=false;btnTam.style.border='2px solid rgba(34,197,94,0.5)';btnKismi.style.border='1px solid rgba(245,158,11,0.3)';qWrap.style.display='none';closeBtn.textContent='✅ Pozisyonu Tam Kapat';closeBtn.style.background='linear-gradient(135deg,var(--profit),#0EA870)';};
-    btnKismi.onclick=function(){isPartialMode=true;btnKismi.style.border='2px solid rgba(245,158,11,0.6)';btnTam.style.border='1px solid rgba(34,197,94,0.2)';qWrap.style.display='block';closeBtn.textContent='⚡ Kısmen Kapat';closeBtn.style.background='linear-gradient(135deg,#F59E0B,#D97706)';};
-    var closeBtn=document.createElement('button');closeBtn.style.cssText='width:100%;margin-top:10px;background:linear-gradient(135deg,var(--profit),#0EA870);border:none;border-radius:12px;padding:14px;color:#fff;font-family:var(--font-head);font-size:14px;font-weight:700;cursor:pointer';closeBtn.textContent='✅ Pozisyonu Tam Kapat';
+    btnTam.onclick=function(){isPartialMode=false;btnTam.style.border='2px solid rgba(34,197,94,0.5)';btnKismi.style.border='1px solid rgba(245,158,11,0.3)';qWrap.style.display='none';closeBtn.textContent='✅ Close Position (Full)';closeBtn.style.background='linear-gradient(135deg,var(--profit),#0EA870)';};
+    btnKismi.onclick=function(){isPartialMode=true;btnKismi.style.border='2px solid rgba(245,158,11,0.6)';btnTam.style.border='1px solid rgba(34,197,94,0.2)';qWrap.style.display='block';closeBtn.textContent='⚡ Partial Close';closeBtn.style.background='linear-gradient(135deg,#F59E0B,#D97706)';};
+    var closeBtn=document.createElement('button');closeBtn.style.cssText='width:100%;margin-top:10px;background:linear-gradient(135deg,var(--profit),#0EA870);border:none;border-radius:12px;padding:14px;color:#fff;font-family:var(--font-head);font-size:14px;font-weight:700;cursor:pointer';closeBtn.textContent='✅ Close Position (Full)';
     closeBtn.onclick=function(){
       // Direkt element referanslarını kullan (getElementById yerine)
       var _dateInp=document.getElementById('td_date');
@@ -3546,7 +3573,7 @@ function openTradeDetail(tradeId, month){
       var _komRaw=(_ckInp?_ckInp.value||'':'').trim().replace(',','.');
       var komK=_komRaw===''?0:parseFloat(_komRaw);
       if(isNaN(komK))komK=0;
-      if(!d){alert('Tarih gir');return;}
+      if(!d){alert('Enter a date');return;}
 
       // Kaç kontrat kapatılıyor?
       var closingQty=isPartialMode
@@ -3584,7 +3611,7 @@ function openTradeDetail(tradeId, month){
       var months=Object.keys(tradesData);
       if(isPartialMode){
         var qty=closingQty;
-        if(qty<1||qty>remainingQ){alert('Geçerli kontrat sayısı gir (1-'+remainingQ+')');return;}
+        if(qty<1||qty>remainingQ){alert('Enter a valid contract count (1-'+remainingQ+')');return;}
         var pcEntry={date:d,qty:qty,pnl:p,closePremium:Math.round(cpVal*100)/100,closeCommission:Math.round(komK*100)/100};
         for(var mi=0;mi<months.length;mi++){var arr=tradesData[months[mi]];for(var ti=0;ti<arr.length;ti++){if(String(arr[ti].id)===String(tradeId)){if(!arr[ti].partialCloses)arr[ti].partialCloses=[];arr[ti].partialCloses.push(pcEntry);var newCQ=arr[ti].partialCloses.reduce(function(s,x){return s+(x.qty||0);},0);if(newCQ>=(arr[ti].q||1)){var _op2=parseFloat(arr[ti].openPremium)||parseFloat(arr[ti].premium)||0;var _ok2=parseFloat(arr[ti].openCommission)||0;var _sumClose=arr[ti].partialCloses.reduce(function(s,x){return s+(x.closePremium||0);},0);var _sumKom=arr[ti].partialCloses.reduce(function(s,x){return s+(x.closeCommission||0);},0);var tPnl=isLong(arr[ti].type)?(_sumClose-_sumKom-_op2-_ok2):(_op2-_ok2-_sumClose-_sumKom);arr[ti].closed=d;arr[ti].pnl=Math.round(tPnl*100)/100;arr[ti].pct=arr[ti].premium?arr[ti].pnl/Math.abs(arr[ti].premium):null;}break;}}}
       } else {
@@ -3638,7 +3665,7 @@ function openTradeDetail(tradeId, month){
   editSec.style.cssText='margin-top:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06)';
   var editBtn=document.createElement('button');
   editBtn.style.cssText='width:100%;background:rgba(79,127,255,0.10);border:1px solid rgba(79,127,255,0.25);border-radius:12px;padding:11px;color:#4F7FFF;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
-  editBtn.textContent='✎ Trade Düzenle';
+  editBtn.textContent='✎ Edit Trade';
   editBtn.onclick=function(){
     ov.remove();
     // Find full trade object with month
@@ -3661,7 +3688,7 @@ function openTradeDetail(tradeId, month){
     acts.style.cssText='margin-top:4px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:8px';
     var reopenBtn=document.createElement('button');
     reopenBtn.style.cssText='flex:1;background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:12px;color:var(--warn);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
-    reopenBtn.textContent='Yeniden Ac';
+    reopenBtn.textContent='Reopen';
     reopenBtn.onclick=function(){
       var months=Object.keys(tradesData);
       for(var mi=0;mi<months.length;mi++){
@@ -3675,7 +3702,7 @@ function openTradeDetail(tradeId, month){
     };
     var delBtn=document.createElement('button');
     delBtn.style.cssText='flex:1;background:var(--loss-dim);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:12px;color:var(--loss);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
-    delBtn.textContent='Sil';
+    delBtn.textContent='Delete';
     delBtn.onclick=function(){
       showDeleteConfirm(function(){ deleteTradeById(tradeId, function(){ ov.remove(); }); });
     };
@@ -3689,7 +3716,7 @@ function openTradeDetail(tradeId, month){
     openDelDiv.style.cssText='margin-top:6px';
     var openDelBtn=document.createElement('button');
     openDelBtn.style.cssText='width:100%;background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:10px;color:var(--loss);font-family:var(--font-head);font-size:12px;font-weight:600;cursor:pointer';
-    openDelBtn.textContent='🗑 Pozisyonu Sil';
+    openDelBtn.textContent='🗑 Delete Position';
     openDelBtn.onclick=function(){
       showDeleteConfirm(function(){ deleteTradeById(tradeId, function(){ ov.remove(); }); });
     };
@@ -3702,16 +3729,16 @@ function openTradeDetail(tradeId, month){
   noteSec.style.cssText='margin-top:4px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08)';
   var noteLbl=document.createElement('div');
   noteLbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:7px';
-  noteLbl.textContent='Not';
+  noteLbl.textContent='Note';
   var noteInput=document.createElement('textarea');
   noteInput.id='td_note';
   noteInput.rows=2;
-  noteInput.placeholder='Trade notu...';
+  noteInput.placeholder='Trade note...';
   noteInput.value=trade.note||'';
   noteInput.style.cssText='background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none;width:100%;resize:none';
   var saveNoteBtn=document.createElement('button');
   saveNoteBtn.style.cssText='margin-top:7px;width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:9px;color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer';
-  saveNoteBtn.textContent='Notu Kaydet';
+  saveNoteBtn.textContent='Save Note';
   saveNoteBtn.onclick=function(){
     var note=noteInput.value.trim();
     var months=Object.keys(tradesData);
@@ -3722,9 +3749,9 @@ function openTradeDetail(tradeId, month){
       }
     }
     saveData();
-    saveNoteBtn.textContent='Kaydedildi!';
+    saveNoteBtn.textContent='Saved!';
     saveNoteBtn.style.color='var(--profit)';
-    setTimeout(function(){saveNoteBtn.textContent='Notu Kaydet';saveNoteBtn.style.color='var(--text-2)';},1500);
+    setTimeout(function(){saveNoteBtn.textContent='Save Note';saveNoteBtn.style.color='var(--text-2)';},1500);
     renderTradeList(currentFilter);
   };
   noteSec.appendChild(noteLbl);
@@ -3735,7 +3762,7 @@ function openTradeDetail(tradeId, month){
   // Cancel
   var cancel=document.createElement('button');
   cancel.style.cssText='width:100%;background:transparent;border:none;padding:12px;color:var(--text-3);font-size:13px;cursor:pointer;margin-top:4px';
-  cancel.textContent='Iptal';
+  cancel.textContent='Cancel';
   cancel.onclick=function(){ov.remove();};
   sh.appendChild(cancel);
 }
@@ -3794,22 +3821,22 @@ function updateNotifBtn() {
     btn.style.color = '#F59E0B';
     btn.style.background = 'rgba(245,158,11,0.18)';
     btn.style.borderColor = 'rgba(245,158,11,0.35)';
-    btn.title = 'Bildirimler ACIK — kapat';
+    btn.title = 'Notifications ON — tap to disable';
   } else if (Notification.permission === 'denied') {
     btn.textContent = '🔕';
     btn.style.color = '#6B5A4A';
-    btn.title = 'Bildirimler engellendi (tarayici ayarindan ac)';
+    btn.title = 'Notifications blocked (enable in browser settings)';
   } else {
     btn.textContent = '🔔';
     btn.style.color = '#9A8472';
     btn.style.background = 'rgba(245,158,11,0.08)';
-    btn.title = 'Bildirim izni ver — strike yaklasinca uyar';
+    btn.title = 'Enable notifications — alert when strike approaches';
   }
 }
 
 function toggleNotifications() {
   if (!('Notification' in window)) {
-    alert('Tarayıcınız bildirimleri desteklemiyor.');
+    alert('Your browser does not support notifications.');
     return;
   }
   if (Notification.permission === 'granted' && _notifEnabled) {
@@ -3820,11 +3847,11 @@ function toggleNotifications() {
   requestNotifPermission(function(ok) {
     updateNotifBtn();
     if (ok) {
-      sendNotif('✅ OptionFlow Bildirimleri Açık',
-        'Strike yaklaşma bildirimleri aktif. Yeşil→Amber ve Amber→Kırmızı geçişlerinde uyarı alacaksınız.',
+      sendNotif('✅ OptionFlow Notifications On',
+        'Strike proximity alerts active. You will be notified on Green→Amber and Amber→Red transitions.',
         'optflow-welcome');
     } else {
-      alert('Bildirim izni verilmedi. Tarayıcı adres çubuğundaki kilit simgesinden site izinlerini açın.');
+      alert('Notification permission denied. Enable site permissions via the lock icon in the browser address bar.');
     }
   });
 }
@@ -3871,13 +3898,13 @@ function updateAutoRefreshBtn() {
     btn.style.color = '#10D48E';
     btn.style.background = 'rgba(16,212,142,0.15)';
     btn.style.borderColor = 'rgba(16,212,142,0.30)';
-    btn.title = 'Otomatik yenileme ACIK (5 dak) — kapat';
+    btn.title = 'Auto-refresh ON (5 min) — tap to disable';
   } else {
     btn.textContent = '⏱';
     btn.style.color = '#6B5A4A';
     btn.style.background = 'rgba(255,255,255,0.05)';
     btn.style.borderColor = 'rgba(255,255,255,0.08)';
-    btn.title = 'Otomatik yenileme kapat — her 5 dakikada fiyat cek';
+    btn.title = 'Auto-refresh OFF — tap to check prices every 5 min';
   }
 }
 
@@ -3903,11 +3930,11 @@ function editPortSize(){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
   var box = document.createElement('div');
   box.style.cssText='background:#1a2234;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:24px;width:100%;max-width:320px';
-  box.innerHTML='<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f1f5f9">Portföy Boyutu ($)</div>'
+  box.innerHTML='<div style="font-size:16px;font-weight:700;margin-bottom:12px;color:#f1f5f9">Portfolio Size ($)</div>'
     +'<input id="_psInp" type="number" value="'+cur+'" style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:12px;color:#f1f5f9;font-size:18px;font-family:monospace;outline:none;margin-bottom:16px">'
     +'<div style="display:flex;gap:10px">'
-    +'<button id="_psCancel" style="flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#94a3b8;font-size:13px;cursor:pointer">İptal</button>'
-    +'<button id="_psSave" style="flex:2;padding:11px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Kaydet</button>'
+    +'<button id="_psCancel" style="flex:1;padding:11px;background:transparent;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#94a3b8;font-size:13px;cursor:pointer">Cancel</button>'
+    +'<button id="_psSave" style="flex:2;padding:11px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Save</button>'
     +'</div>';
   ov.appendChild(box);
   document.body.appendChild(ov);
@@ -3935,7 +3962,7 @@ function renderPlannedList(){
   var el = document.getElementById('plannedList');
   if(!el) return;
   if(!plannedTrades.length){
-    el.innerHTML='<div style="text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">Henüz plan yok</div>';
+    el.innerHTML='<div style="text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">No plans yet</div>';
     return;
   }
   var TC2={CSP:'#22c55e',CC:'#3b82f6',PMCC:'#a78bfa',PCS:'#f59e0b',IC:'#8b5cf6',LEAPS:'#10b981','Long Call':'#ef4444',HEDGE:'#64748b'};
@@ -3943,9 +3970,9 @@ function renderPlannedList(){
     var c=TC2[p.type]||'#94a3b8';
     var fields=[];
     if(p.strike) fields.push({l:'Strike',v:p.strike});
-    if(p.expiry) fields.push({l:'Vade',v:p.expiry});
-    if(p.q)      fields.push({l:'Kontrat',v:p.q+'x'});
-    if(p.premium)fields.push({l:'Prim',v:'$'+p.premium});
+    if(p.expiry) fields.push({l:'Expiry',v:p.expiry});
+    if(p.q)      fields.push({l:'Contracts',v:p.q+'x'});
+    if(p.premium)fields.push({l:'Premium',v:'$'+p.premium});
     if(p.delta)  fields.push({l:'Delta',v:p.delta});
     if(p.ivr)    fields.push({l:'IVR',v:p.ivr});
     var grid=fields.map(function(f){
@@ -3960,7 +3987,7 @@ function renderPlannedList(){
       +'<span style="font-size:16px;font-weight:800;font-family:monospace;color:#f1f5f9">'+p.ticker+'</span>'
       +'<span style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:5px;font-size:10px;font-weight:700;padding:2px 8px">'+p.type+'</span>'
       +'</div>'
-      +'<button onclick="deletePlan('+i+')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px">Sil</button>'
+      +'<button onclick="deletePlan('+i+')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px">Delete</button>'
       +'</div>'
       +(grid?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:'+(p.note?'10':'0')+'px">'+grid+'</div>':'')
       +(p.note?'<div style="font-size:11px;color:#94a3b8;background:rgba(255,255,255,.03);border-radius:6px;padding:7px 9px;font-style:italic">'+p.note+'</div>':'')
@@ -3988,32 +4015,32 @@ function openAddPlan(){
   sheet.innerHTML =
     '<div style="width:36px;height:3px;background:rgba(255,255,255,.2);border-radius:2px;margin:14px auto 18px"></div>'
    +'<div style="padding:0 18px">'
-   +'<div style="font-size:17px;font-weight:700;color:#f1f5f9;margin-bottom:18px">📋 Plan Ekle</div>'
+   +'<div style="font-size:17px;font-weight:700;color:#f1f5f9;margin-bottom:18px">📋 Add Plan</div>'
    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
    +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Ticker *</div>'
    +'<input id="_pl_ticker" type="text" placeholder="SOFI" autocomplete="off" autocorrect="off" autocapitalize="characters" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:15px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
-   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">İşlem Tipi</div>'
+   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Trade Type</div>'
    +'<select id="_pl_type" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none">'
    +'<option>CSP</option><option>CC</option><option>PCS</option><option>PMCC</option><option>IC</option><option>Long Call</option><option>LEAPS</option><option>HEDGE</option>'
    +'</select></div>'
-   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Vade</div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Expiry</div>'
    +'<input id="_pl_expiry" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
    +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Strike</div>'
    +'<input id="_pl_strike" type="number" placeholder="50" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
-   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Kontrat</div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Contracts</div>'
    +'<input id="_pl_q" type="number" placeholder="1" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
-   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Prim ($)</div>'
+   +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Premium ($)</div>'
    +'<input id="_pl_premium" type="number" step="0.01" placeholder="0.50" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
    +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Delta</div>'
    +'<input id="_pl_delta" type="number" placeholder="20" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
    +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">IVR</div>'
    +'<input id="_pl_ivr" type="number" placeholder="45" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
-   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Not</div>'
-   +'<input id="_pl_note" type="text" placeholder="Giriş gerekçesi..." style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
+   +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Note</div>'
+   +'<input id="_pl_note" type="text" placeholder="Entry rationale..." style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
    +'</div>'
    +'<div style="display:flex;gap:10px;margin-top:18px">'
-   +'<button id="_pl_cancel_btn" style="flex:1;padding:13px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#94a3b8;font-size:14px;cursor:pointer">İptal</button>'
-   +'<button id="_pl_save_btn" style="flex:2;padding:13px;background:#3b82f6;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Kaydet</button>'
+   +'<button id="_pl_cancel_btn" style="flex:1;padding:13px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#94a3b8;font-size:14px;cursor:pointer">Cancel</button>'
+   +'<button id="_pl_save_btn" style="flex:2;padding:13px;background:#3b82f6;border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Save</button>'
    +'</div>'
    +'</div>';
 
@@ -4383,43 +4410,43 @@ function showProfileScreen() {
 }
 
 function pushToCloud() {
-  if(!ACTIVE_PROFILE){ alert('Profil secili degil.'); return; }
+  if(!ACTIVE_PROFILE){ alert('No profile selected.'); return; }
   if(typeof window.syncPositionsToFirestore !== 'function'){
-    alert('Bulut baglantisi hazir degil, birka saniye bekleyip tekrar deneyin.');
+    alert('Cloud connection not ready, please wait a moment and try again.');
     return;
   }
   var btn = document.getElementById('cloudPushBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Gönderiliyor...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Uploading...'; }
   window.syncPositionsToFirestore(window._fcmToken || null).then(function(){
-    if(btn){ btn.textContent = '✅ Gönderildi!'; }
-    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; } }, 3000);
+    if(btn){ btn.textContent = '✅ Uploaded!'; }
+    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='↑ Push to Cloud'; } }, 3000);
   }).catch(function(e){
-    if(btn){ btn.disabled=false; btn.textContent='↑ Buluta Gönder'; }
+    if(btn){ btn.disabled=false; btn.textContent='↑ Push to Cloud'; }
     var msg = (e && e.message) ? e.message : String(e);
-    alert('❌ Gönderme basarisiz:\n\n' + msg + '\n\nInternet baglantisini kontrol edin.');
+    alert('❌ Upload failed:\n\n' + msg + '\n\nCheck your internet connection.');
   });
 }
 
 function syncFromCloud() {
-  if(!ACTIVE_PROFILE){ alert('Profil secili degil.'); return; }
+  if(!ACTIVE_PROFILE){ alert('No profile selected.'); return; }
   if(typeof window.restoreFromFirestore !== 'function'){
-    alert('Bulut baglantisi hazir degil, birka saniye bekleyip tekrar deneyin.');
+    alert('Cloud connection not ready, please wait a moment and try again.');
     return;
   }
   var btn = document.getElementById('cloudSyncBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Yukleniyor...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Loading...'; }
   window.restoreFromFirestore(ACTIVE_PROFILE).then(function(ok){
     if(ok){
-      if(btn){ btn.textContent = 'Yuklendi!'; }
+      if(btn){ btn.textContent = 'Loaded!'; }
       document.getElementById('profile-screen').style.display = 'none';
       reloadProfileData();
     } else {
-      if(btn){ btn.disabled = false; btn.textContent = 'Buluttan Yukle'; }
-      alert('Bu profil icin bulut yedegi bulunamadi.');
+      if(btn){ btn.disabled = false; btn.textContent = 'Load from Cloud'; }
+      alert('No cloud backup found for this profile.');
     }
   }).catch(function(){
-    if(btn){ btn.disabled = false; btn.textContent = 'Buluttan Yukle'; }
-    alert('Baglanti hatasi. Interneti kontrol edin.');
+    if(btn){ btn.disabled = false; btn.textContent = 'Load from Cloud'; }
+    alert('Connection error. Check your internet connection.');
   });
 }
 
@@ -4440,10 +4467,10 @@ function syncFromCloud() {
 <div id="nlv-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);align-items:flex-end;justify-content:center;">
   <div style="background:#3C2718;border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-width:500px;border-top:1px solid rgba(255,255,255,.1);">
     <div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>
-    <div style="font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px;">NLV Başlangıç Değeri</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:20px;">USD cinsinden başlangıç portföy değerini girin. Kapatılan işlemler otomatik olarak bu değere eklenir/çıkarılır.</div>
+    <div style="font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px;">NLV Starting Value</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:20px;">Enter your starting portfolio value in USD. Closed trades are automatically added/subtracted from this value.</div>
     <div style="margin-bottom:16px;">
-      <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;">Başlangıç Değeri (USD)</div>
+      <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px;">Starting Value (USD)</div>
       <div style="position:relative;">
         <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text-3);font-size:14px;font-weight:600;">$</span>
         <input id="nlv-start-input" type="number" step="100" min="0"
@@ -4452,8 +4479,8 @@ function syncFromCloud() {
       </div>
     </div>
     <div style="display:flex;gap:10px;">
-      <button onclick="closeNlvModal()" style="flex:1;padding:14px;background:rgba(255,255,255,.06);border:none;border-radius:12px;color:var(--text-2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">İptal</button>
-      <button onclick="saveNlvStart()" style="flex:1;padding:14px;background:var(--profit);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;">Kaydet</button>
+      <button onclick="closeNlvModal()" style="flex:1;padding:14px;background:rgba(255,255,255,.06);border:none;border-radius:12px;color:var(--text-2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="saveNlvStart()" style="flex:1;padding:14px;background:var(--profit);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;">Save</button>
     </div>
   </div>
 </div>
@@ -4486,8 +4513,8 @@ function updateNlvCard() {
     var tryEl2 = document.getElementById('nlvTry');
     var subEl2 = document.getElementById('nlvSub');
     if(usdEl2) { usdEl2.textContent = '—'; usdEl2.style.color = 'var(--text-3)'; }
-    if(tryEl2) { tryEl2.textContent = 'Başlangıç değeri girilmemiş'; tryEl2.style.color = 'var(--text-3)'; }
-    if(subEl2) subEl2.textContent = '✎ Başlangıç butonuna basarak USD değerini girin';
+    if(tryEl2) { tryEl2.textContent = 'Starting value not set'; tryEl2.style.color = 'var(--text-3)'; }
+    if(subEl2) subEl2.textContent = '✎ Tap the Start button to enter your USD value';
     return;
   }
 
@@ -4512,10 +4539,10 @@ function updateNlvCard() {
   if(tryEl) {
     if(kur) {
       var nlvTry = nlv * kur;
-      tryEl.textContent = '≈ ₺' + Math.round(nlvTry).toLocaleString('tr-TR') + ' (kur: ' + kur.toFixed(4) + ')';
+      tryEl.textContent = '≈ ₺' + Math.round(nlvTry).toLocaleString('tr-TR') + ' (rate: ' + kur.toFixed(4) + ')';
       tryEl.style.display = 'block';
     } else {
-      tryEl.textContent = 'Kur girilmemiş';
+      tryEl.textContent = 'No rate entered';
       tryEl.style.color = 'var(--text-3)';
     }
   }
@@ -4524,7 +4551,7 @@ function updateNlvCard() {
   var subEl = document.getElementById('nlvSub');
   if(subEl) {
     var sign = change >= 0 ? '+' : '';
-    subEl.textContent = 'Başlangıç: ' + fmtA$(NLV_START) + '  ·  Toplam PnL: ' + sign + fmt$(change) + ' (' + sign + changePct.toFixed(2) + '%)';
+    subEl.textContent = 'Start: ' + fmtA$(NLV_START) + '  ·  Total PnL: ' + sign + fmt$(change) + ' (' + sign + changePct.toFixed(2) + '%)';
   }
 }
 
@@ -4540,7 +4567,7 @@ function closeNlvModal() {
 
 function saveNlvStart() {
   var val = parseFloat(document.getElementById('nlv-start-input').value);
-  if(!val || val <= 0) { alert('Geçerli bir değer girin'); return; }
+  if(!val || val <= 0) { alert('Enter a valid value'); return; }
   NLV_START = val;
   try { localStorage.setItem(nlvKey(), val); } catch(e) {}
   closeNlvModal();
