@@ -749,7 +749,7 @@
 <!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
 <div class="screen active" id="screen-dashboard">
   <div class="filter-row" id="dashMonthFilter" style="padding:12px 20px 4px;">
-    <div class="filter-pill active" data-dash-month="all" onclick="setDashMonth(this,'all')">All Time</div>
+    <div class="filter-pill active" data-dash-month="all" onclick="dashMultiMode=false;selectedDashMonths=[];var _db=document.getElementById('dashMultiBtn');if(_db)_db.classList.remove('active');var _dl=document.getElementById('dashMultiLabel');if(_dl)_dl.style.display='none';setDashMonth(this,'all')">All Time</div>
   </div>
   <div class="hero-strip">
     <div id="nlvCard" class="nlv-card">
@@ -894,7 +894,7 @@
     <div><div class="section-title">Statistics</div><div class="section-sub" id="statsSub">Loading...</div></div>
   </div>
   <div class="filter-row" style="padding:4px 20px 8px;">
-    <div class="filter-pill active" data-stat-month="all" onclick="setStatMonth(this,'all')" id="statAllPill">All Time</div>
+    <div class="filter-pill active" data-stat-month="all" onclick="statMultiMode=false;selectedStatMonths=[];var _sb=document.getElementById('statMultiBtn');if(_sb)_sb.classList.remove('active');var _sl=document.getElementById('statMultiLabel');if(_sl)_sl.style.display='none';setStatMonth(this,'all')" id="statAllPill">All Time</div>
   </div>
   <div class="donut-section">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:12px;">Win/Loss Breakdown</div>
@@ -1731,19 +1731,105 @@ function switchChartTab(el,type){
 // ═══════════════════ DASHBOARD ═══════════════════
 var currentDashMonth = 'all';
 var currentStatMonth = 'all';
+var selectedStatMonths = [];   // empty = use currentStatMonth
+var selectedDashMonths = [];   // empty = use currentDashMonth
+var statMultiMode = false;
+var dashMultiMode = false;
+
+function getEffectiveStatMonth(){
+  return selectedStatMonths.length > 0 ? selectedStatMonths : currentStatMonth;
+}
+function getEffectiveDashMonth(){
+  return selectedDashMonths.length > 0 ? selectedDashMonths : currentDashMonth;
+}
 
 function setDashMonth(el, month){
-  document.querySelectorAll('[data-dash-month]').forEach(function(x){x.classList.remove('active');});
-  el.classList.add('active');
-  currentDashMonth = month;
+  if(dashMultiMode){
+    var idx = selectedDashMonths.indexOf(month);
+    if(idx >= 0){
+      selectedDashMonths.splice(idx,1);
+      el.classList.remove('active');
+    } else {
+      selectedDashMonths.push(month);
+      el.classList.add('active');
+    }
+    _updateDashMultiLabel();
+  } else {
+    document.querySelectorAll('[data-dash-month]').forEach(function(x){x.classList.remove('active');});
+    el.classList.add('active');
+    currentDashMonth = month;
+    selectedDashMonths = [];
+  }
   renderDashboard();
 }
 
 function setStatMonth(el, month){
-  document.querySelectorAll('[data-stat-month]').forEach(function(x){x.classList.remove('active');});
-  el.classList.add('active');
-  currentStatMonth = month;
+  if(statMultiMode){
+    var idx = selectedStatMonths.indexOf(month);
+    if(idx >= 0){
+      selectedStatMonths.splice(idx,1);
+      el.classList.remove('active');
+    } else {
+      selectedStatMonths.push(month);
+      el.classList.add('active');
+    }
+    _updateStatMultiLabel();
+  } else {
+    document.querySelectorAll('[data-stat-month]').forEach(function(x){x.classList.remove('active');});
+    el.classList.add('active');
+    currentStatMonth = month;
+    selectedStatMonths = [];
+  }
   renderStats();
+}
+
+function _updateStatMultiLabel(){
+  var lbl = document.getElementById('statMultiLabel');
+  if(!lbl) return;
+  if(selectedStatMonths.length > 0){
+    lbl.textContent = selectedStatMonths.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ');
+    lbl.style.display = 'inline';
+  } else {
+    lbl.style.display = 'none';
+  }
+}
+
+function _updateDashMultiLabel(){
+  var lbl = document.getElementById('dashMultiLabel');
+  if(!lbl) return;
+  if(selectedDashMonths.length > 0){
+    lbl.textContent = selectedDashMonths.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ');
+    lbl.style.display = 'inline';
+  } else {
+    lbl.style.display = 'none';
+  }
+}
+
+function toggleStatMulti(){
+  statMultiMode = !statMultiMode;
+  selectedStatMonths = [];
+  var btn = document.getElementById('statMultiBtn');
+  if(btn) btn.classList.toggle('active', statMultiMode);
+  var lbl = document.getElementById('statMultiLabel');
+  if(lbl) lbl.style.display = 'none';
+  // Reset all pills to reflect current single-month state
+  document.querySelectorAll('[data-stat-month]').forEach(function(x){
+    x.classList.toggle('active', x.getAttribute('data-stat-month') === currentStatMonth);
+  });
+  renderStats();
+}
+
+function toggleDashMulti(){
+  dashMultiMode = !dashMultiMode;
+  selectedDashMonths = [];
+  var btn = document.getElementById('dashMultiBtn');
+  if(btn) btn.classList.toggle('active', dashMultiMode);
+  var lbl = document.getElementById('dashMultiLabel');
+  if(lbl) lbl.style.display = 'none';
+  document.querySelectorAll('[data-dash-month]').forEach(function(x){
+    x.classList.toggle('active', x.getAttribute('data-dash-month') === currentDashMonth);
+  });
+  renderDashboard();
 }
 
 // ── Ay pillerini dinamik olarak oluştur (mevcut aydan geriye doğru) ──────
@@ -1774,12 +1860,26 @@ function buildMonthPills() {
     if (dashAll) dashRow.appendChild(dashAll);
     ordered.forEach(function(m) {
       var p = document.createElement('div');
-      p.className = 'filter-pill' + (currentDashMonth === m ? ' active' : '');
+      p.className = 'filter-pill' + ((dashMultiMode ? selectedDashMonths.indexOf(m)>=0 : currentDashMonth === m) ? ' active' : '');
       p.setAttribute('data-dash-month', m);
       p.textContent = _MONTHS_DISP[m];
       p.onclick = function(){ setDashMonth(p, m); };
       dashRow.appendChild(p);
     });
+    // Multi button
+    var dmBtn = document.createElement('div');
+    dmBtn.id = 'dashMultiBtn';
+    dmBtn.className = 'filter-pill' + (dashMultiMode ? ' active' : '');
+    dmBtn.style.cssText = 'background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.35);color:var(--purple);font-size:11px;';
+    dmBtn.textContent = '⊕ Multi';
+    dmBtn.onclick = toggleDashMulti;
+    dashRow.appendChild(dmBtn);
+    // Multi label
+    var dmLbl = document.createElement('span');
+    dmLbl.id = 'dashMultiLabel';
+    dmLbl.style.cssText = 'display:none;font-size:11px;color:var(--purple);margin-left:6px;font-weight:600;';
+    dashRow.appendChild(dmLbl);
+    if(selectedDashMonths.length > 0) _updateDashMultiLabel();
     if (currentDashMonth !== 'all' && !inData[currentDashMonth]) {
       var allPill = dashRow.querySelector('[data-dash-month="all"]');
       if (allPill) allPill.classList.add('active');
@@ -1810,12 +1910,26 @@ function buildMonthPills() {
     statRow.appendChild(statAllPill);
     ordered.forEach(function(m) {
       var p = document.createElement('div');
-      p.className = 'filter-pill' + (currentStatMonth === m ? ' active' : '');
+      p.className = 'filter-pill' + ((statMultiMode ? selectedStatMonths.indexOf(m)>=0 : currentStatMonth === m) ? ' active' : '');
       p.setAttribute('data-stat-month', m);
       p.textContent = _MONTHS_DISP[m];
       p.onclick = function(){ setStatMonth(p, m); };
       statRow.appendChild(p);
     });
+    // Multi button
+    var smBtn = document.createElement('div');
+    smBtn.id = 'statMultiBtn';
+    smBtn.className = 'filter-pill' + (statMultiMode ? ' active' : '');
+    smBtn.style.cssText = 'background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.35);color:var(--purple);font-size:11px;';
+    smBtn.textContent = '⊕ Multi';
+    smBtn.onclick = toggleStatMulti;
+    statRow.appendChild(smBtn);
+    // Multi label (shows selected months)
+    var smLbl = document.createElement('span');
+    smLbl.id = 'statMultiLabel';
+    smLbl.style.cssText = 'display:none;font-size:11px;color:var(--purple);margin-left:6px;font-weight:600;';
+    statRow.appendChild(smLbl);
+    if(selectedStatMonths.length > 0) _updateStatMultiLabel();
     if (currentStatMonth !== 'all' && !inData[currentStatMonth]) {
       statAllPill.classList.add('active');
       currentStatMonth = 'all';
@@ -1826,6 +1940,10 @@ function buildMonthPills() {
 function getFilteredTrades(month){
   var all = getAllTrades();
   if(!month || month === 'all') return all;
+  if(Array.isArray(month)){
+    if(month.length === 0) return all;
+    return all.filter(function(t){ return month.indexOf(t.month) >= 0; });
+  }
   return all.filter(function(t){ return t.month === month; });
 }
 
@@ -1866,16 +1984,17 @@ function calcStatsFor(month){
 }
 
 function renderDashboard(){
-  var month = currentDashMonth;
+  var month = getEffectiveDashMonth();
   var stats = calcStatsFor(month);
   var open  = getOpenTrades();
   var coll=open.reduce(function(s,t){return s+(t.teminat||0);},0);
   var cp=PORT_SIZE>0?coll/PORT_SIZE:0;
-  var monthly = month==='all' ? getMonthlyStats() : getMonthlyStats().filter(function(x){return x.month===month;});
+  var monthly = month==='all' ? getMonthlyStats() : Array.isArray(month) ? getMonthlyStats().filter(function(x){return month.indexOf(x.month)>=0;}) : getMonthlyStats().filter(function(x){return x.month===month;});
   var ytd=monthly.reduce(function(s,x){return s+x.pnl;},0);
+  var _monthLabel = month==='all' ? 'Tüm Zamanlar' : Array.isArray(month) ? month.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ') : (_MONTHS_DISP[month]||month);
 
   var el;
-  el=document.getElementById('heroPnlLabel'); if(el)el.textContent=month==='all'?'Total P&L — YTD':'P&L — '+month;
+  el=document.getElementById('heroPnlLabel'); if(el)el.textContent=month==='all'?'Total P&L — YTD':'P&L — '+_monthLabel;
   el=document.getElementById('heroPnl'); if(el){el.textContent=fmt$(stats.totalPnl);el.style.color=stats.totalPnl>=0?'var(--profit)':'var(--loss)';}
   el=document.getElementById('heroPnlChange'); if(el)el.innerHTML='<span class="hero-badge '+(stats.totalPnl>=0?'profit':'loss')+'">'+fmtP(stats.totalPnl/PORT_SIZE)+'</span><span style="color:var(--text-3);font-size:11px;"> on $'+Math.round(PORT_SIZE/1000)+'K portfolio</span>';
   el=document.getElementById('heroWR'); if(el)el.textContent=Math.round(stats.winRate*100)+'%';
@@ -1900,6 +2019,16 @@ function renderDashboard(){
 
   // Ortalama günlük teminat hesabı
   (function(){
+    // Multi-month selection: show dash (—) for avg daily collateral
+    if(Array.isArray(month)){
+      var _lbl = document.getElementById('avgCollMonthLabel'); if(_lbl) _lbl.textContent = '';
+      el = document.getElementById('heroAvgColl'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
+      el = document.getElementById('heroAvgCollSub'); if(el) el.textContent = 'multi-ay';
+      el = document.getElementById('heroAvgCollPct'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
+      el = document.getElementById('heroRealizedReturn'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
+      el = document.getElementById('heroRealizedReturnSub'); if(el){ el.textContent = ''; }
+      return;
+    }
     var today = new Date(); today.setHours(0,0,0,0);
     // Hangi ay için hesaplanacak
     var _allT = getAllTrades();
@@ -1995,7 +2124,7 @@ function renderDashboard(){
     {v:stats.payoff.toFixed(2),l:'Payoff R',c:'var(--info)'},
     {v:stats.profitFactor.toFixed(2),l:'P Factor',c:'var(--warn)'},
     {v:fmt$(stats.ev),l:'EV/Trade',c:'var(--text)'},
-    {v:stats.total,l:month==='all'?'Trades':'Trades ('+month+')',c:'var(--info)'},
+    {v:stats.total,l:month==='all'?'Trades':'Trades ('+_monthLabel+')',c:'var(--info)'},
     {v:_holdDays!==null?_holdDays+' days':'—',l:'Avg Hold Days',c:'var(--purple)'}
   ].map(function(x){
     var _k=x.l.indexOf('Trades')===0?'Trades':x.l;
@@ -2359,18 +2488,18 @@ function calcStatsForStats(month) {
 }
 
 function renderStats(){
-  var month = currentStatMonth;
+  var month = getEffectiveStatMonth();
   var stats=calcStatsForStats(month);
   var closed=getStatsFilteredTrades(month);
   var open=getOpenTrades();
-  var label = month==='all' ? 'All Time' : (_MONTHS_DISP[month]||month);
+  var label = month==='all' ? 'All Time' : Array.isArray(month) ? month.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ') : (_MONTHS_DISP[month]||month);
   var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/BCS · '+open.length+' open';
   var dctx=document.getElementById('donutChart');
   if(dctx){if(donutChartInst)donutChartInst.destroy();donutChartInst=new Chart(dctx.getContext('2d'),{type:'doughnut',data:{datasets:[{data:[stats.winners,stats.losers],backgroundColor:['rgba(34,197,94,.8)','rgba(239,68,68,.8)'],borderColor:['#22C55E','#EF4444'],borderWidth:1.5,hoverOffset:4}]},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});}
   var dl=document.getElementById('donutLegend');
   if(dl)dl.innerHTML='<div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div><span class="legend-txt">Winners</span><span class="legend-pct" style="color:var(--profit)">'+Math.round(stats.winRate*100)+'% · '+stats.winners+'</span></div>'+
     '<div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div><span class="legend-txt">Losers</span><span class="legend-pct" style="color:var(--loss)">'+Math.round((1-stats.winRate)*100)+'% · '+stats.losers+'</span></div>'+
-    (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+(_MONTHS_DISP[month]||month)+' · '+stats.total+' trades</div>':'');
+    (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+label+' · '+stats.total+' trades</div>':'');
   var totalTeminat = closed.reduce(function(s,t){return s+(parseFloat(t.teminat)||0);},0);
   var avgTeminat   = closed.length ? totalTeminat/closed.length : 0;
   var teminatROC   = totalTeminat > 0 ? stats.totalPnl/totalTeminat : null;
