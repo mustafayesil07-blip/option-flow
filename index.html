@@ -1967,6 +1967,70 @@ function calcAvgHoldDays(trades){
   return Math.round(total/eligible.length);
 }
 
+// Avg daily collateral / usage / realized return for a single month or array of months
+function calcAvgDailyCollStats(month){
+  var today = new Date(); today.setHours(0,0,0,0);
+  var _allT = getAllTrades();
+  var _monthNames = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+  var _monthMap = {'Ocak':0,'Subat':1,'Mart':2,'Nisan':3,'Mayis':4,'Haziran':5,'Temmuz':6,'Agustos':7,'Eylul':8,'Ekim':9,'Kasim':10,'Aralik':11};
+  var _year = today.getFullYear();
+  var _rangeStart, _rangeEnd, _label, _monthsForPnl;
+
+  if(Array.isArray(month)){
+    if(!month.length) return null;
+    var _idxs = month.map(function(m){ return _monthMap[m]; }).filter(function(i){ return i !== undefined; });
+    if(!_idxs.length) return null;
+    var _minIdx = Math.min.apply(null, _idxs);
+    var _maxIdx = Math.max.apply(null, _idxs);
+    _rangeStart = new Date(_year, _minIdx, 1);
+    _rangeEnd   = new Date(_year, _maxIdx+1, 0);
+    _label = month.map(function(m){ return _MONTHS_DISP[m]||m; }).join(' + ');
+    _monthsForPnl = month.slice();
+  } else {
+    var _calcMonth = month !== 'all' ? month : null;
+    var _curMonthName = _monthNames[today.getMonth()];
+    var _useMonth = _calcMonth || _curMonthName;
+    var _monthIdx = _monthMap[_useMonth];
+    if(_monthIdx === undefined) _monthIdx = today.getMonth();
+    _rangeStart = new Date(_year, _monthIdx, 1);
+    _rangeEnd   = new Date(_year, _monthIdx+1, 0);
+    _label = _MONTHS_DISP[_useMonth] || _useMonth;
+    _monthsForPnl = [_useMonth];
+  }
+
+  var _calcEnd = _rangeEnd < today ? _rangeEnd : today;
+  if(_calcEnd < _rangeStart) _calcEnd = _rangeEnd;
+
+  var _totalCollDays = 0, _dayCount = 0;
+  var _d = new Date(_rangeStart);
+  while(_d <= _calcEnd){
+    var _dayColl = 0;
+    _allT.forEach(function(t){
+      if(!t.teminat || t.teminat <= 0) return;
+      var _open = t.opened ? new Date(t.opened) : null;
+      var _close = t.closed ? new Date(t.closed) : null;
+      if(!_open) return;
+      _open.setHours(0,0,0,0);
+      if(_close) _close.setHours(0,0,0,0);
+      if(_d >= _open && (!_close || _d <= _close)) _dayColl += (parseFloat(t.teminat)||0);
+    });
+    _totalCollDays += _dayColl;
+    _dayCount++;
+    _d.setDate(_d.getDate()+1);
+  }
+
+  var _avgColl = _dayCount > 0 ? _totalCollDays / _dayCount : 0;
+  var _avgPct = PORT_SIZE > 0 ? _avgColl / PORT_SIZE : 0;
+
+  var _closedInRange = getAllTrades().filter(function(t){
+    return t.closed && t.pnl != null && _monthsForPnl.indexOf(t.month) >= 0;
+  });
+  var _realizedPnl = _closedInRange.reduce(function(s,t){ return s + (t.pnl||0); }, 0);
+  var _realReturn  = _avgColl > 0 ? (_realizedPnl / _avgColl) * 100 : 0;
+
+  return { avgColl:_avgColl, avgPct:_avgPct, dayCount:_dayCount, realizedPnl:_realizedPnl, realReturn:_realReturn, label:_label };
+}
+
 function calcStatsFor(month){
   var closed = getFilteredClosedTrades(month);
   var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
@@ -2019,92 +2083,36 @@ function renderDashboard(){
 
   // Ortalama günlük teminat hesabı
   (function(){
-    // Multi-month selection: show dash (—) for avg daily collateral
-    if(Array.isArray(month)){
-      var _lbl = document.getElementById('avgCollMonthLabel'); if(_lbl) _lbl.textContent = '';
+    var _s = calcAvgDailyCollStats(month);
+    var _lbl = document.getElementById('avgCollMonthLabel');
+    if(!_s){
+      if(_lbl) _lbl.textContent = '';
       el = document.getElementById('heroAvgColl'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
-      el = document.getElementById('heroAvgCollSub'); if(el) el.textContent = 'multi-ay';
+      el = document.getElementById('heroAvgCollSub'); if(el) el.textContent = '';
       el = document.getElementById('heroAvgCollPct'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
       el = document.getElementById('heroRealizedReturn'); if(el){ el.textContent = '—'; el.style.color = 'var(--text-3)'; }
       el = document.getElementById('heroRealizedReturnSub'); if(el){ el.textContent = ''; }
       return;
     }
-    var today = new Date(); today.setHours(0,0,0,0);
-    // Hangi ay için hesaplanacak
-    var _allT = getAllTrades();
-    // Ay filtresi yoksa mevcut ayı al
-    var _calcMonth = month !== 'all' ? month : null;
-    // Mevcut ayı bul (bugünün ayı)
-    var _monthNames = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
-    var _curMonthName = _monthNames[today.getMonth()];
-    var _useMonth = _calcMonth || _curMonthName;
-
-    // O ayın başlangıç ve bitiş tarihleri
-    var _monthIdx = _monthNames.indexOf(_useMonth);
-    var _year = today.getFullYear();
-    if(_monthIdx === -1){ // Aralik gibi özel isimler
-      var _monthMap = {'Aralik':11,'Ocak':0,'Subat':1,'Mart':2,'Nisan':3,'Mayis':4,'Haziran':5,'Temmuz':6,'Agustos':7,'Eylul':8,'Ekim':9,'Kasim':10};
-      _monthIdx = _monthMap[_useMonth];
-      if(_monthIdx === undefined) _monthIdx = today.getMonth();
-    }
-    var _monthStart = new Date(_year, _monthIdx, 1);
-    var _monthEnd = new Date(_year, _monthIdx+1, 0); // ayın son günü
-    var _calcEnd = _monthEnd < today ? _monthEnd : today;
-
-    // Her gün için açık olan teminatları topla
-    var _totalCollDays = 0;
-    var _dayCount = 0;
-    var _d = new Date(_monthStart);
-    while(_d <= _calcEnd){
-      var _dayStr = _d.toISOString().split('T')[0];
-      var _dayColl = 0;
-      _allT.forEach(function(t){
-        if(!t.teminat || t.teminat <= 0) return;
-        var _open = t.opened ? new Date(t.opened) : null;
-        var _close = t.closed ? new Date(t.closed) : null;
-        if(!_open) return;
-        _open.setHours(0,0,0,0);
-        if(_close) _close.setHours(0,0,0,0);
-        // Bu gün pozisyon açık mıydı?
-        if(_d >= _open && (!_close || _d <= _close)){
-          _dayColl += (parseFloat(t.teminat)||0);
-        }
-      });
-      _totalCollDays += _dayColl;
-      _dayCount++;
-      _d.setDate(_d.getDate()+1);
-    }
-
-    var _avgColl = _dayCount > 0 ? _totalCollDays / _dayCount : 0;
-    var _avgPct = PORT_SIZE > 0 ? _avgColl / PORT_SIZE : 0;
-
-    var _lbl = document.getElementById('avgCollMonthLabel');
-    if(_lbl) _lbl.textContent = '(' + _useMonth + ')';
+    if(_lbl) _lbl.textContent = '(' + _s.label + ')';
 
     el = document.getElementById('heroAvgColl');
-    if(el){ el.textContent = fmtA$(_avgColl); el.style.color = _avgPct>0.6?'var(--loss)':_avgPct>0.4?'var(--warn)':'var(--info)'; }
+    if(el){ el.textContent = fmtA$(_s.avgColl); el.style.color = _s.avgPct>0.6?'var(--loss)':_s.avgPct>0.4?'var(--warn)':'var(--info)'; }
 
     el = document.getElementById('heroAvgCollSub');
-    if(el) el.textContent = _dayCount + ' day avg';
+    if(el) el.textContent = _s.dayCount + ' day avg';
 
     el = document.getElementById('heroAvgCollPct');
-    if(el){ el.textContent = (_avgPct*100).toFixed(0)+'%'; el.style.color = _avgPct>0.6?'var(--loss)':_avgPct>0.4?'var(--warn)':'var(--info)'; }
-
-    // Realized Return = o ay kapatılan trade'lerin toplam PnL / ortalama teminat
-    var _closedThisMonth = getAllTrades().filter(function(t){
-      return t.closed && t.pnl != null && t.month === _useMonth;
-    });
-    var _realizedPnl = _closedThisMonth.reduce(function(s,t){ return s + (t.pnl||0); }, 0);
-    var _realReturn  = _avgColl > 0 ? (_realizedPnl / _avgColl) * 100 : 0;
+    if(el){ el.textContent = (_s.avgPct*100).toFixed(0)+'%'; el.style.color = _s.avgPct>0.6?'var(--loss)':_s.avgPct>0.4?'var(--warn)':'var(--info)'; }
 
     el = document.getElementById('heroRealizedReturn');
     if(el){
-      el.textContent = (_realReturn >= 0 ? '+' : '') + _realReturn.toFixed(2) + '%';
-      el.style.color = _realReturn >= 0 ? 'var(--profit)' : 'var(--loss)';
+      el.textContent = (_s.realReturn >= 0 ? '+' : '') + _s.realReturn.toFixed(2) + '%';
+      el.style.color = _s.realReturn >= 0 ? 'var(--profit)' : 'var(--loss)';
     }
     el = document.getElementById('heroRealizedReturnSub');
     if(el){
-      el.textContent = fmt$(_realizedPnl) + ' / ' + fmtA$(_avgColl);
+      el.textContent = fmt$(_s.realizedPnl) + ' / ' + fmtA$(_s.avgColl);
     }
   })();
   el=document.getElementById('heroCollateralSub'); if(el)el.innerHTML='<span class="hero-badge '+(cp>0.6?'loss':cp>0.4?'warn':'info')+'">'+(cp*100).toFixed(0)+'% of $'+Math.round(PORT_SIZE/1000)+'K</span><span style="color:var(--text-3);font-size:11px;"> max 60%</span>';
@@ -2531,26 +2539,14 @@ function renderStats(){
     {l:'Total Collateral',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'avg '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' trades with collateral',c:'var(--info)',full:true},
     {l:'Collateral Return',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:avgPerTradeROC!==null?('avg trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'collateral data missing',bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true},
     (function(){
-      var _mn = month === 'all' ? (function(){ var _jn = new Date(); var _jta = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik']; return _jta[_jn.getMonth()]; })() : month;
-      var _mIdx = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'].indexOf(_mn);
-      if(_mIdx === -1) return null;
-      var _year = new Date().getFullYear();
-      var _monthStart = new Date(_year, _mIdx, 1);
-      var _monthEnd = new Date(_year, _mIdx+1, 0);
-      var _dayCount = Math.round((_monthEnd - _monthStart) / 86400000) + 1;
-      var _allOpen = getAllTrades().filter(function(t){ return !LONG_TYPES || LONG_TYPES.indexOf((t.type||'').trim()) === -1; });
-      var _daySum = 0;
-      for(var _d = 0; _d < _dayCount; _d++){
-        var _dt = new Date(_year, _mIdx, _d+1);
-        var _dtStr = _dt.toISOString().split('T')[0];
-        _allOpen.forEach(function(t){
-          var _op = t.opened || ''; var _cl = t.closed || '';
-          var _isOpen2 = _op <= _dtStr && (!_cl || _cl >= _dtStr);
-          if(_isOpen2) _daySum += parseFloat(t.teminat)||0;
-        });
-      }
-      var _avg = _dayCount > 0 ? _daySum / _dayCount : 0;
-      return _avg > 0 ? {l:'Avg Daily Collateral',v:'<span class="privacy-val">'+fmtA$(_avg)+'</span>',sub:(_MONTHS_DISP[_mn]||_mn)+' · daily avg capital at risk',c:'var(--info)',full:true} : null;
+      var _s = calcAvgDailyCollStats(month);
+      if(!_s) return null;
+      var _cc = _s.avgPct>0.6?'var(--loss)':_s.avgPct>0.4?'var(--warn)':'var(--info)';
+      return [
+        {l:'Avg Daily Collateral',v:'<span class="privacy-val">'+fmtA$(_s.avgColl)+'</span>',sub:_s.label+' · '+_s.dayCount+' day avg',c:_cc,full:true},
+        {l:'Avg Usage',v:(_s.avgPct*100).toFixed(0)+'%',sub:'of portfolio',c:_cc},
+        {l:'Realized Return',v:(_s.realReturn>=0?'+':'')+_s.realReturn.toFixed(2)+'%',sub:fmt$(_s.realizedPnl)+' / '+fmtA$(_s.avgColl),c:_s.realReturn>=0?'var(--profit)':'var(--loss)'}
+      ];
     })()
   ].flat().filter(function(x){return x!=null;}).map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
