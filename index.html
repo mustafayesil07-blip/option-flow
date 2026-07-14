@@ -1275,13 +1275,20 @@ function fetchOptionPrices(){
           // Pre/post market verilerini kaydet
           if(typeof q === 'object'){
             var pp = {};
-            var _prevClose = q.regularMarketPreviousClose || q.chartPreviousClose || q.regularMarketPrice || 0;
-            // Pre-market
-            if(q.preMarketPrice) pp.preMarketPrice = Math.round(q.preMarketPrice*100)/100;
+            // Previous close — do NOT fall back to regularMarketPrice (which is premarket price during PRE)
+            var _prevClose = q.regularMarketPreviousClose || q.chartPreviousClose || 0;
+            var _ms = q.marketState || '';
+            // Pre-market: try dedicated field first, fall back to regularMarketPrice during PRE state
+            if(q.preMarketPrice) {
+              pp.preMarketPrice = Math.round(q.preMarketPrice*100)/100;
+            } else if(_ms === 'PRE' || _ms === 'PREPRE') {
+              // During PRE state, regularMarketPrice IS the current premarket price
+              pp.preMarketPrice = Math.round(p*100)/100;
+            }
             var _pmpct = q.preMarketChangePct != null ? q.preMarketChangePct
                        : q.preMarketChangePercent != null ? q.preMarketChangePercent : null;
             if(_pmpct != null) pp.preMarketChangePct = _pmpct;
-            // Self-calculate pct if price exists but pct didn't come from API
+            // Calculate pct from prices if not provided by API
             if(pp.preMarketPrice && pp.preMarketChangePct == null && _prevClose > 0)
               pp.preMarketChangePct = (pp.preMarketPrice - _prevClose) / _prevClose * 100;
             // Post-market
@@ -1291,8 +1298,8 @@ function fetchOptionPrices(){
             if(_pspct != null) pp.postMarketChangePct = _pspct;
             if(pp.postMarketPrice && pp.postMarketChangePct == null && _prevClose > 0)
               pp.postMarketChangePct = (pp.postMarketPrice - _prevClose) / _prevClose * 100;
-            if(q.marketState) pp.marketState = q.marketState;
-            // Always store (even if only marketState) so stale data from prior session is cleared
+            if(_ms) pp.marketState = _ms;
+            // Always overwrite so stale data from prior session is cleared
             prePostData[tk] = pp;
           }
           updated++;
@@ -2316,7 +2323,7 @@ function renderTradeList(filter, month){
               '<div style="font-family:var(--font-mono);color:var(--text);font-size:16px;font-weight:700;letter-spacing:-0.3px;">$'+t.strike+'</div>'+
               (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:13px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
                _sp?'<div style="font-family:var(--font-mono);font-size:13px;color:var(--text-3);">$'+_sp+'</div>':'')+
-              (_extPL?'<div style="font-family:var(--font-mono);font-size:12px;color:var(--warn);">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+' </div>':(_msL==='PRE'&&_sp?'<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);margin-top:1px;">pre-mkt ·  no trade</div>':''))+
+              (_extPL?'<div style="font-family:var(--font-mono);font-size:12px;color:var(--warn);">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+' </div>':'')+
               '</td>';
           })()+
           '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiry(t.expiry)+'</td>'+
