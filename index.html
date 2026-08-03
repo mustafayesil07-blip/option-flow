@@ -1033,7 +1033,7 @@
     </select>
   </div>
 
-  <!-- MUSTAFA PROFILI: EDA/MUSTAFA SEKMELERI -->
+  <!-- HESAP SAHIBI SEKMELERI (tüm profiller) -->
   <div id="vergiOwnerRow" style="display:none;padding:0 20px 10px;"></div>
 
   <!-- OZET KARTLARI -->
@@ -2741,7 +2741,8 @@ function showAddTrade(existingTrade){
     // Geçerli bir tür değilse initial'a dön
     if(ALL_TYPES.indexOf(typeVal) === -1) typeVal = _initialType;
     // Hesap sahibi — Mustafa profili için
-    var subOwnerVal = sheet.querySelector('#nt_owner') ? sheet.querySelector('#nt_owner').value : (isEdit && existingTrade.subOwner ? existingTrade.subOwner : 'Mustafa');
+    var _defOwner = ACTIVE_PROFILE === 'mustafa' ? 'Mustafa' : 'Eda';
+    var subOwnerVal = sheet.querySelector('#nt_owner') ? sheet.querySelector('#nt_owner').value : (isEdit && existingTrade.subOwner ? existingTrade.subOwner : _defOwner);
     var typeOpts = ALL_TYPES.map(function(t){return'<option'+(t===typeVal?' selected':'')+'>'+t+'</option>';}).join('');
     var isLongPos = longTypes.indexOf(typeVal) !== -1;
     var openPremLabel = isLongPos ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
@@ -2752,7 +2753,7 @@ function showAddTrade(existingTrade){
       '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
       '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:18px;">'+(isEdit?'✎ Edit Trade':'Log New Trade')+'</div>'+
 
-      (ACTIVE_PROFILE === 'mustafa' ? '<div id="nt_owner_wrap" style="margin-bottom:16px;"></div>' : '')+
+      '<div id="nt_owner_wrap" style="margin-bottom:16px;"></div>'+
 
       '<!-- Row 1: Ticker + Type -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
@@ -2822,7 +2823,7 @@ function showAddTrade(existingTrade){
     // Re-attach type change listener (native select fallback için)
     if(sheet.querySelector('#nt_ty')) sheet.querySelector('#nt_ty').onchange = rebuildSheet;
 
-    // Hesap sahibi toggle (sadece Mustafa profili)
+    // Hesap sahibi toggle (tüm profiller)
     var _ownerWrap = sheet.querySelector('#nt_owner_wrap');
     if (_ownerWrap) {
       var _ownerHid = document.createElement('input');
@@ -3007,7 +3008,7 @@ function showAddTrade(existingTrade){
         teminat:parseFloat(sheet.querySelector('#nt_c').value)||0,
         roi:null,
         note:isEdit?existingTrade.note:'',
-        subOwner:ACTIVE_PROFILE==='mustafa'?(sheet.querySelector('#nt_owner')?sheet.querySelector('#nt_owner').value:'Mustafa'):undefined,
+        subOwner:(sheet.querySelector('#nt_owner')?sheet.querySelector('#nt_owner').value:(ACTIVE_PROFILE==='mustafa'?'Mustafa':'Eda')),
         partialCloses:_existingPC  // kısmi kapanma geçmişini koru!
       };
 
@@ -3145,22 +3146,56 @@ function renderVergi(){
 }
 
 var VERGI_SUBOWNER = 'Mustafa';
+var VERGI_SUB_SECTION = 'total';
 function setVergiOwner(name) {
   VERGI_SUBOWNER = name;
+  VERGI_SUB_SECTION = 'total';
   renderVergi();
+}
+function setVergiSubSection(name) {
+  VERGI_SUB_SECTION = name;
+  renderVergi();
+}
+function getCrossProfileClosedTrades(filterOwner, vergiYil) {
+  var result = [];
+  ['ayse_opt_v22','sevi_opt_v22','ikbal_opt_v22'].forEach(function(lsKey) {
+    var raw = localStorage.getItem(lsKey);
+    if (!raw) return;
+    try {
+      var data = JSON.parse(raw);
+      Object.keys(data).forEach(function(month) {
+        if (!Array.isArray(data[month])) return;
+        data[month].forEach(function(t) {
+          if (!t) return;
+          var tc = {}; Object.keys(t).forEach(function(k){ tc[k]=t[k]; }); tc.month = month;
+          var tSub = tc.subOwner || 'Eda';
+          if (filterOwner !== 'Total' && tSub !== filterOwner) return;
+          if (tc.closed && tc.pnl != null && String(tc.closed).substring(0,4) === vergiYil) {
+            result.push(tc);
+          } else if (!tc.closed && tc.partialCloses && tc.partialCloses.length > 0) {
+            var hasM = tc.partialCloses.some(function(pc){ return pc.date && String(pc.date).substring(0,4) === vergiYil; });
+            if (hasM) result.push(tc);
+          }
+        });
+      });
+    } catch(e) {}
+  });
+  return result;
 }
 function _renderVergiInner(){
   // Her zaman çalışır — ekran aktif olmasa bile veriyi günceller
   var _yvEl = document.getElementById('vergiYilSec');
   var vergiYil = _yvEl ? _yvEl.value : '2026';
 
-  // Mustafa profili: Eda/Mustafa sekmeleri
+  // Tüm profiller: hesap sekmesi seçici
   var _vOwnerRow = document.getElementById('vergiOwnerRow');
   if (_vOwnerRow) {
-    var _isMustafa = ACTIVE_PROFILE === 'mustafa';
-    _vOwnerRow.style.display = _isMustafa ? 'block' : 'none';
-    if (_isMustafa) {
-      _vOwnerRow.innerHTML = '';
+    _vOwnerRow.style.display = 'block';
+    _vOwnerRow.innerHTML = '';
+    if (ACTIVE_PROFILE === 'mustafa') {
+      // Dış sekmeler: Mustafa | Eda
+      var _outerRow = document.createElement('div');
+      _outerRow.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;';
       ['Mustafa','Eda'].forEach(function(name) {
         var active = VERGI_SUBOWNER === name;
         var clr = name === 'Mustafa' ? '#3B82F6' : '#EC4899';
@@ -3168,9 +3203,37 @@ function _renderVergiInner(){
         var btn = document.createElement('div');
         btn.textContent = emoji + ' ' + name;
         btn.dataset.owner = name;
+        btn.style.cssText = 'display:inline-block;padding:8px 20px;border-radius:20px;font-weight:600;font-size:14px;cursor:pointer;transition:all .15s;' +
+          (active ? 'background:'+clr+'33;border:2px solid '+clr+';color:'+clr : 'background:rgba(255,255,255,0.06);border:2px solid transparent;color:var(--text-3)');
+        btn.onclick = (function(n){ return function(){ setVergiOwner(n); }; })(name);
+        _outerRow.appendChild(btn);
+      });
+      _vOwnerRow.appendChild(_outerRow);
+      // İç sekmeler: Own | Others | Total
+      var _innerRow = document.createElement('div');
+      _innerRow.style.cssText = 'display:flex;gap:6px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);';
+      [{key:'self',label:'👤 Own'},{key:'cross',label:'👥 Others'},{key:'total',label:'📊 Total'}].forEach(function(item) {
+        var active = VERGI_SUB_SECTION === item.key;
+        var btn = document.createElement('div');
+        btn.textContent = item.label;
+        btn.style.cssText = 'display:inline-block;padding:5px 14px;border-radius:14px;font-weight:600;font-size:12px;cursor:pointer;transition:all .15s;' +
+          (active ? 'background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:var(--text)' : 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:var(--text-3)');
+        btn.onclick = (function(k){ return function(){ setVergiSubSection(k); }; })(item.key);
+        _innerRow.appendChild(btn);
+      });
+      _vOwnerRow.appendChild(_innerRow);
+    } else {
+      // Ayşe/Sevi/İkbal: Mustafa | Eda | Total sekmeleri
+      ['Mustafa','Eda','Total'].forEach(function(name) {
+        var active = VERGI_SUBOWNER === name;
+        var clr = name === 'Mustafa' ? '#3B82F6' : name === 'Eda' ? '#EC4899' : '#10B981';
+        var emoji = name === 'Mustafa' ? '👨' : name === 'Eda' ? '👩' : '📊';
+        var btn = document.createElement('div');
+        btn.textContent = emoji + ' ' + name;
+        btn.dataset.owner = name;
         btn.style.cssText = 'display:inline-block;margin-right:8px;padding:8px 20px;border-radius:20px;font-weight:600;font-size:14px;cursor:pointer;transition:all .15s;' +
           (active ? 'background:'+clr+'33;border:2px solid '+clr+';color:'+clr : 'background:rgba(255,255,255,0.06);border:2px solid transparent;color:var(--text-3)');
-        btn.onclick = function() { setVergiOwner(name); };
+        btn.onclick = (function(n){ return function(){ setVergiOwner(n); }; })(name);
         _vOwnerRow.appendChild(btn);
       });
     }
@@ -3180,12 +3243,10 @@ function _renderVergiInner(){
   var allT = getAllTrades();
   var closedRows = [];
   allT.forEach(function(t){
-    // Tam kapatılmış
     if(t.closed && t.pnl != null && String(t.closed).substring(0,4) === vergiYil){
       closedRows.push(t);
       return;
     }
-    // Kısmi kapanması olanlar (henüz tam kapanmamış)
     if(!t.closed && t.partialCloses && t.partialCloses.length > 0){
       var hasMatch = t.partialCloses.some(function(pc){
         return pc.date && String(pc.date).substring(0,4) === vergiYil;
@@ -3194,11 +3255,17 @@ function _renderVergiInner(){
     }
   });
 
-  // Mustafa profilinde subOwner'a göre filtrele (subOwner yoksa Mustafa sayılır)
+  // subOwner'a göre filtrele
   if (ACTIVE_PROFILE === 'mustafa') {
-    closedRows = closedRows.filter(function(t) {
-      return (t.subOwner || 'Eda') === VERGI_SUBOWNER;
-    });
+    var _ownRows = closedRows.filter(function(t){ return (t.subOwner||'Eda') === VERGI_SUBOWNER; });
+    var _crossRows = getCrossProfileClosedTrades(VERGI_SUBOWNER, vergiYil);
+    if (VERGI_SUB_SECTION === 'self') closedRows = _ownRows;
+    else if (VERGI_SUB_SECTION === 'cross') closedRows = _crossRows;
+    else closedRows = _ownRows.concat(_crossRows);
+  } else {
+    if (VERGI_SUBOWNER !== 'Total') {
+      closedRows = closedRows.filter(function(t){ return (t.subOwner||'Eda') === VERGI_SUBOWNER; });
+    }
   }
 
   var totalMatrah = 0, totalUSD = 0, missingKur = 0;
@@ -4466,6 +4533,8 @@ function profileKey(base) {
 
 function selectProfile(profile) {
   ACTIVE_PROFILE = profile;
+  VERGI_SUBOWNER = profile === 'mustafa' ? 'Mustafa' : 'Eda';
+  VERGI_SUB_SECTION = 'total';
   localStorage.setItem('optflow_active_profile', profile);
 
   // Global key değişkenlerini profil prefix'iyle güncelle
@@ -4531,10 +4600,11 @@ function reloadProfileData() {
   var _nowMonth = _jsToApp2[new Date().getMonth()];
   if(!tradesData[_nowMonth]) { tradesData[_nowMonth] = []; }
 
-  // Migration: Mustafa profilindeki subOwner'sız trade'ler → Eda
-  if (ACTIVE_PROFILE === 'mustafa') {
+  // Migration: subOwner'sız trade'ler → Eda (tüm profiller)
+  {
     var _migrated = false;
     Object.keys(tradesData).forEach(function(mon) {
+      if (!Array.isArray(tradesData[mon])) return;
       tradesData[mon].forEach(function(t) {
         if (!t.subOwner) { t.subOwner = 'Eda'; _migrated = true; }
       });
