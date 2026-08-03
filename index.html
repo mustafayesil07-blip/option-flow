@@ -1039,6 +1039,9 @@
   <!-- OZET KARTLARI -->
   <div style="padding:0 20px 12px; display:grid; grid-template-columns:1fr 1fr; gap:10px;" id="vergiOzetCards"></div>
 
+  <!-- VERGİ DİLİMİ HESABI (sadece Mustafa profili) -->
+  <div id="vergiTaxCalc" style="display:none;margin:0 20px 12px;"></div>
+
   <!-- KUR YONETIMI -->
   <div style="margin:0 20px 12px;">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💱 Exchange Rate (USD/TRY)</div>
@@ -3156,6 +3159,19 @@ function setVergiSubSection(name) {
   VERGI_SUB_SECTION = name;
   renderVergi();
 }
+function calcProgressiveTax(income) {
+  if (income <= 0) return 0;
+  var br = [{l:190000,r:.15},{l:400000,r:.20},{l:1500000,r:.27},{l:5300000,r:.35},{l:Infinity,r:.40}];
+  var tax = 0, prev = 0;
+  for (var i = 0; i < br.length; i++) {
+    var band = Math.min(income, br[i].l) - prev;
+    if (band <= 0) break;
+    tax += band * br[i].r;
+    prev = br[i].l;
+    if (income <= br[i].l) break;
+  }
+  return tax;
+}
 function getCrossProfileClosedTrades(filterOwner, vergiYil) {
   var result = [];
   ['ayse_opt_v22','sevi_opt_v22','ikbal_opt_v22'].forEach(function(lsKey) {
@@ -3239,21 +3255,22 @@ function _renderVergiInner(){
     }
   }
 
-  // Kapatılan tüm trade'leri topla (tam + kısmi içerenler)
+  // Kapatılan tüm trade'leri topla (tam + kısmi içerenler) — yıl filtresi, henüz hesap filtresi yok
   var allT = getAllTrades();
-  var closedRows = [];
+  var allOwnClosed = [];
   allT.forEach(function(t){
     if(t.closed && t.pnl != null && String(t.closed).substring(0,4) === vergiYil){
-      closedRows.push(t);
+      allOwnClosed.push(t);
       return;
     }
     if(!t.closed && t.partialCloses && t.partialCloses.length > 0){
       var hasMatch = t.partialCloses.some(function(pc){
         return pc.date && String(pc.date).substring(0,4) === vergiYil;
       });
-      if(hasMatch) closedRows.push(t);
+      if(hasMatch) allOwnClosed.push(t);
     }
   });
+  var closedRows = allOwnClosed.slice();
 
   // subOwner'a göre filtrele
   if (ACTIVE_PROFILE === 'mustafa') {
@@ -3297,6 +3314,77 @@ function _renderVergiInner(){
       var val=document.createElement('div');val.style.cssText='font-family:var(--font-head);font-size:18px;font-weight:700;color:'+x.c;val.textContent=x.v;
       card.appendChild(lbl);card.appendChild(val);oc.appendChild(card);
     });
+  }
+
+  // ── Vergi dilimi hesabı (sadece Mustafa profili) ──
+  var _vtc = document.getElementById('vergiTaxCalc');
+  if (_vtc) {
+    if (ACTIVE_PROFILE === 'mustafa') {
+      _vtc.style.display = 'block';
+      while(_vtc.firstChild) _vtc.removeChild(_vtc.firstChild);
+      // Tüm profillerin birleşik matrahı (hem Eda hem Mustafa hesabı)
+      var _allCombined = allOwnClosed.concat(getCrossProfileClosedTrades('Total', vergiYil));
+      var _combMatrah = 0;
+      _allCombined.forEach(function(t){ var r=calcTaxForTrade(t); if(r.hasKur) _combMatrah += r.matrah_try; });
+      var _tax = calcProgressiveTax(_combMatrah);
+      var _effRate = _combMatrah > 0 ? (_tax / _combMatrah * 100) : 0;
+
+      var _hdr = document.createElement('div');
+      _hdr.style.cssText = 'font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;';
+      _hdr.textContent = '🏛️ Estimated Income Tax';
+      _vtc.appendChild(_hdr);
+
+      var _card = document.createElement('div');
+      _card.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;';
+
+      // Özet satır
+      var _sumRow = document.createElement('div');
+      _sumRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.07);';
+      [
+        {l:'Combined Tax Base', v: _combMatrah.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c: _combMatrah>=0?'var(--profit)':'var(--loss)'},
+        {l:'Estimated Tax', v: _tax.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:'#F59E0B'},
+        {l:'Effective Rate', v: _effRate.toFixed(1)+'%', c:'#A78BFA'}
+      ].forEach(function(x){
+        var col = document.createElement('div');
+        var lbl = document.createElement('div'); lbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px;'; lbl.textContent=x.l;
+        var val = document.createElement('div'); val.style.cssText='font-family:var(--font-head);font-size:16px;font-weight:700;color:'+x.c; val.textContent=x.v;
+        col.appendChild(lbl); col.appendChild(val); _sumRow.appendChild(col);
+      });
+      _card.appendChild(_sumRow);
+
+      // Dilim tablosu
+      var _brData = [
+        {from:0,      to:190000,   rate:15},
+        {from:190000, to:400000,   rate:20},
+        {from:400000, to:1500000,  rate:27},
+        {from:1500000,to:5300000,  rate:35},
+        {from:5300000,to:Infinity, rate:40}
+      ];
+      var _brHdr = document.createElement('div');
+      _brHdr.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px;gap:4px;padding:4px 6px;font-size:10px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;';
+      ['Bracket','Rate','Taxable','Tax'].forEach(function(h){ var d=document.createElement('div'); d.textContent=h; _brHdr.appendChild(d); });
+      _card.appendChild(_brHdr);
+
+      var prev2 = 0;
+      _brData.forEach(function(b) {
+        var bandIncome = Math.max(0, Math.min(_combMatrah, b.to) - b.from);
+        if (_combMatrah < b.from) return;
+        var bandTax = bandIncome * b.rate / 100;
+        var active = bandIncome > 0;
+        var row2 = document.createElement('div');
+        row2.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px;gap:4px;padding:5px 6px;border-radius:6px;font-size:11px;' + (active?'background:rgba(255,255,255,0.04);':'opacity:0.35;');
+        var rangeStr = b.to === Infinity ? b.from.toLocaleString('tr-TR')+' ₺+' : b.from.toLocaleString('tr-TR')+' – '+b.to.toLocaleString('tr-TR')+' ₺';
+        [rangeStr, b.rate+'%', active?bandIncome.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺':'-', active?bandTax.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺':'-'].forEach(function(txt, i){
+          var d = document.createElement('div');
+          d.style.cssText = 'font-family:'+(i>0?'var(--font-mono)':'inherit')+';color:'+(i===3&&active?'#F59E0B':i===1?'var(--text-2)':'var(--text)');
+          d.textContent = txt; row2.appendChild(d);
+        });
+        _card.appendChild(row2);
+      });
+      _vtc.appendChild(_card);
+    } else {
+      _vtc.style.display = 'none';
+    }
   }
 
   // ── Kur listesi ──
