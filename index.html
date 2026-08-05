@@ -3381,12 +3381,13 @@ function _renderVergiInner(){
             var v = parseFloat(inps[name].value);
             setHissePnl(yr, name, isNaN(v) ? 0 : v);
           });
-          var mAfter = getHissePnl(yr,'Mustafa');
-          var eAfter = getHissePnl(yr,'Eda');
-          alert('KAYIT SONRASI OKUMA:\nM='+mAfter+'\nE='+eAfter+'\nPROFIL='+ACTIVE_PROFILE+'\nYIL='+yr);
           renderVergi();
-          var mAfter2 = getHissePnl(yr,'Mustafa');
-          alert('renderVergi SONRASI:\nM='+mAfter2+'\n(değişti mi?)');
+          // Render sonrası tanı
+          var vtcEl = document.getElementById('vergiTaxCalc');
+          var vtEl  = document.getElementById('vergiTablosu');
+          var msg = 'vergiTaxCalc:\n  display='+( vtcEl?vtcEl.style.display:'yok')+'\n  children='+( vtcEl?vtcEl.childElementCount:'?');
+          msg += '\n\nvergiTablosu ilk 120 karakter:\n'+(vtEl?vtEl.textContent.trim().slice(0,120):'yok');
+          alert(msg);
         };
       })(vergiYil, _hisseInputs);
       _hisseCard.appendChild(_hisseBtn);
