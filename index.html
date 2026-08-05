@@ -3377,18 +3377,16 @@ function _renderVergiInner(){
       _hisseBtn.style.cssText = 'width:100%;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:10px;padding:10px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;';
       _hisseBtn.onclick = (function(yr, inps) {
         return function() {
-          var lines = ['YIL: '+yr];
           Object.keys(inps).forEach(function(name) {
-            var raw = inps[name].value;
-            var v = parseFloat(raw);
-            var final = isNaN(v) ? 0 : v;
-            setHissePnl(yr, name, final);
-            lines.push(name+': girdi="'+raw+'" kayit='+final);
+            var v = parseFloat(inps[name].value);
+            setHissePnl(yr, name, isNaN(v) ? 0 : v);
           });
-          var stored = localStorage.getItem(HISSE_LS);
-          lines.push('localStorage: '+(stored||'BOŞ'));
-          alert(lines.join('\n'));
+          var mAfter = getHissePnl(yr,'Mustafa');
+          var eAfter = getHissePnl(yr,'Eda');
+          alert('KAYIT SONRASI OKUMA:\nM='+mAfter+'\nE='+eAfter+'\nPROFIL='+ACTIVE_PROFILE+'\nYIL='+yr);
           renderVergi();
+          var mAfter2 = getHissePnl(yr,'Mustafa');
+          alert('renderVergi SONRASI:\nM='+mAfter2+'\n(değişti mi?)');
         };
       })(vergiYil, _hisseInputs);
       _hisseCard.appendChild(_hisseBtn);
