@@ -3375,28 +3375,23 @@ function _renderVergiInner(){
       var _hisseBtn = document.createElement('button');
       _hisseBtn.textContent = '💾 Kaydet & Güncelle';
       _hisseBtn.style.cssText = 'width:100%;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:10px;padding:10px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;';
-      var _hisseDbg = document.createElement('div');
-      _hisseDbg.style.cssText = 'font-size:10px;color:var(--text-3);padding-top:6px;min-height:14px;word-break:break-all;';
-      _hisseBtn.onclick = (function(yr, inps, btn, dbg) {
+      _hisseBtn.onclick = (function(yr, inps) {
         return function() {
-          var saved = [];
+          var lines = ['YIL: '+yr];
           Object.keys(inps).forEach(function(name) {
             var raw = inps[name].value;
             var v = parseFloat(raw);
             var final = isNaN(v) ? 0 : v;
             setHissePnl(yr, name, final);
-            saved.push(name+'='+final);
+            lines.push(name+': girdi="'+raw+'" kayit='+final);
           });
-          // debug: show what was read/saved
           var stored = localStorage.getItem(HISSE_LS);
-          dbg.textContent = '→ '+saved.join(' ')+' | LS: '+(stored||'null');
-          btn.textContent = '✅ Kaydedildi';
-          btn.style.background = '#10B981';
-          setTimeout(function() { renderVergi(); }, 50);
+          lines.push('localStorage: '+(stored||'BOŞ'));
+          alert(lines.join('\n'));
+          renderVergi();
         };
-      })(vergiYil, _hisseInputs, _hisseBtn, _hisseDbg);
+      })(vergiYil, _hisseInputs);
       _hisseCard.appendChild(_hisseBtn);
-      _hisseCard.appendChild(_hisseDbg);
       _vtc.appendChild(_hisseCard);
 
       // ── Kişi başına vergi kartı ──
