@@ -3365,7 +3365,7 @@ function _renderVergiInner(){
         var lbl = document.createElement('div'); lbl.style.cssText='font-size:10px;font-weight:600;color:'+p.clr+';margin-bottom:5px;'; lbl.textContent=p.emoji+' '+p.name;
         var inp = document.createElement('input');
         inp.type = 'number'; inp.step = '1'; inp.placeholder = '0';
-        inp.value = _personData[p.name].hisse || '';
+        inp.value = _personData[p.name].hisse !== 0 ? _personData[p.name].hisse : '';
         inp.id = 'hisse_inp_' + p.name;
         inp.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 10px;color:var(--text);font-size:13px;outline:none;width:100%;box-sizing:border-box;';
         _hisseInputs[p.name] = inp;
@@ -3375,13 +3375,22 @@ function _renderVergiInner(){
       var _hisseBtn = document.createElement('button');
       _hisseBtn.textContent = '💾 Kaydet & Güncelle';
       _hisseBtn.style.cssText = 'width:100%;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:10px;padding:10px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;';
-      _hisseBtn.onclick = function() {
-        ['Mustafa','Eda'].forEach(function(name) {
-          var v = parseFloat(document.getElementById('hisse_inp_'+name).value) || 0;
-          setHissePnl(vergiYil, name, v);
-        });
-        renderVergi();
-      };
+      _hisseBtn.onclick = (function(yr, inps, btn) {
+        return function() {
+          Object.keys(inps).forEach(function(name) {
+            var raw = inps[name].value;
+            var v = parseFloat(raw);
+            setHissePnl(yr, name, isNaN(v) ? 0 : v);
+          });
+          btn.textContent = '✅ Kaydedildi';
+          btn.style.background = '#10B981';
+          setTimeout(function() {
+            btn.textContent = '💾 Kaydet & Güncelle';
+            btn.style.background = 'linear-gradient(135deg,#3B82F6,#8B5CF6)';
+          }, 1200);
+          renderVergi();
+        };
+      })(vergiYil, _hisseInputs, _hisseBtn);
       _hisseCard.appendChild(_hisseBtn);
       _vtc.appendChild(_hisseCard);
 
