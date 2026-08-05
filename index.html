@@ -1495,6 +1495,10 @@ var LEAPS_LS = 'leaps_v1';
 var PORT_SIZE = 180000;
 try { var _h = localStorage.getItem('temH'); if(_h) PORT_SIZE = parseInt(_h); } catch(e){}
 var KURLAR_LS = 'kurlar_v2';
+var HISSE_LS = 'optflow_hisse_v1'; // Hisse portföyü equity P&L (TRY) — yıl + kişi bazında
+function loadHissePnl() { try { return JSON.parse(localStorage.getItem(HISSE_LS)) || {}; } catch(e) { return {}; } }
+function getHissePnl(year, person) { var d=loadHissePnl(); return (d[year]&&d[year][person]!=null) ? Number(d[year][person]) : 0; }
+function setHissePnl(year, person, value) { var d=loadHissePnl(); if(!d[year]) d[year]={}; d[year][person]=value; try { localStorage.setItem(HISSE_LS, JSON.stringify(d)); } catch(e){} }
 // Seed data from old app — baked in so it works on any device
 var KURLAR_SEED = {"2025-08-18":40.8084,"2025-09-12":41.209,"2025-09-15":41.255,"2025-09-19":41.2344,"2025-09-23":41.3375,"2025-09-24":41.3726,"2025-09-26":41.4179,"2025-09-29":41.4984,"2025-10-01":41.513,"2025-10-03":41.5226,"2025-10-06":41.6225,"2025-10-07":41.6217,"2025-10-08":41.633,"2025-10-09":41.6421,"2025-10-10":41.6388,"2025-10-13":41.7196,"2025-10-14":41.7496,"2025-10-15":41.7611,"2025-10-17":41.7855,"2025-10-20":41.8768,"2025-10-21":41.8872,"2025-10-22":41.8966,"2025-10-23":41.9042,"2025-10-24":41.8427,"2025-10-27":41.8699,"2025-10-28":41.8699,"2025-10-29":41.8699,"2025-10-30":41.9,"2025-10-31":41.8922,"2025-11-03":41.9751,"2025-11-04":42.0042,"2025-11-05":42.0362,"2025-11-10":42.1124,"2025-11-11":42.1526,"2025-11-12":42.1636,"2025-11-13":42.1724,"2025-11-14":42.1661,"2025-11-18":42.2641,"2025-11-19":42.2756,"2025-11-20":42.2882,"2025-11-21":42.2819,"2025-11-25":42.3668,"2025-11-26":42.3578,"2025-11-28":42.3547,"2025-12-04":42.3771,"2025-12-05":42.3606,"2025-12-08":42.4735,"2025-12-09":42.497,"2025-12-10":42.5179,"2025-12-11":42.5343,"2025-12-12":42.5344,"2025-12-15":42.6211,"2025-12-19":42.6532,"2025-12-22":42.734,"2025-12-26":42.7656,"2025-12-29":42.8542,"2025-12-31":42.8457,"2026-01-02":42.881,"2026-01-05":42.9648,"2026-01-06":42.9663,"2026-01-07":42.9743,"2026-01-08":42.9747,"2026-01-09":42.9863,"2026-01-12":43.0609,"2026-01-13":43.0765,"2026-01-14":43.0925,"2026-01-16":43.0883,"2026-01-19":43.1943,"2026-01-20":43.2061,"2026-01-21":43.2165,"2026-01-22":43.2247,"2026-01-23":43.2036,"2026-01-26":43.2978,"2026-01-27":43.3158,"2026-01-28":43.3327,"2026-01-29":43.3443,"2026-01-30":43.3414,"2026-02-02":43.4168,"2026-02-03":43.4142,"2026-02-04":43.4245,"2026-02-05":43.4555,"2026-02-06":43.4542,"2026-02-09":43.5182,"2026-02-10":43.545,"2026-02-11":43.5633,"2026-02-12":43.5702,"2026-02-13":43.5433,"2026-02-17":43.6524,"2026-02-18":43.6747,"2026-02-19":43.6913,"2026-02-20":43.6883,"2026-02-23":43.7542,"2026-02-24":43.7775,"2026-02-25":43.7888,"2026-02-26":43.8026,"2026-02-27":43.8,"2026-03-02":43.885,"2026-03-03":43.8913,"2026-03-04":43.8932,"2026-03-05":43.9135,"2026-03-06":43.9055,"2026-03-09":44.0007,"2026-03-10":43.9826,"2026-03-11":43.9964,"2026-03-12":44.031};
 var kurlarData = JSON.parse(JSON.stringify(KURLAR_SEED));
@@ -3325,33 +3329,91 @@ function _renderVergiInner(){
 
       var _brData2 = [{from:0,to:190000,rate:15},{from:190000,to:400000,rate:20},{from:400000,to:1500000,rate:27},{from:1500000,to:5300000,rate:35},{from:5300000,to:Infinity,rate:40}];
 
-      // Kişi başına matrah hesapla
-      function _personMatrah(ownerName) {
-        var own = allOwnClosed.filter(function(t){ return (t.subOwner||'Eda') === ownerName; });
-        var cross = getCrossProfileClosedTrades(ownerName, vergiYil);
-        var matrah = 0;
-        own.concat(cross).forEach(function(t){ var r=calcTaxForTrade(t); if(r.hasKur) matrah += r.matrah_try; });
-        return matrah;
-      }
+      // Kişi başına opsiyon + hisse matrahı
+      var _personData = {};
+      ['Mustafa','Eda'].forEach(function(name) {
+        var own = allOwnClosed.filter(function(t){ return (t.subOwner||'Eda') === name; });
+        var cross = getCrossProfileClosedTrades(name, vergiYil);
+        var optM = 0;
+        own.concat(cross).forEach(function(t){ var r=calcTaxForTrade(t); if(r.hasKur) optM += r.matrah_try; });
+        var hisseM = getHissePnl(vergiYil, name);
+        _personData[name] = {opt: optM, hisse: hisseM, total: optM + hisseM};
+      });
 
-      function _buildPersonCard(label, emoji, accentClr, matrah) {
-        var tax = calcProgressiveTax(matrah);
-        var effRate = matrah > 0 ? (tax / matrah * 100) : 0;
+      // ── Başlık ──
+      var _hdr = document.createElement('div');
+      _hdr.style.cssText = 'font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;';
+      _hdr.textContent = '🏛️ Estimated Income Tax';
+      _vtc.appendChild(_hdr);
+
+      // ── Hisse P&L Manuel Giriş ──
+      var _hisseCard = document.createElement('div');
+      _hisseCard.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;';
+      var _hisseTitleRow = document.createElement('div');
+      _hisseTitleRow.style.cssText = 'font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:10px;display:flex;align-items:center;gap:6px;';
+      _hisseTitleRow.textContent = '📈 Equity / Stock Portfolio P&L (₺)';
+      _hisseCard.appendChild(_hisseTitleRow);
+      var _hisseNote = document.createElement('div');
+      _hisseNote.style.cssText = 'font-size:10px;color:var(--text-3);margin-bottom:10px;';
+      _hisseNote.textContent = 'Hisse portföyü uygulamasından '+vergiYil+' yılı TL kazancını/zararını gir (pozitif = kazanç, negatif = zarar)';
+      _hisseCard.appendChild(_hisseNote);
+      var _hisseGrid = document.createElement('div');
+      _hisseGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;';
+      var _hisseInputs = {};
+      [{name:'Mustafa',emoji:'👨',clr:'#3B82F6'},{name:'Eda',emoji:'👩',clr:'#EC4899'}].forEach(function(p) {
+        var col = document.createElement('div');
+        var lbl = document.createElement('div'); lbl.style.cssText='font-size:10px;font-weight:600;color:'+p.clr+';margin-bottom:5px;'; lbl.textContent=p.emoji+' '+p.name;
+        var inp = document.createElement('input');
+        inp.type = 'number'; inp.step = '1'; inp.placeholder = '0';
+        inp.value = _personData[p.name].hisse || '';
+        inp.id = 'hisse_inp_' + p.name;
+        inp.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 10px;color:var(--text);font-size:13px;outline:none;width:100%;box-sizing:border-box;';
+        _hisseInputs[p.name] = inp;
+        col.appendChild(lbl); col.appendChild(inp); _hisseGrid.appendChild(col);
+      });
+      _hisseCard.appendChild(_hisseGrid);
+      var _hisseBtn = document.createElement('button');
+      _hisseBtn.textContent = '💾 Kaydet & Güncelle';
+      _hisseBtn.style.cssText = 'width:100%;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:10px;padding:10px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;';
+      _hisseBtn.onclick = function() {
+        ['Mustafa','Eda'].forEach(function(name) {
+          var v = parseFloat(document.getElementById('hisse_inp_'+name).value) || 0;
+          setHissePnl(vergiYil, name, v);
+        });
+        renderVergi();
+      };
+      _hisseCard.appendChild(_hisseBtn);
+      _vtc.appendChild(_hisseCard);
+
+      // ── Kişi başına vergi kartı ──
+      [{name:'Mustafa',emoji:'👨',clr:'#3B82F6'},{name:'Eda',emoji:'👩',clr:'#EC4899'}].forEach(function(p) {
+        var pd = _personData[p.name];
+        var tax = calcProgressiveTax(pd.total);
+        var effRate = pd.total > 0 ? (tax / pd.total * 100) : 0;
 
         var wrap = document.createElement('div');
         wrap.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;';
 
-        // Kişi başlık
         var nameRow = document.createElement('div');
-        nameRow.style.cssText = 'font-size:13px;font-weight:700;color:'+accentClr+';margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);';
-        nameRow.textContent = emoji + ' ' + label;
+        nameRow.style.cssText = 'font-size:13px;font-weight:700;color:'+p.clr+';margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);';
+        nameRow.textContent = p.emoji + ' ' + p.name;
         wrap.appendChild(nameRow);
+
+        // Matrah kırılımı
+        var bkGrid = document.createElement('div');
+        bkGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.05);';
+        [{l:'Options P&L', v:pd.opt, suffix:' ₺'},{l:'Equity P&L', v:pd.hisse, suffix:' ₺'},{l:'Total Tax Base', v:pd.total, suffix:' ₺'}].forEach(function(x){
+          var col = document.createElement('div');
+          var lbl2 = document.createElement('div'); lbl2.style.cssText='font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:3px;'; lbl2.textContent=x.l;
+          var val2 = document.createElement('div'); val2.style.cssText='font-family:var(--font-mono);font-size:12px;font-weight:600;color:'+(x.v>=0?'var(--profit)':'var(--loss)'); val2.textContent=x.v.toLocaleString('tr-TR',{maximumFractionDigits:0})+x.suffix;
+          col.appendChild(lbl2); col.appendChild(val2); bkGrid.appendChild(col);
+        });
+        wrap.appendChild(bkGrid);
 
         // Özet satır
         var sumRow = document.createElement('div');
-        sumRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;';
-        [{l:'Tax Base', v:matrah.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:matrah>=0?'var(--profit)':'var(--loss)'},
-         {l:'Est. Tax', v:tax.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:'#F59E0B'},
+        sumRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;';
+        [{l:'Est. Tax', v:tax.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:'#F59E0B'},
          {l:'Eff. Rate', v:effRate.toFixed(1)+'%', c:'#A78BFA'}
         ].forEach(function(x){
           var col = document.createElement('div');
@@ -3367,9 +3429,10 @@ function _renderVergiInner(){
         ['Bracket','Rate','Taxable','Tax'].forEach(function(h){ var d=document.createElement('div'); d.textContent=h; brHdr.appendChild(d); });
         wrap.appendChild(brHdr);
 
+        var totForBr = pd.total;
         _brData2.forEach(function(b) {
-          var bandIncome = Math.max(0, Math.min(matrah, b.to) - b.from);
-          if (matrah < b.from) return;
+          var bandIncome = Math.max(0, Math.min(totForBr, b.to) - b.from);
+          if (totForBr < b.from) return;
           var bandTax = bandIncome * b.rate / 100;
           var active = bandIncome > 0;
           var brow = document.createElement('div');
@@ -3382,16 +3445,8 @@ function _renderVergiInner(){
           });
           wrap.appendChild(brow);
         });
-        return wrap;
-      }
-
-      var _hdr = document.createElement('div');
-      _hdr.style.cssText = 'font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;';
-      _hdr.textContent = '🏛️ Estimated Income Tax';
-      _vtc.appendChild(_hdr);
-
-      _vtc.appendChild(_buildPersonCard('Mustafa', '👨', '#3B82F6', _personMatrah('Mustafa')));
-      _vtc.appendChild(_buildPersonCard('Eda', '👩', '#EC4899', _personMatrah('Eda')));
+        _vtc.appendChild(wrap);
+      });
     } else {
       _vtc.style.display = 'none';
     }
