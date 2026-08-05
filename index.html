@@ -3375,21 +3375,17 @@ function _renderVergiInner(){
       var _hisseBtn = document.createElement('button');
       _hisseBtn.textContent = '💾 Kaydet & Güncelle';
       _hisseBtn.style.cssText = 'width:100%;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:10px;padding:10px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;';
-      _hisseBtn.onclick = (function(yr, inps) {
+      _hisseBtn.onclick = (function(yr, inps, btn) {
         return function() {
           Object.keys(inps).forEach(function(name) {
             var v = parseFloat(inps[name].value);
             setHissePnl(yr, name, isNaN(v) ? 0 : v);
           });
+          btn.textContent = '✅ Kaydedildi';
+          btn.style.background = '#10B981';
           renderVergi();
-          // Render sonrası tanı
-          var vtcEl = document.getElementById('vergiTaxCalc');
-          var vtEl  = document.getElementById('vergiTablosu');
-          var msg = 'vergiTaxCalc:\n  display='+( vtcEl?vtcEl.style.display:'yok')+'\n  children='+( vtcEl?vtcEl.childElementCount:'?');
-          msg += '\n\nvergiTablosu ilk 120 karakter:\n'+(vtEl?vtEl.textContent.trim().slice(0,120):'yok');
-          alert(msg);
         };
-      })(vergiYil, _hisseInputs);
+      })(vergiYil, _hisseInputs, _hisseBtn);
       _hisseCard.appendChild(_hisseBtn);
       _vtc.appendChild(_hisseCard);
 
