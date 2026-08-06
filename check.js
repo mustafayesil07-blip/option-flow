@@ -130,4 +130,7 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main()
+  .then(() => admin.app().delete())
+  .catch(err => { console.error(err); return admin.app().delete().catch(()=>{}); })
+  .finally(() => process.exit(0));
