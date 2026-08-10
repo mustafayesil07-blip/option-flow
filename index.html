@@ -149,6 +149,54 @@
   }
   .tb-btn-price:active:not([disabled]) { background: rgba(16,212,142,0.25); transform: scale(0.96); }
   .tb-btn-price[disabled] { cursor: default; }
+
+  /* ── Light mode theme ── */
+  html.light-mode {
+    --bg: #F2E8D8; --bg2: #E8DCC8; --bg3: #DED0B8;
+    --card: rgba(60,40,20,0.07); --card-hover: rgba(60,40,20,0.12);
+    --border: rgba(60,40,20,0.14); --border-bright: rgba(60,40,20,0.28);
+    --text: #1C0E05; --text-2: #3E2812; --text-3: #8A6030;
+  }
+  html.light-mode body {
+    background: radial-gradient(ellipse at top right,rgba(200,140,60,0.10),transparent 55%),radial-gradient(ellipse at bottom left,rgba(150,100,30,0.06),transparent 50%),var(--bg);
+  }
+  html.light-mode .topbar { background: rgba(230,210,180,0.96); }
+  html.light-mode .nav-bar { background: rgba(235,218,185,0.97); border-top-color: rgba(60,40,20,0.12); }
+  html.light-mode .screen-header { background: rgba(230,210,180,0.90); }
+  html.light-mode table tbody tr { background: transparent; }
+
+  /* ── Theme toggle button ── */
+  .tb-btn-theme {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 50%; font-size: 15px; cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tb-btn-theme:active { transform: scale(0.90); background: rgba(255,255,255,0.18); }
+
+  /* ── Portfolio Health Banner ── */
+  #healthBanner {
+    margin: 6px 16px 0; padding: 9px 14px; border-radius: 10px;
+    display: none; align-items: center; gap: 10px; font-size: 12px; font-weight: 500;
+    transition: all 0.3s;
+  }
+  .hb-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .hb-text { flex: 1; color: var(--text-2); }
+  .hb-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hb-tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+
+  /* ── DTE gradient left border on trade cards ── */
+  .trade-card.dte-hot  { border-left: 3px solid #EF4444 !important; }
+  .trade-card.dte-warm { border-left: 3px solid #F59E0B !important; }
+  .trade-card.dte-cool { border-left: 3px solid #3B82F6 !important; }
+  .trade-card.dte-safe { border-left: 3px solid #22C55E !important; }
+
+  /* ── P&L count-up animation ── */
+  @keyframes pnlPop { 0%{opacity:0.3;transform:scale(0.95)} 60%{transform:scale(1.03)} 100%{opacity:1;transform:scale(1)} }
+  .pnl-animate { animation: pnlPop 0.55s ease both; }
+
   .badge-live {
     display: flex; align-items: center; gap: 5px;
     background: var(--profit-dim); border: 1px solid rgba(34,197,94,0.25);
@@ -774,6 +822,7 @@
     <span class="topbar-name">OptionFlow</span>
   </div>
   <div class="topbar-right">
+    <button id="themeBtn" onclick="toggleTheme()" class="tb-btn-theme" title="Tema değiştir">🌙</button>
     <button id="profileBtn" onclick="showProfileScreen()" class="tb-btn-profile" title="Profil değiştir">👤 —</button>
     <button id="priceRefreshBtn" onclick="fetchOptionPrices()" class="tb-btn-price">📡 Fiyat</button>
   </div>
@@ -788,6 +837,7 @@
     <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
   </div>
   <div class="year-divider"></div>
+  <div id="healthBanner"></div>
   <div class="filter-row" id="dashMonthFilter" style="padding:8px 20px 4px;">
     <div class="filter-pill active" data-dash-month="all" onclick="dashMultiMode=false;selectedDashMonths=[];var _db=document.getElementById('dashMultiBtn');if(_db)_db.classList.remove('active');var _dl=document.getElementById('dashMultiLabel');if(_dl)_dl.style.display='none';setDashMonth(this,'all')">All Time</div>
   </div>
@@ -815,6 +865,11 @@
       <div class="hero-label">Open Positions</div>
       <div class="hero-val" id="heroOpen">—</div>
       <div class="hero-change" id="heroOpenSub"></div>
+    </div>
+    <div class="hero-card" style="background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(220,38,38,0.04));border-color:rgba(239,68,68,0.2);">
+      <div class="hero-label">Max Possible Loss</div>
+      <div class="hero-val privacy-val" id="heroMaxLoss" style="color:var(--loss)">—</div>
+      <div class="hero-change" id="heroMaxLossSub"></div>
     </div>
     <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.06));border-color:rgba(59,130,246,0.2);">
       <div class="hero-label">Open Position Premiums</div>
@@ -1766,6 +1821,87 @@ function getMonthlyStats() {
 
 function getDTE(exp){ if(!exp) return null; return Math.max(0, Math.round((new Date(exp)-new Date())/86400000)); }
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
+
+// ── Theme toggle ──────────────────────────────────────────
+function toggleTheme(){
+  var isLight = document.documentElement.classList.toggle('light-mode');
+  var btn = document.getElementById('themeBtn');
+  if(btn) btn.textContent = isLight ? '☀️' : '🌙';
+  try { localStorage.setItem('optflow_theme_v1', isLight ? 'light' : 'dark'); } catch(e){}
+}
+(function _applyTheme(){
+  try {
+    var t = localStorage.getItem('optflow_theme_v1');
+    if(t === 'light'){
+      document.documentElement.classList.add('light-mode');
+      var _b = document.getElementById('themeBtn'); if(_b) _b.textContent = '☀️';
+    }
+  } catch(e){}
+})();
+
+// ── P&L count-up animation ────────────────────────────────
+function animCountTo(el, target, fmtFn, duration){
+  if(!el || target == null || isNaN(target)) return;
+  var startTime = null;
+  duration = duration || 650;
+  function step(ts){
+    if(!startTime) startTime = ts;
+    var p = Math.min((ts - startTime) / duration, 1);
+    var e = 1 - Math.pow(1 - p, 3);
+    el.textContent = fmtFn(target * e);
+    if(p < 1) requestAnimationFrame(step);
+    else el.textContent = fmtFn(target);
+  }
+  requestAnimationFrame(step);
+}
+
+// ── Portfolio health banner ────────────────────────────────
+function updateHealthBanner(){
+  var el = document.getElementById('healthBanner');
+  if(!el) return;
+  var open = getOpenTrades();
+  if(!open.length){ el.style.display='none'; return; }
+  var now = new Date();
+  var weekEnd = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7);
+  var expThisWeek = open.filter(function(t){ var d=t.expiry?new Date(t.expiry):null; return d&&d>=now&&d<=weekEnd; });
+  var expUrgent   = open.filter(function(t){ var d=getDTE(t.expiry); return d!==null&&d<=3; });
+  var totalColl = open.reduce(function(s,t){ return s+(t.teminat||0); }, 0);
+  var byTicker = {};
+  open.forEach(function(t){ var tk=t.ticker.split(' ')[0]; byTicker[tk]=(byTicker[tk]||0)+(t.teminat||0); });
+  var concentrated = Object.keys(byTicker).filter(function(k){ return totalColl>0&&byTicker[k]/totalColl>0.25; });
+  var highDelta = open.filter(function(t){ return t.delta&&t.delta>35; });
+  var status = (expUrgent.length>0||highDelta.length>0) ? 'red' : (expThisWeek.length>0||concentrated.length>0) ? 'yellow' : 'green';
+  var dotColor = status==='red'?'#EF4444':status==='yellow'?'#F59E0B':'#22C55E';
+  var bgColor  = status==='red'?'rgba(239,68,68,0.09)':status==='yellow'?'rgba(245,158,11,0.09)':'rgba(34,197,94,0.07)';
+  var bdColor  = status==='red'?'rgba(239,68,68,0.25)':status==='yellow'?'rgba(245,158,11,0.22)':'rgba(34,197,94,0.20)';
+  var tags = [];
+  if(expUrgent.length) tags.push('<span class="hb-tag" style="background:rgba(239,68,68,0.15);color:var(--loss);">🔴 '+expUrgent.length+' expiry ≤3 gün</span>');
+  if(expThisWeek.length&&!expUrgent.length) tags.push('<span class="hb-tag" style="background:rgba(245,158,11,0.15);color:var(--warn);">⏰ '+expThisWeek.length+' bu hafta</span>');
+  if(highDelta.length) tags.push('<span class="hb-tag" style="background:rgba(239,68,68,0.12);color:var(--loss);">Δ '+highDelta.length+' yüksek delta</span>');
+  if(concentrated.length) tags.push('<span class="hb-tag" style="background:rgba(245,158,11,0.12);color:var(--warn);">⚠ '+concentrated.join(' + ')+' konsantrasyon</span>');
+  if(!tags.length) tags.push('<span class="hb-tag" style="background:rgba(34,197,94,0.12);color:var(--profit);">✓ Portföy dengeli</span>');
+  el.style.cssText = 'display:flex;align-items:center;gap:10px;margin:6px 16px 0;padding:9px 14px;border-radius:10px;border:1px solid '+bdColor+';background:'+bgColor+';font-size:12px;font-weight:500;flex-wrap:wrap;';
+  el.innerHTML = '<div class="hb-dot" style="background:'+dotColor+'"></div>'+
+    '<div class="hb-text"><strong>'+open.length+'</strong> açık pozisyon</div>'+
+    '<div class="hb-tags">'+tags.join('')+'</div>';
+}
+
+// ── Max Loss calculation ───────────────────────────────────
+function calcOpenMaxLoss(){
+  var open = getOpenTrades();
+  var SPREADS = ['PCS','CCS','BCS','IC'];
+  return open.reduce(function(s, t){
+    var prem = parseFloat(t.openPremium)||parseFloat(t.premium)||0;
+    var qty  = t.q || 1;
+    if(typeof isLong === 'function' && isLong(t.type)) return s + prem; // long: max loss = premium paid
+    if(SPREADS.indexOf(t.type) >= 0) return s + (t.teminat||0);
+    if(t.type === 'CSP'){
+      var stk = parseFloat(String(t.strike).replace(',','.')) || 0;
+      return s + Math.max(t.teminat||0, stk * qty * 100) - prem;
+    }
+    return s + (t.teminat||0); // fallback: use collateral
+  }, 0);
+}
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
 function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; return'tag-other'; }
@@ -2229,7 +2365,13 @@ function renderDashboard(){
 
   var el;
   el=document.getElementById('heroPnlLabel'); if(el)el.textContent=month==='all'?'Total P&L — YTD':'P&L — '+_monthLabel;
-  el=document.getElementById('heroPnl'); if(el){el.textContent=fmt$(stats.totalPnl);el.style.color=stats.totalPnl>=0?'var(--profit)':'var(--loss)';}
+  el=document.getElementById('heroPnl'); if(el){
+    var _pnlT=stats.totalPnl;
+    el.style.color=_pnlT>=0?'var(--profit)':'var(--loss)';
+    el.classList.add('pnl-animate');
+    setTimeout(function(){el.classList.remove('pnl-animate');},600);
+    animCountTo(el, _pnlT, function(v){return (v>=0?'+':'-')+'$'+Math.abs(Math.round(v)).toLocaleString('en-US');}, 700);
+  }
   el=document.getElementById('heroPnlChange'); if(el)el.innerHTML='<span class="hero-badge '+(stats.totalPnl>=0?'profit':'loss')+'">'+fmtP(stats.totalPnl/PORT_SIZE)+'</span><span style="color:var(--text-3);font-size:11px;"> on $'+Math.round(PORT_SIZE/1000)+'K portfolio</span>';
   el=document.getElementById('heroWR'); if(el)el.textContent=Math.round(stats.winRate*100)+'%';
   el=document.getElementById('heroWRSub'); if(el)el.innerHTML='<span class="hero-badge info">'+stats.winners+'/'+stats.total+'</span>';
@@ -2238,6 +2380,12 @@ function renderDashboard(){
   var dta=open.filter(function(t){var d=getDTE(t.expiry);return d!==null&&d<=7;}).length;
   var al=da+dta;
   el=document.getElementById('heroOpenSub'); if(el)el.innerHTML=al>0?'<span class="hero-badge warn">'+al+' alert'+(al>1?'s':'')+'</span>':'<span class="hero-badge info">healthy</span>';
+  // Max Loss card
+  var _ml = calcOpenMaxLoss();
+  el=document.getElementById('heroMaxLoss'); if(el){ el.style.color='var(--loss)'; animCountTo(el, _ml, function(v){return '-$'+Math.abs(Math.round(v)).toLocaleString('en-US');}, 700); }
+  el=document.getElementById('heroMaxLossSub'); if(el) el.innerHTML='<span class="hero-badge" style="background:rgba(239,68,68,0.12);color:var(--loss);">'+open.length+' pozisyon, tam zarar senaryosu</span>';
+  // Health banner
+  updateHealthBanner();
 
   // Açık pozisyon primleri
   var openPremTotal = open.reduce(function(s,t){ return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
@@ -2431,10 +2579,11 @@ function renderTradeList(filter, month){
         var statusTxt=isAlert?'⚠️':(!isOpen?'●':(_partlyOpen?'◑':'●'));
         var statusColor=isOpen?(_partlyOpen?'var(--warn)':(isAlert?'var(--loss)':'var(--profit)')):'var(--text-3)';
         var rowBg=isAlert?'rgba(239,68,68,0.05)':'';
+        var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#EF4444':dte<=21?'#F59E0B':dte<=45?'#3B82F6':'#22C55E'):'transparent';
         var tc=tcol(t.ticker.split(' ')[0]);
         var tagC={'CSP':'#22c55e','CC':'#3b82f6','PCS':'#f59e0b','PMCC':'#a78bfa','IC':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||'#94a3b8';
-        return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+'" '+
+        return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
           '<td style="padding:9px 8px;position:sticky;left:0;z-index:2;background:#3C2718;box-shadow:4px 0 8px rgba(0,0,0,0.3);">' +
             '<div style="display:flex;align-items:center;gap:6px;">' +
@@ -2559,7 +2708,9 @@ function renderTradeList(filter, month){
         _monthlyHtml = '<div style="font-size:11px;color:'+_mCol+';font-weight:700;letter-spacing:0.2px;margin-top:2px;">'+(_mRet>=0?'+':'')+_mRet.toFixed(1)+'%<span style="font-size:10px;font-weight:500;opacity:0.7">/ay</span></div>';
       }
     }
-    return'<div class="trade-card" style="'+ab+'" data-tid="'+t.id+'" data-tmonth="'+t.month+'">'+
+    var _dteCls = '';
+    if(isOpen && dte !== null){ if(dte<=7)_dteCls='dte-hot'; else if(dte<=21)_dteCls='dte-warm'; else if(dte<=45)_dteCls='dte-cool'; else _dteCls='dte-safe'; }
+    return'<div class="trade-card '+_dteCls+'" style="'+ab+'" data-tid="'+t.id+'" data-tmonth="'+t.month+'">'+
       '<div class="trade-card-head"><div class="trade-card-left">'+
         '<div class="trade-ticker-badge" style="background:'+tc.bg+';color:'+tc.color+'">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
         '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
