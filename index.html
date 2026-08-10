@@ -1095,8 +1095,9 @@
     <div><div class="section-title">Reports</div><div class="section-sub">Performance history</div></div>
   </div>
   <div style="display:flex;gap:10px;margin:0 20px 16px;flex-wrap:wrap;">
-    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export Backup</button>
+    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export JSON</button>
     <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>
+    <button onclick="exportCSV()" style="flex:1;min-width:140px;background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,.3);border-radius:12px;padding:14px;color:var(--profit);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📊 Export CSV</button>
   </div>
   <div class="filter-row year-row" id="reportYearRow" style="margin:0 0 4px;">
     <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
@@ -1213,7 +1214,11 @@
 
   <!-- KUR YONETIMI -->
   <div style="margin:0 20px 12px;">
-    <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;">💱 Exchange Rate (USD/TRY)</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-family:var(--font-head);font-size:14px;font-weight:600;">&#x1F4B1; Exchange Rate (USD/TRY)</div>
+      <button onclick="fetchTCMBRates()" id="tcmbFetchBtn" style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:7px 12px;color:var(--info);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">&#x1F3E6; TCMB'den Çek</button>
+    </div>
+    <div id="tcmbStatus" style="display:none;font-size:11px;margin-bottom:8px;padding:7px 12px;border-radius:8px;"></div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end;">
         <div>
@@ -1221,7 +1226,7 @@
           <input type="date" id="kurTarih" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
         <div>
-          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Rate (₺)</div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Rate (&#x20BA;)</div>
           <input type="number" id="kurDeger" placeholder="e.g. 38.4271" step="0.0001" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;">
         </div>
         <button onclick="kurEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
@@ -1234,6 +1239,10 @@
   <div style="margin:0 20px 12px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div style="font-family:var(--font-head);font-size:14px;font-weight:600;">📋 Trade Tax Table</div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="exportTaxCSV()" style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.28);border-radius:8px;padding:6px 12px;color:var(--profit);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">📥 CSV</button>
+        <button onclick="showBeyannamePDF()" style="background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.28);border-radius:8px;padding:6px 12px;color:var(--purple);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">🖨️ PDF</button>
+      </div>
     </div>
     <div style="margin-bottom:8px;">
       <input type="text" id="vergiTickerSearch" placeholder="🔍 Ticker filtrele... (örn: NVDA)"
@@ -3418,6 +3427,180 @@ function renderGroupedTrades(f){
     html+='</div></div>';
     return html;
   }).join('');
+}
+
+// ═══════════════════ TCMB KUR ENTEGRASYONU ═══════════════════
+function fetchTCMBRates(){
+  var btn=document.getElementById('tcmbFetchBtn');
+  var status=document.getElementById('tcmbStatus');
+  if(btn){ btn.disabled=true; btn.textContent='Çekiliyor...'; }
+  if(status){ status.style.display='block'; status.style.background='rgba(59,130,246,0.1)'; status.style.border='1px solid rgba(59,130,246,0.3)'; status.style.color='var(--info)'; status.textContent='TCMB\'den kur verileri çekiliyor...'; }
+
+  // Find dates without rates that need fetching
+  var closedTrades=getAllTrades().filter(function(t){ return t.closed; });
+  var missingDates={};
+  closedTrades.forEach(function(t){
+    var d=t.closed?t.closed.substring(0,10):'';
+    if(d && !kurlarData[d]) missingDates[d]=true;
+  });
+  var datesToFetch=Object.keys(missingDates).sort();
+
+  if(!datesToFetch.length){
+    if(status){ status.style.background='rgba(34,197,94,0.1)'; status.style.border='1px solid rgba(34,197,94,0.3)'; status.style.color='var(--profit)'; status.textContent='Tüm tarihler zaten mevcut — eksik kur yok.'; }
+    if(btn){ btn.disabled=false; btn.innerHTML='&#x1F3E6; TCMB\'den Çek'; }
+    setTimeout(function(){ if(status) status.style.display='none'; }, 4000);
+    return;
+  }
+
+  // Parse TCMB XML for USD buying rate
+  function parseUSDRate(xml){
+    // Try to find USD ForexBuying
+    var match=xml.match(/<Currency\s+CrossOrder="0"[^>]*Kod="USD"[^>]*>[\s\S]*?<ForexBuying>([\d.]+)<\/ForexBuying>/i);
+    if(!match){ match=xml.match(/<ForexBuying>([\d.]+)<\/ForexBuying>/i); }
+    if(match) return parseFloat(match[1]);
+    return null;
+  }
+
+  function formatTCMBDate(isoDate){
+    var p=isoDate.split('-'); if(p.length!==3) return null;
+    return p[2]+p[1]+p[0]; // DDMMYYYY
+  }
+  function formatYYYYMM(isoDate){ var p=isoDate.split('-'); return p[0]+p[1]; }
+
+  var added=0, failed=0, total=datesToFetch.length;
+  var idx=0;
+
+  function fetchNext(){
+    if(idx>=datesToFetch.length){
+      // Done
+      if(added>0) saveKurlar();
+      var msg=added+' kur eklendi'+(failed>0?', '+failed+' başarısız':'')+'.';
+      if(status){ status.style.background=added>0?'rgba(34,197,94,0.1)':'rgba(245,158,11,0.1)'; status.style.border=added>0?'1px solid rgba(34,197,94,0.3)':'1px solid rgba(245,158,11,0.3)'; status.style.color=added>0?'var(--profit)':'var(--warn)'; status.textContent=msg; }
+      if(btn){ btn.disabled=false; btn.innerHTML='&#x1F3E6; TCMB\'den Çek'; }
+      if(added>0){ if(typeof renderVergi==='function') renderVergi(); if(typeof renderKurListesi==='function') renderKurListesi(); }
+      setTimeout(function(){ if(status) status.style.display='none'; },6000);
+      return;
+    }
+    var date=datesToFetch[idx]; idx++;
+    var ddmmyyyy=formatTCMBDate(date);
+    var yyyymm=formatYYYYMM(date);
+    var url='https://www.tcmb.gov.tr/kurlar/'+yyyymm+'/'+ddmmyyyy+'.xml';
+    if(status) status.textContent='Çekiliyor: '+date+' ('+idx+'/'+total+')...';
+    fetch(url,{cache:'no-cache'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(function(xml){
+        var rate=parseUSDRate(xml);
+        if(rate && rate>1){
+          var rate4=Math.trunc(rate*10000)/10000;
+          kurlarData[date]=rate4;
+          added++;
+        } else { failed++; }
+        setTimeout(fetchNext, 150); // polite delay
+      })
+      .catch(function(){ failed++; setTimeout(fetchNext, 150); });
+  }
+  fetchNext();
+}
+
+// ═══════════════════ CSV / EXCEL EXPORT ═══════════════════
+function exportCSV(){
+  var all=getAllTrades();
+  var headers=['ID','Month','Ticker','Type','Strike','Expiry','Qty','Open Date','Close Date','Open Premium','Close Premium','Open Comm','Close Comm','P&L','P&L %','Delta','IVR','Collateral','Note'];
+  var rows=[headers.join(',')];
+  all.forEach(function(t){
+    var op=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
+    var cp=parseFloat(t.closePremium)||0;
+    var ok=parseFloat(t.openCommission)||0;
+    var ck=parseFloat(t.closeCommission)||0;
+    var row=[
+      t.id, t.month, '"'+(t.ticker||'').replace(/"/g,'""')+'"',
+      t.type||'', '"'+t.strike+'"', t.expiry||'', t.q||1,
+      t.opened||'', t.closed||'',
+      op.toFixed(2), cp.toFixed(2), ok.toFixed(2), ck.toFixed(2),
+      t.pnl!=null?t.pnl.toFixed(2):'',
+      t.pct!=null?(t.pct*100).toFixed(2)+'%':'',
+      t.delta||'', t.ivr||'', t.teminat||0,
+      '"'+(t.note||'').replace(/"/g,'""')+'"'
+    ];
+    rows.push(row.join(','));
+  });
+  var csv=rows.join('\n');
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='optionflow-trades-'+new Date().toISOString().split('T')[0]+'.csv';
+  a.click();
+}
+
+function exportTaxCSV(){
+  var allTrades=getCrossProfileClosedTrades ? getCrossProfileClosedTrades(ACTIVE_PROFILE,'all') : getFilteredClosedTrades('all');
+  var headers=['Ticker','Type','Açılış','Kapanış','Expiry','Qty','USD P&L','Tarih Kuru','TRY Matrah','Manuel Override'];
+  var rows=[headers.join(',')];
+  allTrades.forEach(function(t){
+    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false};
+    var manualVal=vergiManualOverride[String(t.id)];
+    var tryVal=manualVal!==undefined?manualVal:(res.hasKur?res.matrah_try:'');
+    var row=[
+      '"'+t.ticker+'"', t.type, t.opened||'', t.closed||'', t.expiry||'',
+      t.q||1, (t.pnl||0).toFixed(2),
+      res.kur||'', tryVal!==''?Number(tryVal).toFixed(2):'',
+      manualVal!==undefined?'EVET':''
+    ];
+    rows.push(row.join(','));
+  });
+  var csv=rows.join('\n');
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='optionflow-vergi-'+new Date().toISOString().split('T')[0]+'.csv'; a.click();
+}
+
+// ═══════════════════ YIL SONU BEYANNAME PDF ═══════════════════
+function showBeyannamePDF(){
+  var yr=new Date().getFullYear()-1; // previous year
+  var allTrades=getFilteredClosedTrades('all').filter(function(t){ return getTradeYear(t)==String(yr); });
+  if(!allTrades.length){ alert('Seçili yıl için kapalı trade bulunamadı.'); return; }
+
+  var totalPnl=allTrades.reduce(function(s,t){return s+(t.pnl||0);},0);
+  var totalPrem=allTrades.reduce(function(s,t){return s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
+  var totalMatrah=0; var missingKur=0;
+  allTrades.forEach(function(t){
+    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false};
+    var manualVal=vergiManualOverride[String(t.id)];
+    if(manualVal!==undefined) totalMatrah+=manualVal;
+    else if(res.hasKur) totalMatrah+=res.matrah_try;
+    else missingKur++;
+  });
+
+  var w=window.open('','_blank');
+  var rows=allTrades.map(function(t){
+    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false,kur:null};
+    var manualVal=vergiManualOverride[String(t.id)];
+    var tryVal=manualVal!==undefined?manualVal:(res.hasKur?res.matrah_try:null);
+    return '<tr><td>'+t.ticker+'</td><td>'+t.type+'</td><td>'+t.opened+'</td><td>'+t.closed+'</td><td>'+(t.q||1)+'</td>'+
+      '<td style="text-align:right">'+(t.pnl!=null?'$'+(t.pnl>=0?'+':'')+t.pnl.toFixed(2):'—')+'</td>'+
+      '<td style="text-align:right">'+(res.kur||'—')+'</td>'+
+      '<td style="text-align:right;color:'+(tryVal!==null?(tryVal>=0?'green':'red'):'gray')+'">'+(tryVal!==null?'₺'+Math.round(tryVal).toLocaleString('tr-TR'):(missingKur?'—':' '))+'</td>'+
+      (manualVal!==undefined?'<td style="font-size:11px;color:orange">MANUEL</td>':'<td></td>')+'</tr>';
+  }).join('');
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OptionFlow — '+yr+' Vergi Beyannamesi</title>'+
+    '<style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h1{font-size:16px;margin-bottom:4px}h2{font-size:13px;color:#444}'+
+    'table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#f0f0f0;border:1px solid #ccc;padding:5px 8px;text-align:left;font-size:10px}'+
+    'td{border:1px solid #ddd;padding:4px 8px}tr:nth-child(even){background:#f9f9f9}'+
+    '.summary{background:#e8f4e8;border:1px solid #4caf50;border-radius:6px;padding:12px;margin:12px 0}'+
+    '@media print{button{display:none!important}}</style></head><body>'+
+    '<h1>OptionFlow Trading Journal — Vergi Beyannamesi Özeti</h1>'+
+    '<h2>'+yr+' Yılı · '+ACTIVE_PROFILE+' Profili</h2>'+
+    '<p style="font-size:10px;color:#666">Oluşturulma: '+new Date().toLocaleDateString('tr-TR')+'</p>'+
+    '<div class="summary">'+
+    '<b>Toplam Trade:</b> '+allTrades.length+' &nbsp;&nbsp; '+
+    '<b>USD P&L:</b> '+(totalPnl>=0?'+':'')+totalPnl.toFixed(2)+' &nbsp;&nbsp; '+
+    '<b>TRY Matrah:</b> ₺'+Math.round(totalMatrah).toLocaleString('tr-TR')+
+    (missingKur?' <span style="color:orange">('+missingKur+' trade kur eksik)</span>':'')+'</div>'+
+    '<button onclick="window.print()" style="background:#1a73e8;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">🖨️ Yazdır / PDF Kaydet</button>'+
+    '<table><thead><tr><th>Ticker</th><th>Tip</th><th>Açılış</th><th>Kapanış</th><th>Adet</th><th>USD P&L</th><th>Kur</th><th>TRY Matrah</th><th>Not</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<div style="margin-top:16px;font-size:9px;color:#888">Bu belge OptionFlow tarafından bilgi amaçlı üretilmiştir. Vergi beyannamesi için mali müşavirinize danışın.</div>'+
+    '</body></html>';
+  w.document.write(html); w.document.close();
 }
 
 // ═══════════════════ EXPORT / IMPORT ═══════════════════
