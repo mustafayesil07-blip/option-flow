@@ -4720,29 +4720,29 @@ function exportShareCard(){
 
   // ── Header left: logo + label
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px sans-serif';
-  ctx.fillText('OptionFlow', 44, 52);
-  ctx.fillStyle = '#6366F1'; ctx.font = 'bold 11px sans-serif';
-  ctx.fillText('PERFORMANCE CARD', 44, 72);
+  ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 30px sans-serif';
+  ctx.fillText('OptionFlow', 44, 58);
+  ctx.fillStyle = '#6366F1'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('PERFORMANCE CARD', 44, 82);
 
   // ── Header right: profile + date
   ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '15px sans-serif';
-  ctx.fillText(profName, W-44, 52);
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '12px sans-serif';
-  ctx.fillText(new Date().toLocaleDateString('tr-TR',{year:'numeric',month:'long',day:'numeric'})+' · '+_yr, W-44, 72);
+  ctx.fillStyle = 'rgba(255,255,255,0.60)'; ctx.font = '18px sans-serif';
+  ctx.fillText(profName, W-44, 58);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '15px sans-serif';
+  ctx.fillText(new Date().toLocaleDateString('tr-TR',{year:'numeric',month:'long',day:'numeric'})+' · '+_yr, W-44, 82);
 
   // ── P&L Hero
   var pnlClr = stats.totalPnl >= 0 ? '#4ADE80' : '#F87171';
   ctx.textAlign = 'center';
   ctx.fillStyle = pnlClr; ctx.font = 'bold 86px monospace';
-  ctx.fillText((stats.totalPnl>=0?'+':'')+fmtA$(Math.round(stats.totalPnl)), W/2, 206);
+  ctx.fillText((stats.totalPnl>=0?'+':'')+fmtA$(Math.round(stats.totalPnl)), W/2, 210);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.font = '15px sans-serif';
-  ctx.fillText('Toplam P&L  ·  '+_yr, W/2, 234);
+  ctx.fillStyle = 'rgba(255,255,255,0.50)'; ctx.font = '19px sans-serif';
+  ctx.fillText('Toplam P&L  ·  '+_yr, W/2, 242);
 
   // ── Win/Loss distribution bar
-  var barW=440, barH=5, barX=(W-barW)/2, barY=252;
+  var barW=440, barH=6, barX=(W-barW)/2, barY=262;
   // Loss (full bar, red)
   ctx.fillStyle = '#F87171';
   _roundRect(ctx, barX, barY, barW, barH, 3); ctx.fill();
@@ -4752,12 +4752,12 @@ function exportShareCard(){
     _roundRect(ctx, barX, barY, Math.round(barW*stats.winRate), barH, 3); ctx.fill();
   }
   // W/L count text
-  ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.font = '12px sans-serif';
-  ctx.fillText(stats.winners+' W  ·  '+stats.losers+' L', W/2, 280);
+  ctx.fillStyle = 'rgba(255,255,255,0.50)'; ctx.font = '15px sans-serif';
+  ctx.fillText(stats.winners+' W  ·  '+stats.losers+' L', W/2, 293);
 
   // ── Divider
   ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(44, 298); ctx.lineTo(W-44, 298); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(44, 312); ctx.lineTo(W-44, 312); ctx.stroke();
 
   // ── Stat tiles (3 cols × 2 rows)
   var pf     = stats.profitFactor || 0;
@@ -4773,7 +4773,7 @@ function exportShareCard(){
   ];
 
   var COLS=3, ROWS=2;
-  var gx=44, gy=312, gw=W-88, gh=H-gy-24;
+  var gx=44, gy=326, gw=W-88, gh=H-gy-20;
   var cw=gw/COLS, ch=gh/ROWS, tp=8;
 
   statItems.forEach(function(s, i){
@@ -4796,11 +4796,11 @@ function exportShareCard(){
     // Value
     ctx.textAlign='center';
     ctx.fillStyle=s.clr; ctx.font='bold 34px monospace';
-    ctx.fillText(s.val, tx+tw/2, ty+th*0.53);
+    ctx.fillText(s.val, tx+tw/2, ty+th*0.52);
 
     // Label
-    ctx.fillStyle='rgba(255,255,255,0.38)'; ctx.font='13px sans-serif';
-    ctx.fillText(s.lbl, tx+tw/2, ty+th*0.53+24);
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='bold 15px sans-serif';
+    ctx.fillText(s.lbl, tx+tw/2, ty+th*0.52+28);
   });
 
   // Download
