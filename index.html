@@ -482,8 +482,18 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
-    transition: all 0.2s;
+    transition: transform 0.2s, all 0.2s;
+    position: relative;
   }
+  .trade-card-swipe-layer {
+    position: absolute; inset: 0; pointer-events: none;
+    display: flex; align-items: center;
+    padding: 0 20px; font-size: 13px; font-weight: 700;
+    opacity: 0; transition: opacity 0.15s;
+    z-index: 1; border-radius: var(--radius);
+  }
+  .trade-card-swipe-layer.left { justify-content: flex-end; background: rgba(239,68,68,0.15); color: var(--loss); }
+  .trade-card-swipe-layer.right { justify-content: flex-start; background: rgba(34,197,94,0.15); color: var(--profit); }
   .trade-card-head {
     padding: 14px 16px 10px;
     display: flex; align-items: center; justify-content: space-between;
@@ -1128,6 +1138,15 @@
     <div class="chart-body" style="height:160px;"><canvas id="premiumTrendChart"></canvas></div>
   </div>
 
+  <!-- ── Equity Curve ── -->
+  <div class="chart-wrap" style="margin:12px 16px 0;">
+    <div class="chart-head">
+      <div class="chart-title">Equity Curve</div>
+      <div style="font-size:11px;color:var(--text-3);">Kümülatif P&amp;L + Drawdown</div>
+    </div>
+    <div class="chart-body" style="height:200px;"><canvas id="equityCurveChart"></canvas></div>
+  </div>
+
   <!-- ── P&L Isı Haritası ── -->
   <div class="chart-wrap" style="margin:12px 16px 16px;">
     <div class="chart-head">
@@ -1187,9 +1206,17 @@
   </div>
 
   <!-- Sector Exposure -->
-  <div class="risk-section mx" style="margin-top:12px;margin-bottom:20px;">
+  <div class="risk-section mx" style="margin-top:12px;">
     <div class="risk-title">&#x1F3ED; Sektör Konsantrasyonu</div>
     <div class="card" style="padding:16px;" id="sectorConc"></div>
+  </div>
+
+  <!-- Theta Decay Calendar -->
+  <div class="risk-section mx" style="margin-top:12px;margin-bottom:20px;">
+    <div class="risk-title">&#x1F4C5; Theta Decay Takvimi</div>
+    <div class="card" style="padding:16px;" id="thetaCalendarPanel">
+      <div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Yükleniyor...</div>
+    </div>
   </div>
 </div>
 
@@ -1199,10 +1226,12 @@
     <div><div class="section-title">Reports</div><div class="section-sub">Performance history</div></div>
   </div>
   <div style="display:flex;gap:10px;margin:0 20px 16px;flex-wrap:wrap;">
-    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export JSON</button>
-    <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>
-    <button onclick="exportCSV()" style="flex:1;min-width:140px;background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,.3);border-radius:12px;padding:14px;color:var(--profit);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📊 Export CSV</button>
+    <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F4E4; Export JSON</button>
+    <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F4E5; Import JSON</button>
+    <button onclick="exportCSV()" style="flex:1;min-width:140px;background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,.3);border-radius:12px;padding:14px;color:var(--profit);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F4CA; Export CSV</button>
+    <button onclick="showIBKRImport()" style="flex:1;min-width:140px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px;color:var(--warn);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F916; IBKR Import</button>
   </div>
+  <div id="ibkrImportStatus" style="display:none;margin:0 20px 12px;padding:10px 14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;font-size:13px;color:var(--profit);"></div>
   <div class="filter-row year-row" id="reportYearRow" style="margin:0 0 4px;">
     <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
   </div>
@@ -1212,6 +1241,13 @@
       <div class="monthly-head"><div>Month</div><div>Trades</div><div>Win%</div><div>P&L</div></div>
       <div id="monthlyTableBody"></div>
     </div>
+  </div>
+  <!-- Share Card -->
+  <div style="margin:16px 20px 20px;">
+    <button onclick="exportShareCard()" style="width:100%;background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(59,130,246,0.10));border:1px solid rgba(139,92,246,0.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">
+      &#x1F5BC; Performans Kartı — PNG İndir
+    </button>
+    <canvas id="shareCardCanvas" style="display:none;"></canvas>
   </div>
 </div>
 
@@ -2170,17 +2206,29 @@ function getAvailableYears(){
 }
 function buildYearPills(){
   var years = getAvailableYears();
+  var _curYear = String(new Date().getFullYear());
   ['dashYearRow','tradesYearRow','statYearRow','reportYearRow'].forEach(function(id){
     var el = document.getElementById(id);
     if(!el) return;
     el.innerHTML = '';
+    // All Time pill
     var allP = document.createElement('div');
     allP.className = 'filter-pill year-pill' + (ACTIVE_YEAR==='all'?' active':'');
     allP.setAttribute('data-year','all');
-    allP.textContent = 'Tüm Yıllar';
+    allP.textContent = 'All Time';
     allP.onclick = function(){ setActiveYear('all'); };
     el.appendChild(allP);
+    // YTD pill (current year, always shown)
+    var ytdP = document.createElement('div');
+    ytdP.className = 'filter-pill year-pill' + (ACTIVE_YEAR===_curYear?' active':'');
+    ytdP.setAttribute('data-year',_curYear);
+    ytdP.textContent = 'YTD';
+    ytdP.title = _curYear + ' yılı başından bugüne';
+    ytdP.onclick = function(){ setActiveYear(_curYear); };
+    el.appendChild(ytdP);
+    // Individual year pills (excluding current year since YTD covers it)
     years.forEach(function(y){
+      if(y === _curYear) return; // already shown as YTD
       var p = document.createElement('div');
       p.className = 'filter-pill year-pill' + (ACTIVE_YEAR===y?' active':'');
       p.setAttribute('data-year', y);
@@ -2531,8 +2579,12 @@ function renderDashboard(){
   var ytd=monthly.reduce(function(s,x){return s+x.pnl;},0);
   var _monthLabel = month==='all' ? 'Tüm Zamanlar' : Array.isArray(month) ? month.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ') : (_MONTHS_DISP[month]||month);
 
+  var _curYear = String(new Date().getFullYear());
+  var _isYTD = ACTIVE_YEAR === _curYear && month === 'all';
+  var _isAllTime = ACTIVE_YEAR === 'all' && month === 'all';
+
   var el;
-  el=document.getElementById('heroPnlLabel'); if(el)el.textContent=month==='all'?'Total P&L — YTD':'P&L — '+_monthLabel;
+  el=document.getElementById('heroPnlLabel'); if(el)el.textContent=_isAllTime?'Total P&L — All Time':_isYTD?'Total P&L — YTD':month==='all'?'Total P&L — '+ACTIVE_YEAR:'P&L — '+_monthLabel;
   el=document.getElementById('heroPnl'); if(el){
     var _pnlT=stats.totalPnl;
     el.style.color=_pnlT>=0?'var(--profit)':'var(--loss)';
@@ -2761,6 +2813,7 @@ function renderTradeList(filter, month){
               '<div style="width:24px;height:24px;border-radius:6px;background:'+tc.bg+';color:'+tc.color+';font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
               '<div style="display:flex;flex-direction:column;gap:1px;">'+
                 '<span style="font-weight:600;color:var(--text);font-size:12px;white-space:nowrap;">'+t.ticker.split(' ')[0]+'</span>'+
+                (t.notePhoto?'<span style="font-size:10px;" title="Fotoğraf var">&#x1F4F7;</span>':'')+
                 (t.note?'<span style="font-size:9px;color:var(--text-3);white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;">'+t.note+'</span>':'')+
               '</div>'+
             '</div></td>'+
@@ -2953,6 +3006,69 @@ function renderTradeList(filter, month){
       (t.note ? '<div style="margin:0 14px 12px;padding:8px 11px;background:rgba(245,158,11,0.12);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:11px;color:var(--warn);line-height:1.4">📝 '+t.note+'</div>' : '')+
     '</div>';
   }).join('');
+  // Add swipe actions to open trade cards
+  attachSwipeActions(listEl);
+}
+
+/* Swipe-to-action: left = quick close panel, right = edit */
+function attachSwipeActions(container){
+  var SWIPE_THRESHOLD = 60;
+  container.querySelectorAll('.trade-card').forEach(function(card){
+    var tid = card.dataset.tid; var tmonth = card.dataset.tmonth;
+    var startX = 0, startY = 0, swipeStarted = false, moved = 0;
+    // Swipe overlay layers
+    var lLeft = card.querySelector('.trade-card-swipe-layer.left');
+    var lRight = card.querySelector('.trade-card-swipe-layer.right');
+    if(!lLeft){
+      lLeft = document.createElement('div');
+      lLeft.className = 'trade-card-swipe-layer left';
+      lLeft.textContent = '✕ Kapat';
+      card.appendChild(lLeft);
+    }
+    if(!lRight){
+      lRight = document.createElement('div');
+      lRight.className = 'trade-card-swipe-layer right';
+      lRight.textContent = '✎ Düzenle';
+      card.appendChild(lRight);
+    }
+    card.addEventListener('touchstart', function(e){
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      swipeStarted = true; moved = 0;
+    }, {passive: true});
+    card.addEventListener('touchmove', function(e){
+      if(!swipeStarted) return;
+      var dx = e.touches[0].clientX - startX;
+      var dy = e.touches[0].clientY - startY;
+      if(Math.abs(dy) > Math.abs(dx) + 10) { swipeStarted = false; return; }
+      moved = dx;
+      var pct = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+      card.style.transform = 'translateX('+dx*0.4+'px)';
+      if(dx < 0){ lLeft.style.opacity = pct; lRight.style.opacity = 0; }
+      else { lRight.style.opacity = pct; lLeft.style.opacity = 0; }
+    }, {passive: true});
+    card.addEventListener('touchend', function(){
+      if(!swipeStarted) return;
+      card.style.transform = '';
+      lLeft.style.opacity = 0; lRight.style.opacity = 0;
+      swipeStarted = false;
+      if(moved < -SWIPE_THRESHOLD){
+        // Left swipe: quick close — open trade detail
+        openTradeDetail(tid, tmonth);
+      } else if(moved > SWIPE_THRESHOLD){
+        // Right swipe: edit
+        var tr = null; var months = Object.keys(tradesData);
+        for(var mi=0;mi<months.length;mi++){
+          var arr = tradesData[months[mi]];
+          for(var ti=0;ti<arr.length;ti++){
+            if(String(arr[ti].id)===String(tid)){ tr=arr[ti]; tr.month=months[mi]; break; }
+          }
+          if(tr) break;
+        }
+        if(tr) showAddTrade(tr);
+      }
+    });
+  });
 }
 
 document.addEventListener('click',function(e){
@@ -3067,6 +3183,30 @@ function renderRisk(){
   open.forEach(function(t){var d=getDTE(t.expiry);if(d!==null&&d<=7)alerts.push({type:'danger',icon:'⏱',title:'DTE Alert — Near Expiry',desc:t.ticker+' has '+d+' days left. Gamma risk accelerates below 7 DTE.',meta:t.ticker+' · '+d+' DTE'});});
   open.forEach(function(t){if(t.ivr&&t.ivr>65)alerts.push({type:'warn',icon:'📈',title:'High IVR',desc:t.ticker+' IVR: '+t.ivr+'. Verify setup.',meta:t.ticker});});
   open.forEach(function(t){if(t.teminat>PORT_SIZE*0.1)alerts.push({type:'warn',icon:'💰',title:'Large Position Size',desc:t.ticker+' uses '+(t.teminat/PORT_SIZE*100).toFixed(1)+'% of portfolio — over 10% limit.',meta:fmtA$(t.teminat)});});
+  // Earnings Date alerts (5 gün öncesi uyarı)
+  open.forEach(function(t){
+    if(!t.earningsDate) return;
+    var dEarn = Math.round((new Date(t.earningsDate) - new Date()) / 86400000);
+    if(dEarn >= 0 && dEarn <= 5){
+      alerts.push({type:'danger',icon:'📆',title:'Earnings Yaklaşıyor — '+t.ticker,
+        desc:t.ticker+' earnings '+(dEarn===0?'bugün':dEarn+' gün sonra')+'! IV crush riski — pozisyonu kapatmayı değerlendirin.',
+        meta:t.ticker+' · '+t.type+' · Earnings: '+t.earningsDate});
+    } else if(dEarn > 5 && dEarn <= 14){
+      alerts.push({type:'warn',icon:'📅',title:'Earnings 2 Haftada — '+t.ticker,
+        desc:t.ticker+' earnings '+dEarn+' gün sonra. Pozisyon vadeyi geçiyorsa hazırlıklı olun.',
+        meta:t.ticker+' · '+t.type+' · Earnings: '+t.earningsDate});
+    }
+  });
+  // Ex-Dividend alerts for CC positions
+  open.forEach(function(t){
+    if(t.type !== 'CC' || !t.exDivDate) return;
+    var dExDiv = Math.round((new Date(t.exDivDate) - new Date()) / 86400000);
+    if(dExDiv >= 0 && dExDiv <= 7){
+      alerts.push({type:'warn',icon:'💸',title:'Ex-Dividend Riski — '+t.ticker,
+        desc:t.ticker+' CC açık, ex-div '+(dExDiv===0?'bugün':dExDiv+' gün sonra')+'! Alıcı erken kullanım (assignment) yapabilir.',
+        meta:t.ticker+' CC · Ex-Div: '+t.exDivDate});
+    }
+  });
   // LEAPS expiry alerts
   (leapsData||[]).forEach(function(l){
     if(!l.expiry || l.closed) return;
@@ -3144,6 +3284,9 @@ function renderRisk(){
   var bsSlider = document.getElementById('blackSwanSlider');
   if(bsSlider) updateBlackSwan(bsSlider.value);
 
+  // ── Theta Decay Calendar ──────────────────────────────────────
+  buildThetaCalendar();
+
   // ── Sector Exposure ───────────────────────────────────────────
   var secEl = document.getElementById('sectorConc');
   if(secEl){
@@ -3188,6 +3331,90 @@ function renderRisk(){
       }).join('');
     }
   }
+}
+
+/* Theta Decay Calendar — weekly theta per open position */
+function buildThetaCalendar(){
+  var el = document.getElementById('thetaCalendarPanel');
+  if(!el) return;
+  var open = getOpenTrades();
+  if(!open.length){
+    el.innerHTML='<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Açık pozisyon yok</div>';
+    return;
+  }
+  var SHORT_TYPES = ['CSP','CC','PCS','CCS','IC','PMCC'];
+  var today = new Date();
+  // Build 4 weekly buckets: W1 (0–7d), W2 (8–14d), W3 (15–21d), W4 (22–28d)
+  var weeks = [{label:'Hafta 1\n(0–7g)',days:7},{label:'Hafta 2\n(8–14g)',days:14},{label:'Hafta 3\n(15–21g)',days:21},{label:'Hafta 4\n(22–28g)',days:28}];
+  // Per-position daily theta estimate (premium ÷ DTE)
+  var rows = [];
+  open.forEach(function(t){
+    var prem = (parseFloat(t.openPremium)||parseFloat(t.premium)||0) * (t.q||1) * 100;
+    var dte = getDTE(t.expiry);
+    if(!dte || dte <= 0 || prem <= 0) return;
+    var isShort = SHORT_TYPES.indexOf(t.type) >= 0;
+    var sign = isShort ? 1 : -1;
+    var dailyTheta = sign * prem / dte;
+    rows.push({ticker:t.ticker, type:t.type, dte:dte, prem:prem, dailyTheta:dailyTheta, expiry:t.expiry});
+  });
+  if(!rows.length){
+    el.innerHTML='<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Hesaplanabilir pozisyon yok (premium veya expiry eksik)</div>';
+    return;
+  }
+  // Calculate total theta per week bucket
+  var weeklyTheta = [0,0,0,0];
+  rows.forEach(function(r){
+    for(var i=0;i<4;i++){
+      var wEnd = i===0?7:i===1?14:i===2?21:28;
+      var wStart = i===0?0:i===1?7:i===2?14:21;
+      if(r.dte <= 0) return;
+      var daysInBucket = Math.min(7, Math.max(0, Math.min(r.dte, wEnd) - wStart));
+      weeklyTheta[i] += r.dailyTheta * daysInBucket;
+    }
+  });
+  var maxW = Math.max.apply(null, weeklyTheta.map(function(x){return Math.abs(x);}));
+  // Build HTML
+  var html = '';
+  // Header: weekly bars
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">';
+  weeks.forEach(function(w,i){
+    var v = weeklyTheta[i];
+    var pct = maxW > 0 ? Math.abs(v)/maxW : 0;
+    var clr = v > 0 ? 'var(--profit)' : v < 0 ? 'var(--loss)' : 'var(--text-3)';
+    var labels = w.label.split('\n');
+    html += '<div style="text-align:center;">' +
+      '<div style="font-size:9px;color:var(--text-3);font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px;">'+labels[0]+'</div>' +
+      '<div style="font-size:8px;color:var(--text-3);margin-bottom:6px;">'+labels[1]+'</div>' +
+      '<div style="position:relative;height:60px;background:rgba(255,255,255,0.04);border-radius:5px;overflow:hidden;display:flex;align-items:flex-end;">' +
+        '<div style="width:100%;height:'+(pct*100)+'%;background:'+clr+';opacity:0.8;border-radius:5px 5px 0 0;transition:height .3s;"></div>' +
+      '</div>' +
+      '<div style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:'+clr+';margin-top:5px;">' + (v!==0?(v>0?'+':'')+fmtA$(Math.round(Math.abs(v))):'—') + '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  // Per-position breakdown (top 5 by abs daily theta)
+  html += '<div style="font-size:10px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Pozisyon Bazlı Günlük Theta</div>';
+  var sorted = rows.slice().sort(function(a,b){return Math.abs(b.dailyTheta)-Math.abs(a.dailyTheta);}).slice(0,6);
+  html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+  sorted.forEach(function(r){
+    var tc2 = tcol(r.ticker.split(' ')[0]);
+    var clr = r.dailyTheta > 0 ? 'var(--profit)' : 'var(--loss)';
+    var dteClr = r.dte <= 7 ? 'var(--loss)' : r.dte <= 21 ? 'var(--warn)' : 'var(--text-3)';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-family:var(--font-head);font-weight:600;color:'+tc2.color+';font-size:12px;">'+r.ticker.split(' ')[0]+'</span>' +
+        '<span style="font-size:9px;padding:1px 5px;background:rgba(255,255,255,0.08);border-radius:3px;color:var(--text-3);">'+r.type+'</span>' +
+        '<span style="font-size:10px;color:'+dteClr+';">DTE: '+r.dte+'</span>' +
+      '</div>' +
+      '<div style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:'+clr+';">' + (r.dailyTheta>0?'+':'') + fmtA$(Math.abs(r.dailyTheta).toFixed(1)) + '/gün</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  // Optimal zone note
+  html += '<div style="margin-top:10px;padding:8px 11px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:10px;color:var(--text-3);line-height:1.4;">' +
+    '💡 Theta erimesi DTE 21 altında hızlanır. 14–21 günde kapatmak genellikle optimal kabul edilir.' +
+  '</div>';
+  el.innerHTML = html;
 }
 
 /* Black Swan Simulator — estimate portfolio impact of a market move */
@@ -3450,12 +3677,98 @@ function buildHeatmap(){
   el.innerHTML=html;
 }
 
+var _equityCurveInst = null;
+function buildEquityCurve(){
+  var el = document.getElementById('equityCurveChart'); if(!el) return;
+  if(_equityCurveInst){ try { _equityCurveInst.destroy(); } catch(e){} _equityCurveInst=null; }
+  // Get all closed trades sorted by date
+  var closed = getFilteredClosedTrades('all').filter(function(t){ return t.closed; });
+  closed.sort(function(a,b){ return a.closed < b.closed ? -1 : a.closed > b.closed ? 1 : 0; });
+  if(!closed.length) return;
+  // Build cumulative P&L and drawdown
+  var labels = [], cumData = [], drawData = [];
+  var cumPnl = 0, peak = 0;
+  closed.forEach(function(t){
+    cumPnl += (t.pnl || 0);
+    if(cumPnl > peak) peak = cumPnl;
+    var dd = peak > 0 ? cumPnl - peak : 0; // drawdown (0 or negative)
+    labels.push(t.closed);
+    cumData.push(Math.round(cumPnl * 100) / 100);
+    drawData.push(Math.round(dd * 100) / 100);
+  });
+  var ctx = el.getContext('2d');
+  _equityCurveInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Kümülatif P&L',
+          data: cumData,
+          borderColor: '#22C55E',
+          backgroundColor: 'rgba(34,197,94,0.12)',
+          borderWidth: 2,
+          fill: 'origin',
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Drawdown',
+          data: drawData,
+          borderColor: 'rgba(239,68,68,0.7)',
+          backgroundColor: 'rgba(239,68,68,0.12)',
+          borderWidth: 1.5,
+          fill: 'origin',
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          yAxisID: 'y'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: 'rgba(200,185,170,0.7)', font: { size: 10 }, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: 'rgba(30,22,14,0.95)',
+          borderColor: 'rgba(196,170,144,.3)',
+          borderWidth: 1,
+          callbacks: {
+            label: function(c){ return c.dataset.label + ': ' + (c.raw >= 0 ? '+' : '') + '$' + Math.abs(c.raw).toLocaleString('en-US'); }
+          }
+        }
+      },
+      scales: {
+        y: {
+          ticks: {
+            color: 'rgba(200,185,170,0.5)', font: { size: 9 },
+            callback: function(v){ return (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(); }
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        },
+        x: {
+          ticks: {
+            color: 'rgba(200,185,170,0.5)', font: { size: 9 },
+            maxTicksLimit: 8,
+            maxRotation: 0
+          },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
 // Call new charts from renderStats
 var _origRenderStats = null;
 (function(){
   var _origRS = window.renderStats;
   window._buildAnalyticsCharts = function(){
-    setTimeout(function(){ buildStratCompChart(); buildWinRateChart(); buildPremiumTrendChart(); buildHeatmap(); }, 50);
+    setTimeout(function(){ buildStratCompChart(); buildWinRateChart(); buildPremiumTrendChart(); buildHeatmap(); buildEquityCurve(); }, 50);
   };
 })();
 
@@ -4056,6 +4369,205 @@ function showBeyannamePDF(){
   w.document.write(html); w.document.close();
 }
 
+// ═══════════════════ IBKR FLEX QUERY IMPORT ═══════════════════
+function showIBKRImport(){
+  var ov=document.createElement('div'); ov.className='overlay';
+  var sh=document.createElement('div'); sh.className='modal-sheet';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+
+  var handle=document.createElement('div'); handle.className='modal-handle'; sh.appendChild(handle);
+  sh.innerHTML+=
+    '<div style="font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;">&#x1F916; IBKR Activity Import</div>'+
+    '<div style="font-size:12px;color:var(--text-3);margin-bottom:14px;line-height:1.5;">IBKR "Trades" CSV aktarımı. Activity Statement → Trades → Options bölümünden indirin.</div>'+
+    '<div style="font-size:11px;color:var(--text-3);background:rgba(255,255,255,0.04);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-family:var(--font-mono);">'+
+      'Beklenen sütunlar: Symbol, TradeDate, Quantity, TradePrice, IBCommission, Open/CloseIndicator, Buy/Sell'+
+    '</div>'+
+    '<textarea id="ibkrCsvText" placeholder="CSV içeriğini buraya yapıştırın..." '+
+      'style="width:100%;height:160px;background:rgba(255,255,255,0.06);border:1.5px solid var(--border-bright);border-radius:10px;padding:10px;color:var(--text);font-size:11px;font-family:var(--font-mono);resize:vertical;outline:none;box-sizing:border-box;margin-bottom:12px;"></textarea>'+
+    '<button id="ibkrParse" style="width:100%;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:13px;color:var(--warn);font-family:var(--font-head);font-size:14px;font-weight:700;cursor:pointer;">Parse &amp; Import</button>'+
+    '<div id="ibkrResult" style="margin-top:12px;font-size:12px;color:var(--text-2);"></div>';
+
+  sh.querySelector('#ibkrParse').onclick = function(){
+    var csv = sh.querySelector('#ibkrCsvText').value.trim();
+    if(!csv){ alert('CSV boş'); return; }
+    var result = parseIBKRCsv(csv);
+    var res = sh.querySelector('#ibkrResult');
+    if(result.error){ res.innerHTML='<span style="color:var(--loss);">&#x274C; '+result.error+'</span>'; return; }
+    if(!result.trades.length){ res.innerHTML='<span style="color:var(--warn);">&#x26A0; Geçerli trade bulunamadı.</span>'; return; }
+    // Insert trades into current profile
+    var _jsToApp=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+    result.trades.forEach(function(t){
+      var d = new Date(t.opened);
+      var month = _jsToApp[isNaN(d) ? new Date().getMonth() : d.getMonth()];
+      if(!tradesData[month]) tradesData[month] = [];
+      tradesData[month].push(t);
+    });
+    saveData();
+    ov.remove();
+    renderDashboard(); renderTradeList(currentFilter);
+    var statusEl = document.getElementById('ibkrImportStatus');
+    if(statusEl){
+      statusEl.textContent = '&#x2705; ' + result.trades.length + ' trade import edildi (IBKR). Kontrol edin ve gerekirse düzenleyin.';
+      statusEl.style.display = 'block';
+      setTimeout(function(){ statusEl.style.display = 'none'; }, 8000);
+    }
+  };
+}
+
+function parseIBKRCsv(csv){
+  var lines = csv.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  if(!lines.length) return { error: 'CSV boş', trades: [] };
+  // Find header line
+  var headerIdx = -1;
+  for(var i=0;i<lines.length;i++){
+    var l = lines[i].toLowerCase();
+    if(l.indexOf('symbol')>=0 && l.indexOf('quantity')>=0 && (l.indexOf('tradeprice')>=0 || l.indexOf('trade price')>=0)){
+      headerIdx = i; break;
+    }
+  }
+  if(headerIdx < 0) return { error: 'Header satırı bulunamadı (Symbol, Quantity, TradePrice gerekli)', trades: [] };
+
+  function parseCsvLine(line){
+    var result=[]; var cur=''; var inQ=false;
+    for(var i=0;i<line.length;i++){
+      var c=line[i];
+      if(c==='"'){inQ=!inQ;}else if(c===','&&!inQ){result.push(cur.trim());cur='';}else{cur+=c;}
+    }
+    result.push(cur.trim());
+    return result;
+  }
+  var headers = parseCsvLine(lines[headerIdx]).map(function(h){ return h.replace(/['"]/g,'').trim().toLowerCase(); });
+  function col(h){ return headers.indexOf(h); }
+
+  var symI   = col('symbol')>=0?col('symbol'):col('ticker');
+  var dateI  = col('tradedate')>=0?col('tradedate'):col('date/time')>=0?col('date/time'):col('datetime');
+  var qtyI   = col('quantity');
+  var priceI = col('tradeprice')>=0?col('tradeprice'):col('trade price')>=0?col('trade price'):col('price');
+  var commI  = col('ibcommission')>=0?col('ibcommission'):col('commission');
+  var buySellI = col('buy/sell')>=0?col('buy/sell'):col('buysell');
+  var openCloseI = col('open/closeindicator')>=0?col('open/closeindicator'):col('open/close');
+
+  if(symI<0||dateI<0||qtyI<0||priceI<0) return { error: 'Gerekli sütunlar bulunamadı (Symbol:'+symI+', Date:'+dateI+', Qty:'+qtyI+', Price:'+priceI+')', trades: [] };
+
+  var trades = [];
+  var _jsToApp=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+
+  for(var i=headerIdx+1;i<lines.length;i++){
+    var row = parseCsvLine(lines[i]);
+    if(!row || row.length < Math.max(symI,dateI,qtyI,priceI)+1) continue;
+    var sym = row[symI].replace(/['"]/g,'').trim();
+    if(!sym) continue;
+
+    // Parse IBKR option symbol: "AAPL 230120C00150000" or "AAPL  230120C00150000"
+    var ticker='', optType='', strike='', expiry='', tradeType='CSP';
+    var optMatch = sym.match(/^([A-Z]+)\s+(\d{6})([CP])(\d{8})$/);
+    if(optMatch){
+      ticker = optMatch[1];
+      var _yr='20'+optMatch[2].slice(0,2), _mo=optMatch[2].slice(2,4), _dy=optMatch[2].slice(4,6);
+      expiry = _yr+'-'+_mo+'-'+_dy;
+      optType = optMatch[3]==='C' ? 'Call' : 'Put';
+      strike = (parseInt(optMatch[4])/1000).toFixed(0);
+      var qty = parseFloat(row[qtyI])||0;
+      var buySell = buySellI>=0 ? (row[buySellI]||'').toUpperCase() : (qty<0?'SELL':'BUY');
+      var oc = openCloseI>=0 ? (row[openCloseI]||'').toUpperCase().charAt(0) : (qty<0?'O':'C');
+      if(buySell==='SELL' && optType==='Put') tradeType = oc==='O'?'CSP':'';
+      else if(buySell==='SELL' && optType==='Call') tradeType = oc==='O'?'CC':'';
+      else if(buySell==='BUY' && optType==='Put') tradeType = oc==='O'?'Long Put':'PCS';
+      else if(buySell==='BUY' && optType==='Call') tradeType = oc==='O'?'Long Call':'';
+      if(!tradeType) tradeType = 'CSP'; // fallback
+    } else {
+      // Not an option or unrecognized format — skip
+      continue;
+    }
+    var rawDate = row[dateI].replace(/['"]/g,'').trim().replace(/,.*$/,''); // "2024-01-15" or "20240115"
+    var tradeDate = rawDate;
+    if(/^\d{8}$/.test(rawDate)) tradeDate = rawDate.slice(0,4)+'-'+rawDate.slice(4,6)+'-'+rawDate.slice(6,8);
+    var price = Math.abs(parseFloat(row[priceI])||0);
+    var absQty = Math.abs(parseFloat(row[qtyI])||1);
+    var comm = Math.abs(parseFloat(commI>=0?row[commI]:0)||0);
+    var openPrem = price * absQty * 100;
+    var d = new Date(tradeDate);
+    var month = _jsToApp[isNaN(d)?new Date().getMonth():d.getMonth()];
+    trades.push({
+      id: Date.now() + '_ibkr_' + i,
+      ticker: ticker, type: tradeType,
+      strike: strike, expiry: expiry,
+      opened: tradeDate, closed: null, pnl: null,
+      openPremium: openPrem, premium: price,
+      q: absQty, teminat: 0,
+      openCommission: comm,
+      delta: null, ivr: null,
+      subOwner: ACTIVE_PROFILE==='mustafa'?'Mustafa':'Eda',
+      note: '[IBKR Import]',
+      month: month
+    });
+  }
+  return { trades: trades };
+}
+
+// ═══════════════════ SHARE CARD PNG EXPORT ═══════════════════
+function exportShareCard(){
+  var canvas = document.getElementById('shareCardCanvas');
+  if(!canvas) return;
+  canvas.width = 1080; canvas.height = 600;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+
+  // Background gradient
+  var bg = ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0, '#1E1408'); bg.addColorStop(1, '#2C1E0E');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+
+  // Border accent
+  ctx.strokeStyle = 'rgba(196,170,144,0.15)'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(16,16,W-32,H-32);
+
+  // Logo + Profile
+  ctx.fillStyle = '#C4AA90'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('OptionFlow', 44, 58);
+  ctx.fillStyle = '#7A6A58'; ctx.font = '16px sans-serif';
+  ctx.fillText((PROFILES[ACTIVE_PROFILE]||{}).name || ACTIVE_PROFILE, 44, 82);
+
+  // Stats
+  var month = getEffectiveDashMonth();
+  var stats = calcStatsFor(month);
+  var closed = getFilteredClosedTrades(month);
+  var _yr = ACTIVE_YEAR !== 'all' ? ACTIVE_YEAR : new Date().getFullYear();
+  // Total P&L
+  var pnlClr = stats.totalPnl >= 0 ? '#22C55E' : '#EF4444';
+  ctx.fillStyle = pnlClr; ctx.font = 'bold 72px monospace'; ctx.textAlign = 'center';
+  ctx.fillText((stats.totalPnl>=0?'+':'')+fmtA$(Math.round(stats.totalPnl)), W/2, H/2-20);
+  ctx.fillStyle = '#7A6A58'; ctx.font = '18px sans-serif';
+  ctx.fillText('Toplam P&L — '+_yr, W/2, H/2+18);
+
+  // Stats row
+  var statItems = [
+    { lbl:'Win Rate', val: Math.round(stats.winRate*100)+'%' },
+    { lbl:'Trades',   val: String(stats.total) },
+    { lbl:'Avg Win',  val: fmtA$(Math.round(stats.avgWin)) },
+    { lbl:'Payoff',   val: stats.payoff.toFixed(2)+'x' }
+  ];
+  var sw = W/statItems.length;
+  statItems.forEach(function(s, i){
+    var cx = sw*i + sw/2;
+    ctx.fillStyle = '#E8D5B8'; ctx.font = 'bold 36px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(s.val, cx, H*0.8);
+    ctx.fillStyle = '#7A6A58'; ctx.font = '14px sans-serif';
+    ctx.fillText(s.lbl, cx, H*0.8+24);
+  });
+
+  // Date stamp
+  ctx.fillStyle = '#4A3C2E'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText(new Date().toLocaleDateString('tr-TR',{year:'numeric',month:'long',day:'numeric'}), W-44, H-28);
+
+  // Download
+  var a = document.createElement('a');
+  a.download = 'optionflow-'+_yr+'-'+ACTIVE_PROFILE+'.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
 // ═══════════════════ EXPORT / IMPORT ═══════════════════
 function exportData(){
   var blob=new Blob([JSON.stringify(tradesData,null,2)],{type:'application/json'});
@@ -4246,7 +4758,14 @@ function showAddTrade(existingTrade){
         _fldWrap('Commission — Close ($)','<input id="nt_kom_k" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closeCommission?' value="'+existingTrade.closeCommission+'"':'')+'>') +
       '</div>'+
 
-      '<button id="ntSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">✅ Save</button>'+
+      '<!-- Earnings & Ex-Div -->'+
+      '<div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:4px 0 10px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;">&#x1F4C5; Tarih Uyarıları <span style="color:rgba(255,255,255,.2);font-weight:400;">(opsiyonel)</span></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
+        _fldWrap('Earnings Date','<input id="nt_earn" type="date" style="'+s+'"'+(isEdit&&existingTrade.earningsDate?' value="'+existingTrade.earningsDate+'"':'')+'>') +
+        _fldWrap('Ex-Dividend Date','<input id="nt_exdiv" type="date" style="'+s+'"'+(isEdit&&existingTrade.exDivDate?' value="'+existingTrade.exDivDate+'"':'')+'>') +
+      '</div>'+
+
+      '<button id="ntSave" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#3B82F6,#8B5CF6);border:none;border-radius:12px;padding:15px;color:white;font-family:var(--font-head);font-size:15px;font-weight:600;cursor:pointer;">&#x2705; Save</button>'+
       '<button id="ntCancel" style="width:100%;margin-top:8px;background:transparent;border:none;padding:12px;color:#475569;font-size:14px;cursor:pointer;">Cancel</button>';
 
     // Set today as default for open date if new trade
@@ -4443,7 +4962,9 @@ function showAddTrade(existingTrade){
         roi:null,
         note:isEdit?existingTrade.note:'',
         subOwner:(sheet.querySelector('#nt_owner')?sheet.querySelector('#nt_owner').value:(ACTIVE_PROFILE==='mustafa'?'Mustafa':'Eda')),
-        partialCloses:_existingPC  // kısmi kapanma geçmişini koru!
+        partialCloses:_existingPC,  // kısmi kapanma geçmişini koru!
+        earningsDate:sheet.querySelector('#nt_earn')?sheet.querySelector('#nt_earn').value||null:null,
+        exDivDate:sheet.querySelector('#nt_exdiv')?sheet.querySelector('#nt_exdiv').value||null:null
       };
 
       if(isEdit){
@@ -4886,6 +5407,157 @@ function _renderVergiInner(){
         });
         _vtc.appendChild(wrap);
       });
+
+      // ── Vergi Optimizasyon Önerisi ──────────────────────────────
+      var _optCard = document.createElement('div');
+      _optCard.style.cssText = 'background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius);padding:14px;margin-bottom:10px;';
+
+      // Determine each person's top bracket rate
+      function _topBracket(total) {
+        if(total >= 5300000) return 40;
+        if(total >= 1500000) return 35;
+        if(total >= 400000) return 27;
+        if(total >= 190000) return 20;
+        return 15;
+      }
+
+      var _optHtml = '<div style="font-size:12px;font-weight:700;color:#10B981;margin-bottom:8px;">&#x1F4A1; Vergi Optimizasyon Önerisi</div>';
+      var _mData = _personData['Mustafa'];
+      var _eData = _personData['Eda'];
+      var _mTop = _topBracket(_mData.total);
+      var _eTop = _topBracket(_eData.total);
+      var _diff = _mTop - _eTop;
+
+      if(_mData.total <= 0 && _eData.total <= 0){
+        _optHtml += '<div style="font-size:11px;color:var(--text-3);">Henüz yeterli veri yok — gelir hesaplandıkça öneriler görünecek.</div>';
+      } else if(_diff >= 8) {
+        // Significant bracket difference — recommend routing through Eda
+        var _eda0 = _brData2.find(function(b){ return _eData.total < b.to; });
+        var _remaining = _eda0 ? _eda0.to - _eData.total : 0;
+        var _potSaving = _remaining > 0 ? _remaining * (_mTop - _eTop) / 100 : 0;
+        _optHtml += '<div style="font-size:11px;color:var(--text-2);line-height:1.5;margin-bottom:8px;">' +
+          'Mustafa bu yıl <strong style="color:var(--warn);">%'+_mTop+' diliminde</strong>; Eda ise <strong style="color:var(--profit);">%'+_eTop+' diliminde</strong>. ' +
+          'Kalan karı Eda\'nın hesabından gerçekleştirmek <strong style="color:#10B981;">%'+_diff+' vergi avantajı</strong> sağlar.' +
+        '</div>';
+        if(_remaining > 0){
+          _optHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+            '<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:8px;text-align:center;">' +
+              '<div style="font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Eda\'da Kalan Kapasite</div>' +
+              '<div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:#10B981;">'+_remaining.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺</div>' +
+            '</div>' +
+            '<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:8px;text-align:center;">' +
+              '<div style="font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Tahmini Kazanım</div>' +
+              '<div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:#10B981;">'+_potSaving.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺</div>' +
+            '</div>' +
+          '</div>';
+        }
+      } else if(_diff > 0) {
+        _optHtml += '<div style="font-size:11px;color:var(--text-2);line-height:1.5;">' +
+          'Mustafa %'+_mTop+', Eda %'+_eTop+' diliminde. Küçük bir avantaj var (%'+_diff+') — gelirleri dağıtmaya devam et.' +
+        '</div>';
+      } else if(_eTop > _mTop) {
+        _optHtml += '<div style="font-size:11px;color:var(--text-2);line-height:1.5;">' +
+          'Bu yıl Eda %'+_eTop+' dilimine girmiş; Mustafa ise %'+_mTop+'. Yeni işlemleri Mustafa hesabına yönlendirmek daha avantajlı.' +
+        '</div>';
+      } else {
+        _optHtml += '<div style="font-size:11px;color:var(--text-2);line-height:1.5;">' +
+          'Mustafa %'+_mTop+', Eda %'+_eTop+' diliminde — her iki hesap aynı dilimde. Büyük bir optimizasyon fırsatı yok.' +
+        '</div>';
+      }
+      _optHtml += '<div style="margin-top:8px;font-size:9px;color:var(--text-3);">Bu öneri tahmini vergi dilimlerine dayanmaktadır. Mali müşavirinize danışın.</div>';
+      _optCard.innerHTML = _optHtml;
+      _vtc.appendChild(_optCard);
+
+      // ── Endeksleme Otomasyonu (TÜFE) ────────────────────────────
+      var _idxCard = document.createElement('div');
+      _idxCard.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;';
+      var _idxLS = 'optflow_tufe_rates_v1';
+      var _tufeRates = {};
+      try { var _tr = localStorage.getItem(_idxLS); if(_tr) _tufeRates = JSON.parse(_tr); } catch(e) {}
+      var _idxYr = vergiYil;
+      var _tufeVal = _tufeRates[_idxYr] || '';
+      var _idxTitle = document.createElement('div');
+      _idxTitle.style.cssText = 'font-size:12px;font-weight:700;color:var(--info);margin-bottom:6px;';
+      _idxTitle.textContent = '\u{1F4C8} Enflasyon Endeksleme (TÜFE)';
+      _idxCard.appendChild(_idxTitle);
+      var _idxNote = document.createElement('div');
+      _idxNote.style.cssText = 'font-size:10px;color:var(--text-3);margin-bottom:10px;line-height:1.4;';
+      _idxNote.textContent = 'Türk Gelir Vergisi Kanunu 81. madde: Menkul kıymetler 1 yıldan uzun süre elde tutulduğunda TÜFE endekslemesi uygulanabilir. '+_idxYr+' yılı TÜFE artış oranını gir (ÜFE farkı %10+).';
+      _idxCard.appendChild(_idxNote);
+      var _idxRow = document.createElement('div');
+      _idxRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px;';
+      var _idxInp = document.createElement('input');
+      _idxInp.type = 'number'; _idxInp.step = '0.1'; _idxInp.min = '0'; _idxInp.max = '200';
+      _idxInp.placeholder = 'TÜFE % (örn: 48.7)';
+      _idxInp.value = _tufeVal;
+      _idxInp.style.cssText = 'flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;';
+      var _idxBtn = document.createElement('button');
+      _idxBtn.textContent = 'Uygula';
+      _idxBtn.style.cssText = 'background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:9px 16px;color:var(--info);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;';
+      _idxBtn.onclick = function(){
+        var _v = parseFloat(_idxInp.value);
+        if(!isNaN(_v) && _v >= 0){
+          _tufeRates[_idxYr] = _v;
+          try { localStorage.setItem(_idxLS, JSON.stringify(_tufeRates)); } catch(e){}
+          renderVergi();
+        }
+      };
+      _idxRow.appendChild(_idxInp); _idxRow.appendChild(_idxBtn);
+      _idxCard.appendChild(_idxRow);
+      // Show indexed matrah if TÜFE is entered
+      if(_tufeVal && parseFloat(_tufeVal) > 0){
+        var _tufePct = parseFloat(_tufeVal) / 100;
+        // For each closed trade, compute indexed cost basis (if held 1+ year)
+        // Track: nonEligibleMatrah (original for <1yr), eligibleOriginal, eligibleIndexed
+        var _idxData = { nonEligibleMatrah:0, eligibleOriginal:0, eligibleIndexed:0, eligible:0, count:0 };
+        allOwnClosed.forEach(function(t){
+          var r = calcTaxForTrade(t);
+          if(!r.hasKur) return;
+          var op = t.opened || ''; var cl = t.closed || '';
+          var msHeld = (op && cl) ? (new Date(cl) - new Date(op)) : 0;
+          if(msHeld >= 365 * 86400000) {
+            // Eligible: apply TÜFE indexing to the opening cost (short: cost = premium received)
+            // For short options: matrah = (openPrem - openKom)*acilis_kur - (closePrem + closeKom)*kapanis_kur
+            // Indexed: replace openPrem*acilis_kur with openPrem*acilis_kur*(1+tufePct)
+            // i.e. indexed matrah = original matrah - openPrem*acilis_kur*tufePct (short)
+            // For long: matrah = (closePrem-closeKom)*kapanis_kur - (openPrem+openKom)*acilis_kur
+            // Indexed: subtract additional openPrem*acilis_kur*tufePct (same effect: more deduction on cost)
+            var _openCostBase = r.openPrem * r.acilis_kur;
+            var matrahIndexed = r.matrah_try - _openCostBase * _tufePct * (isLong(t.type) ? -1 : 1);
+            // For short: indexed < original (cost base is higher after indexing → less profit)
+            // For long:  indexed < original (cost base is higher → more loss or less profit)
+            _idxData.eligibleOriginal += r.matrah_try;
+            _idxData.eligibleIndexed  += matrahIndexed;
+            _idxData.eligible++;
+          } else {
+            _idxData.nonEligibleMatrah += r.matrah_try;
+          }
+          _idxData.count++;
+        });
+        // Total original = nonEligible + eligibleOriginal
+        // Total indexed  = nonEligible + eligibleIndexed
+        var _origM = _idxData.nonEligibleMatrah + _idxData.eligibleOriginal;
+        var _idxAdj = _idxData.nonEligibleMatrah + _idxData.eligibleIndexed;
+        var _saving = _origM - _idxAdj; // positive = tax saving
+        var _idxResult = document.createElement('div');
+        _idxResult.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;';
+        [{l:'Orijinal Matrah', v:_origM.toFixed(0)+' ₺', c:_origM>=0?'var(--profit)':'var(--loss)'},
+         {l:'Endekslenmiş ('+_tufeVal+'%)', v:_idxAdj.toFixed(0)+' ₺', c:_idxAdj>=0?'var(--profit)':'var(--loss)'},
+         {l:'Vergi Farkı (Tahmini)', v:(_saving*0.27).toFixed(0)+' ₺', c:_saving>=0?'var(--profit)':'var(--text-3)'}
+        ].forEach(function(x){
+          var col = document.createElement('div');
+          col.style.cssText = 'background:rgba(255,255,255,0.04);border-radius:6px;padding:8px;text-align:center;';
+          col.innerHTML = '<div style="font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px;">'+x.l+'</div><div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:'+x.c+';">'+x.v+'</div>';
+          _idxResult.appendChild(col);
+        });
+        _idxCard.appendChild(_idxResult);
+        var _idxEligNote = document.createElement('div');
+        _idxEligNote.style.cssText = 'margin-top:8px;font-size:10px;color:var(--text-3);';
+        _idxEligNote.textContent = _idxData.eligible + ' adet trade 1 yıl+ elde tutuldu → endeksleme uygulandı. Not: Endeksleme GVK 81/3. fıkra şartlarını sağlamalıdır.';
+        _idxCard.appendChild(_idxEligNote);
+      }
+      _vtc.appendChild(_idxCard);
+
     } else {
       _vtc.style.display = 'none';
     }
@@ -5268,6 +5940,18 @@ function openTradeDetail(tradeId, month){
   if(!isOpen && trade.closeCommission) box.appendChild(row('Comm. Close', fmtA$(trade.closeCommission)));
   box.appendChild(row('Qty / Expiry',trade.q+' x 100  |  '+trade.expiry));
   box.appendChild(row('Delta / IVR',(trade.delta||'-')+' D  |  '+(trade.ivr||'-')));
+  if(trade.earningsDate){
+    var dEarn=Math.round((new Date(trade.earningsDate)-new Date())/86400000);
+    var earnRow=row('Earnings Date',trade.earningsDate+(dEarn>=0?' ('+dEarn+' gün)':''));
+    earnRow.querySelector('span:last-child').style.color=dEarn<=5&&dEarn>=0?'var(--loss)':dEarn<=14&&dEarn>=0?'var(--warn)':'var(--text-3)';
+    box.appendChild(earnRow);
+  }
+  if(trade.exDivDate){
+    var dExDiv=Math.round((new Date(trade.exDivDate)-new Date())/86400000);
+    var exDivRow=row('Ex-Dividend',trade.exDivDate+(dExDiv>=0?' ('+dExDiv+' gün)':''));
+    exDivRow.querySelector('span:last-child').style.color=dExDiv<=7&&dExDiv>=0?'var(--warn)':'var(--text-3)';
+    box.appendChild(exDivRow);
+  }
   if(trade.pnl!=null){
     var pr=row('P&L',(trade.pnl>=0?'+':'')+fmt$(trade.pnl));
     pr.querySelector('span:last-child').style.color=trade.pnl>=0?'var(--profit)':'var(--loss)';
@@ -5650,13 +6334,98 @@ function openTradeDetail(tradeId, month){
   noteSec.style.cssText='margin-top:4px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08)';
   var noteLbl=document.createElement('div');
   noteLbl.style.cssText='font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:7px';
-  noteLbl.textContent='Note';
+  noteLbl.textContent='Note & Journal';
   var noteInput=document.createElement('textarea');
   noteInput.id='td_note';
   noteInput.rows=2;
   noteInput.placeholder='Trade note...';
   noteInput.value=trade.note||'';
   noteInput.style.cssText='background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none;width:100%;resize:none';
+  // Photo journal
+  var photoSec=document.createElement('div');
+  photoSec.style.cssText='margin-top:8px;';
+  // Show existing photo if any
+  if(trade.notePhoto){
+    var photoWrap=document.createElement('div');
+    photoWrap.style.cssText='position:relative;margin-bottom:8px;';
+    var photoImg=document.createElement('img');
+    photoImg.src=trade.notePhoto;
+    photoImg.style.cssText='width:100%;border-radius:9px;max-height:220px;object-fit:cover;display:block;cursor:pointer;';
+    photoImg.onclick=function(){
+      var overlay=document.createElement('div');
+      overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+      var bigImg=document.createElement('img');
+      bigImg.src=trade.notePhoto;
+      bigImg.style.cssText='max-width:96vw;max-height:96vh;border-radius:10px;';
+      overlay.appendChild(bigImg);
+      overlay.onclick=function(){overlay.remove();};
+      document.body.appendChild(overlay);
+    };
+    var delPhotoBtn=document.createElement('button');
+    delPhotoBtn.textContent='✕';
+    delPhotoBtn.title='Fotoğrafı kaldır';
+    delPhotoBtn.style.cssText='position:absolute;top:6px;right:6px;background:rgba(239,68,68,0.8);border:none;border-radius:50%;width:22px;height:22px;color:white;font-size:12px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;';
+    delPhotoBtn.onclick=function(){
+      var months2=Object.keys(tradesData);
+      for(var mi2=0;mi2<months2.length;mi2++){
+        var arr2=tradesData[months2[mi2]];
+        for(var ti2=0;ti2<arr2.length;ti2++){
+          if(String(arr2[ti2].id)===String(tradeId)){arr2[ti2].notePhoto=null;break;}
+        }
+      }
+      saveData();
+      photoWrap.remove();
+    };
+    photoWrap.appendChild(photoImg);
+    photoWrap.appendChild(delPhotoBtn);
+    photoSec.appendChild(photoWrap);
+  }
+  // Photo upload button
+  var photoLabel=document.createElement('label');
+  photoLabel.style.cssText='display:flex;align-items:center;gap:8px;margin-top:4px;padding:8px 12px;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,0.15);border-radius:9px;cursor:pointer;color:var(--text-3);font-size:12px;';
+  photoLabel.innerHTML='<span style="font-size:16px;">&#x1F4F7;</span> Ekran görüntüsü / fotoğraf ekle';
+  var photoInput=document.createElement('input');
+  photoInput.type='file';
+  photoInput.accept='image/*';
+  photoInput.style.cssText='display:none;';
+  photoInput.onchange=function(){
+    var file=photoInput.files[0];
+    if(!file) return;
+    if(file.size > 2*1024*1024){
+      alert('Dosya çok büyük (max 2MB). Lütfen daha küçük bir resim seç.');
+      return;
+    }
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var b64=e.target.result;
+      var months3=Object.keys(tradesData);
+      for(var mi3=0;mi3<months3.length;mi3++){
+        var arr3=tradesData[months3[mi3]];
+        for(var ti3=0;ti3<arr3.length;ti3++){
+          if(String(arr3[ti3].id)===String(tradeId)){
+            arr3[ti3].notePhoto=b64;
+            trade.notePhoto=b64; // update local ref
+            break;
+          }
+        }
+      }
+      saveData();
+      // Refresh photo display
+      var oldWrap=photoSec.querySelector('div');
+      if(oldWrap) oldWrap.remove();
+      var nWrap=document.createElement('div');
+      nWrap.style.cssText='position:relative;margin-bottom:8px;';
+      var nImg=document.createElement('img');
+      nImg.src=b64;
+      nImg.style.cssText='width:100%;border-radius:9px;max-height:220px;object-fit:cover;display:block;';
+      nWrap.appendChild(nImg);
+      photoSec.insertBefore(nWrap,photoLabel);
+      photoLabel.innerHTML='<span style="font-size:16px;">&#x1F4F7;</span> &#x2705; Fotoğraf eklendi — yeni eklemek için tekrar seç';
+    };
+    reader.readAsDataURL(file);
+  };
+  photoLabel.appendChild(photoInput);
+  photoSec.appendChild(photoLabel);
   var saveNoteBtn=document.createElement('button');
   saveNoteBtn.style.cssText='margin-top:7px;width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:9px;padding:9px;color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer';
   saveNoteBtn.textContent='Save Note';
@@ -5677,6 +6446,7 @@ function openTradeDetail(tradeId, month){
   };
   noteSec.appendChild(noteLbl);
   noteSec.appendChild(noteInput);
+  noteSec.appendChild(photoSec);
   noteSec.appendChild(saveNoteBtn);
   sh.appendChild(noteSec);
 
