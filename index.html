@@ -1019,6 +1019,59 @@
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;padding:0 0 0 2px;">By Strategy</div>
     <div class="perf-table-inner" id="stratTableInner"></div>
   </div>
+
+  <!-- ── Strateji Karşılaştırma Grafiği ── -->
+  <div class="chart-wrap" style="margin:16px 16px 0;">
+    <div class="chart-head">
+      <div class="chart-title">Strateji Karşılaştırması</div>
+      <div style="font-size:11px;color:var(--text-3);">Win Rate &amp; Ort. P&L</div>
+    </div>
+    <div class="chart-body" style="height:180px;"><canvas id="stratCompChart"></canvas></div>
+  </div>
+
+  <!-- ── Win Rate Kayar Pencere ── -->
+  <div class="chart-wrap" style="margin:12px 16px 0;">
+    <div class="chart-head">
+      <div class="chart-title">Win Rate Trendi</div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="setWrWindow(10,this)" class="chart-tab active" id="wr10btn">Son 10</button>
+        <button onclick="setWrWindow(25,this)" class="chart-tab" id="wr25btn">Son 25</button>
+        <button onclick="setWrWindow(50,this)" class="chart-tab" id="wr50btn">Son 50</button>
+      </div>
+    </div>
+    <div class="chart-body" style="height:160px;"><canvas id="winRateChart"></canvas></div>
+  </div>
+
+  <!-- ── Premium Toplama Trendi ── -->
+  <div class="chart-wrap" style="margin:12px 16px 0;">
+    <div class="chart-head">
+      <div class="chart-title">Premium Toplama Trendi</div>
+      <div style="font-size:11px;color:var(--text-3);">Aylık &amp; Kümülatif</div>
+    </div>
+    <div class="chart-body" style="height:160px;"><canvas id="premiumTrendChart"></canvas></div>
+  </div>
+
+  <!-- ── P&L Isı Haritası ── -->
+  <div class="chart-wrap" style="margin:12px 16px 16px;">
+    <div class="chart-head">
+      <div class="chart-title">P&L Isı Haritası</div>
+      <div id="heatmapYearLabel" style="font-size:11px;color:var(--text-3);"></div>
+    </div>
+    <div id="heatmapGrid" style="overflow-x:auto;padding:8px 0 4px;"></div>
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0 2px;font-size:10px;color:var(--text-3);">
+      <span>Az</span>
+      <span style="display:flex;gap:3px;">
+        <span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.6)"></span>
+        <span style="width:12px;height:12px;border-radius:3px;background:rgba(239,68,68,.3)"></span>
+        <span style="width:12px;height:12px;border-radius:3px;background:rgba(255,255,255,.07)"></span>
+        <span style="width:12px;height:12px;border-radius:3px;background:rgba(34,197,94,.3)"></span>
+        <span style="width:12px;height:12px;border-radius:3px;background:rgba(34,197,94,.7)"></span>
+      </span>
+      <span>Çok</span>
+      <span style="margin-left:auto;color:var(--profit)">■ Kazanç</span>
+      <span style="color:var(--loss)">■ Kayıp</span>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════ RISK ═══════════════════════ -->
@@ -2884,6 +2937,8 @@ function renderStats(){
   ].flat().filter(function(x){return x!=null;}).map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
   if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
+  // Analytics charts
+  _buildAnalyticsCharts();
 }
 
 // ═══════════════════ RISK ═══════════════════
@@ -2924,6 +2979,203 @@ function renderRisk(){
   var tcEl=document.getElementById('tickerConc');
   if(tcEl)tcEl.innerHTML=tkList.length?tkList.slice(0,8).map(function(x,i){var p=tc2>0?x.val/tc2:0;return'<div class="concentration-item" style="margin-bottom:'+(i===Math.min(8,tkList.length)-1?'0':'12px')+'"><div class="conc-head"><span class="conc-ticker">'+x.ticker+'</span><span class="conc-pct">'+fmtA$(x.val)+' · '+(p*100).toFixed(0)+'%</span></div><div class="conc-bar"><div class="conc-fill" style="width:'+(p*100)+'%;background:'+bcs[i%bcs.length]+'"></div></div></div>';}).join(''):'<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">No open positions</div>';
 }
+
+// ═══════════════════ ANALYTICS CHARTS ═══════════════════
+var stratCompChartInst, winRateChartInst, premTrendChartInst;
+var _wrWindow = 10;
+
+function setWrWindow(n, btn){
+  _wrWindow = n;
+  document.querySelectorAll('#wr10btn,#wr25btn,#wr50btn').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  buildWinRateChart();
+}
+
+function buildStratCompChart(){
+  var el = document.getElementById('stratCompChart'); if(!el) return;
+  var closed = getFilteredClosedTrades(getEffectiveStatMonth());
+  var STRATS = ['CSP','PCS','IC','CC','PMCC','Long Call'];
+  var data = STRATS.map(function(s){
+    var t = closed.filter(function(x){ return x.type===s; });
+    var wins = t.filter(function(x){ return x.pnl>0; }).length;
+    var wr = t.length ? (wins/t.length)*100 : 0;
+    var avgPnl = t.length ? t.reduce(function(a,x){return a+x.pnl;},0)/t.length : 0;
+    return { label:s, wr:wr, avgPnl:avgPnl, count:t.length };
+  }).filter(function(d){ return d.count>0; });
+  if(!data.length) return;
+  var ctx = el.getContext('2d');
+  if(stratCompChartInst) stratCompChartInst.destroy();
+  stratCompChartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(function(d){ return d.label+' ('+d.count+')'; }),
+      datasets: [
+        { label:'Win Rate %', data: data.map(function(d){return Math.round(d.wr);}), backgroundColor:'rgba(34,197,94,0.6)', borderColor:'#22C55E', borderWidth:1, borderRadius:4, yAxisID:'wr' },
+        { label:'Avg P&L $', data: data.map(function(d){return Math.round(d.avgPnl);}), backgroundColor: data.map(function(d){return d.avgPnl>=0?'rgba(59,130,246,0.6)':'rgba(239,68,68,0.5)';}), borderColor: data.map(function(d){return d.avgPnl>=0?'#3B82F6':'#EF4444';}), borderWidth:1, borderRadius:4, yAxisID:'pnl' }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{intersect:false,mode:'index'},
+      plugins:{
+        legend:{display:true,position:'top',labels:{color:'#C4AA90',padding:12,font:{size:11}}},
+        tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return c.dataset.label+': '+(c.datasetIndex===0?c.raw+'%':'$'+c.raw);}}}
+      },
+      scales:{
+        x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},
+        wr:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{color:'#22C55E',callback:function(v){return v+'%';}}},
+        pnl:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:'#3B82F6',callback:function(v){return '$'+v;}}}
+      }
+    }
+  });
+}
+
+function buildWinRateChart(){
+  var el = document.getElementById('winRateChart'); if(!el) return;
+  var closed = getFilteredClosedTrades('all').sort(function(a,b){return new Date(a.closed)-new Date(b.closed);});
+  if(closed.length < 2){ el.getContext('2d').clearRect(0,0,el.width,el.height); return; }
+  var n = _wrWindow;
+  var labels=[], wrs=[];
+  for(var i=n-1; i<closed.length; i++){
+    var window = closed.slice(i-n+1, i+1);
+    var wins = window.filter(function(t){return t.pnl>0;}).length;
+    labels.push(closed[i].closed ? closed[i].closed.slice(5) : i);
+    wrs.push(Math.round((wins/n)*100));
+  }
+  var ctx = el.getContext('2d');
+  if(winRateChartInst) winRateChartInst.destroy();
+  var lc = wrs.length && wrs[wrs.length-1]>=50 ? '#22C55E' : '#EF4444';
+  var grad=ctx.createLinearGradient(0,0,0,150); grad.addColorStop(0,lc==='#22C55E'?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)'); grad.addColorStop(1,'rgba(0,0,0,0)');
+  winRateChartInst = new Chart(ctx, {
+    type:'line',
+    data:{ labels:labels, datasets:[{data:wrs,borderColor:lc,borderWidth:2,fill:true,backgroundColor:grad,tension:0.35,pointRadius:0,pointHoverRadius:4}] },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return 'Win Rate: '+c.raw+'%';}}}},
+      scales:{
+        x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:6,color:'#C4AA90'}},
+        y:{grid:{color:'rgba(255,255,255,.06)'},border:{display:false},min:0,max:100,ticks:{color:'#C4AA90',callback:function(v){return v+'%';}}}
+      }
+    }
+  });
+}
+
+function buildPremiumTrendChart(){
+  var el = document.getElementById('premiumTrendChart'); if(!el) return;
+  var MONTH_ORDER=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+  var monthly = getMonthlyStats();
+  monthly.sort(function(a,b){ return MONTH_ORDER.indexOf(a.month)-MONTH_ORDER.indexOf(b.month); });
+  // Monthly premium collected
+  var premByMonth = {};
+  var closed = getFilteredClosedTrades('all');
+  closed.forEach(function(t){
+    if(!t.month) return;
+    var prem = parseFloat(t.openPremium)||parseFloat(t.premium)||0;
+    premByMonth[t.month] = (premByMonth[t.month]||0) + prem;
+  });
+  var labels = [], monthPrem = [], cumPrem = [];
+  var cum = 0;
+  MONTH_ORDER.forEach(function(m){ if(premByMonth[m]){ labels.push(m.slice(0,3)); var v=premByMonth[m]; monthPrem.push(Math.round(v)); cum+=v; cumPrem.push(Math.round(cum)); } });
+  if(!labels.length) return;
+  var ctx = el.getContext('2d');
+  if(premTrendChartInst) premTrendChartInst.destroy();
+  var cumGrad=ctx.createLinearGradient(0,0,0,150); cumGrad.addColorStop(0,'rgba(59,130,246,.25)'); cumGrad.addColorStop(1,'rgba(0,0,0,0)');
+  premTrendChartInst = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels:labels,
+      datasets:[
+        {type:'line',label:'Kümülatif',data:cumPrem,borderColor:'#3B82F6',borderWidth:2,fill:true,backgroundColor:cumGrad,tension:0.35,pointRadius:0,yAxisID:'cum'},
+        {type:'bar',label:'Aylık',data:monthPrem,backgroundColor:'rgba(245,158,11,0.55)',borderColor:'#F59E0B',borderWidth:1,borderRadius:4,yAxisID:'monthly'}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,position:'top',labels:{color:'#C4AA90',padding:10,font:{size:11}}},tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return c.dataset.label+': $'+c.raw.toLocaleString();}}}},
+      scales:{
+        x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},
+        monthly:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:'#F59E0B',callback:function(v){return '$'+(v/1000).toFixed(1)+'K';}}},
+        cum:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{color:'#3B82F6',callback:function(v){return '$'+(v/1000).toFixed(0)+'K';}}}
+      }
+    }
+  });
+}
+
+function buildHeatmap(){
+  var el = document.getElementById('heatmapGrid'); if(!el) return;
+  var lbl = document.getElementById('heatmapYearLabel');
+  var closed = getFilteredClosedTrades('all');
+  var byDay = {};
+  closed.forEach(function(t){
+    if(!t.closed) return;
+    var d = t.closed.substring(0,10);
+    byDay[d] = (byDay[d]||0) + (t.pnl||0);
+  });
+  var allDays = Object.keys(byDay); if(!allDays.length){ el.innerHTML='<div style="color:var(--text-3);font-size:13px;padding:8px;">Kapalı trade bulunamadı.</div>'; return; }
+  allDays.sort();
+  var targetYear = ACTIVE_YEAR !== 'all' ? parseInt(ACTIVE_YEAR) : new Date(allDays[allDays.length-1]).getFullYear();
+  if(lbl) lbl.textContent = targetYear;
+  // Build 52-week grid for targetYear
+  var jan1 = new Date(targetYear, 0, 1);
+  var dec31 = new Date(targetYear, 11, 31);
+  var startDay = new Date(jan1); startDay.setDate(startDay.getDate() - startDay.getDay()); // start on Sunday
+  var DAYS = ['S','M','T','W','T','F','S'];
+  var MONTHS_SHORT=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var weeks = [];
+  var cur = new Date(startDay);
+  while(cur <= dec31){
+    var week=[];
+    for(var d2=0;d2<7;d2++){
+      var ds = cur.toISOString().substring(0,10);
+      var isInYear = cur.getFullYear() === targetYear;
+      week.push({date:ds, pnl:byDay[ds]||0, inYear:isInYear});
+      cur.setDate(cur.getDate()+1);
+    }
+    weeks.push(week);
+  }
+  // Get month label positions
+  var monthLabels = {};
+  weeks.forEach(function(w,wi){ var d3=new Date(w[0].date); if(d3.getDate()<=7&&d3.getFullYear()===targetYear){ monthLabels[wi]=MONTHS_SHORT[d3.getMonth()]; } });
+  var maxAbs = Object.values(byDay).reduce(function(m,v){return Math.max(m,Math.abs(v));},1);
+  function cellColor(pnl, inYear){
+    if(!inYear) return 'rgba(255,255,255,0.02)';
+    if(pnl===0) return 'rgba(255,255,255,0.06)';
+    var intensity = Math.min(Math.abs(pnl)/maxAbs, 1);
+    if(pnl>0) return 'rgba(34,197,94,'+(0.15+intensity*0.7).toFixed(2)+')';
+    return 'rgba(239,68,68,'+(0.15+intensity*0.7).toFixed(2)+')';
+  }
+  var html='<div style="display:inline-flex;flex-direction:column;gap:2px;user-select:none;">';
+  // Month row
+  html+='<div style="display:flex;gap:2px;height:14px;margin-bottom:2px;">';
+  html+='<div style="width:16px;"></div>'; // day labels column
+  weeks.forEach(function(w,wi){
+    html+='<div style="width:12px;font-size:9px;color:var(--text-3);overflow:hidden;white-space:nowrap;">'+(monthLabels[wi]||'')+'</div>';
+  });
+  html+='</div>';
+  // Day rows
+  for(var di=0;di<7;di++){
+    html+='<div style="display:flex;align-items:center;gap:2px;">';
+    html+='<div style="width:14px;font-size:9px;color:var(--text-3);text-align:right;margin-right:2px;">'+(di%2===1?DAYS[di]:'')+'</div>';
+    weeks.forEach(function(w){
+      var cell=w[di];
+      var bg=cellColor(cell.pnl, cell.inYear);
+      var tip=cell.inYear&&cell.pnl!==0?cell.date+': '+(cell.pnl>0?'+':'')+cell.pnl.toFixed(0):'';
+      html+='<div style="width:12px;height:12px;border-radius:2px;background:'+bg+';flex-shrink:0;" title="'+tip+'"></div>';
+    });
+    html+='</div>';
+  }
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+// Call new charts from renderStats
+var _origRenderStats = null;
+(function(){
+  var _origRS = window.renderStats;
+  window._buildAnalyticsCharts = function(){
+    setTimeout(function(){ buildStratCompChart(); buildWinRateChart(); buildPremiumTrendChart(); buildHeatmap(); }, 50);
+  };
+})();
 
 // ═══════════════════ REPORTS ═══════════════════
 function renderReports(){
