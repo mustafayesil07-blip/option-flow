@@ -950,7 +950,9 @@
 <div class="screen" id="screen-trades">
   <div class="section-head">
     <div><div class="section-title">Trades</div><div class="section-sub" id="tradesSub">Loading...</div></div>
-    <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button onclick="showExpiryCalendar()" title="Expiry Takvimi" style="padding:5px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text-3);font-size:13px;cursor:pointer;font-family:inherit;">📅</button>
+      <button id="groupToggleBtn" onclick="toggleTradeGrouping()" title="Ticker'a göre grupla" style="padding:5px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text-3);font-size:13px;cursor:pointer;font-family:inherit;">📦</button>
       <div style="display:flex;background:rgba(255,255,255,0.06);border-radius:8px;padding:2px;gap:2px;">
         <button id="viewCards" onclick="setTradeView('cards')" style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;background:rgba(255,255,255,0.12);color:var(--text);font-family:inherit">⊞</button>
         <button id="viewList"  onclick="setTradeView('list')"  style="padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:var(--text-3);font-family:inherit">☰</button>
@@ -2596,6 +2598,9 @@ function renderTradeList(filter, month){
   };
   if(!f.length){listEl.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div>No trades found</div>';return;}
 
+  // ── Grouped by ticker view ──
+  if(_groupByTicker){ renderGroupedTrades(f); return; }
+
   // ── Liste view ──
   if(currentTradeView === 'list'){
     listEl.style.overflowX = '';
@@ -3191,6 +3196,228 @@ function renderReports(){
   var totWR = tot.t>0?tot.w/tot.t:0;
   rows+='<div class="monthly-row" style="background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.1);"><div class="month" style="font-weight:700;">Toplam</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(totWR*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
   var tb=document.getElementById('monthlyTableBody'); if(tb)tb.innerHTML=rows;
+}
+
+// ═══════════════════ WHAT-IF CALCULATOR ═══════════════════
+function showWhatIfCalc(trade){
+  var ov=document.createElement('div'); ov.className='overlay';
+  var sh=document.createElement('div'); sh.className='modal-sheet';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+
+  var hdl=document.createElement('div'); hdl.className='modal-handle'; sh.appendChild(hdl);
+  var titleEl=document.createElement('div');
+  titleEl.style.cssText='font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text)';
+  titleEl.textContent='🎯 What-If P&L — '+trade.ticker+' '+trade.type;
+  var subEl=document.createElement('div');
+  subEl.style.cssText='font-size:11px;color:var(--text-3);margin-bottom:18px';
+  subEl.textContent='Strike: $'+trade.strike+' | Premium: $'+(parseFloat(trade.openPremium)||parseFloat(trade.premium)||0).toFixed(2);
+  sh.appendChild(titleEl); sh.appendChild(subEl);
+
+  var strike=parseFloat(String(trade.strike).replace(',','.'))||0;
+  var prem=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
+  var qty=trade.q||1;
+  var currentPrice=stockPrices[trade.ticker.split(' ')[0]]||strike;
+  var SPREADS=['PCS','CCS','BCS'];
+  var maxLossSpread=trade.teminat||0;
+
+  // Price range: ±40% around strike
+  var minP=Math.max(0.01, strike*0.5);
+  var maxP=strike*1.6;
+  var step=(maxP-minP)/200;
+
+  function calcPnlAtPrice(price){
+    var t=trade;
+    var LONG=['Long Call','Long Put','LEAPS','HEDGE'];
+    var isLongPos=LONG.indexOf(t.type)>=0;
+    if(t.type==='CSP'){
+      if(price>=strike) return prem; // max profit
+      return prem - (strike-price)*qty*100; // loss if ITM
+    }else if(t.type==='CC'||t.type==='PMCC'){
+      if(price<=strike) return prem; // max profit
+      return prem - (price-strike)*qty*100; // called away
+    }else if(SPREADS.indexOf(t.type)>=0){
+      // Bull put spread: max profit = credit, max loss = width - credit
+      if(price>=strike) return prem;
+      return Math.max(prem-maxLossSpread, prem-(strike-price)*qty*100);
+    }else if(t.type==='IC'){
+      var legs=String(t.strike).split('/');
+      var putStrike=legs.length===2?parseFloat(legs[0]):strike;
+      var callStrike=legs.length===2?parseFloat(legs[1]):strike;
+      if(price>putStrike&&price<callStrike) return prem; // in the body
+      if(price<=putStrike) return prem-(putStrike-price)*qty*100;
+      return prem-(price-callStrike)*qty*100;
+    }else if(isLongPos){
+      return -prem + Math.max(0,(price-strike))*qty*100;
+    }
+    return 0;
+  }
+
+  // Result display
+  var resultEl=document.createElement('div');
+  resultEl.style.cssText='text-align:center;margin:10px 0 16px;padding:14px;border-radius:12px;background:rgba(255,255,255,0.04)';
+
+  var sliderLabel=document.createElement('div');
+  sliderLabel.style.cssText='font-size:12px;color:var(--text-3);margin-bottom:8px;text-align:center';
+
+  var slider=document.createElement('input');
+  slider.type='range';
+  slider.min=minP.toFixed(2); slider.max=maxP.toFixed(2); slider.step=step.toFixed(4);
+  slider.value=currentPrice.toFixed(2);
+  slider.style.cssText='width:100%;margin:8px 0 16px;-webkit-appearance:auto;accent-color:var(--purple)';
+
+  function updateResult(){
+    var p=parseFloat(slider.value);
+    var pnl=calcPnlAtPrice(p);
+    var pct=prem>0?pnl/prem:0;
+    sliderLabel.textContent='Hisse Fiyatı: $'+p.toFixed(2)+(currentPrice?' (şu an: $'+currentPrice+')':'');
+    resultEl.style.background=pnl>=0?'rgba(34,197,94,0.08)':'rgba(239,68,68,0.08)';
+    resultEl.innerHTML='<div style="font-size:11px;color:var(--text-3);margin-bottom:4px">P&L at Expiry</div>'+
+      '<div style="font-size:28px;font-weight:700;font-family:var(--font-mono);color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+(pnl>=0?'+':'')+pnl.toFixed(0)+'</div>'+
+      '<div style="font-size:12px;color:var(--text-3);margin-top:4px">'+(pct>=0?'+':''+(pct*100).toFixed(0)+'% of premium')+' | '+qty+' × 100</div>';
+  }
+
+  slider.oninput=updateResult;
+  sh.appendChild(sliderLabel); sh.appendChild(slider); sh.appendChild(resultEl);
+
+  // Scenario table
+  var scenarios=[-30,-20,-10,-5,0,5,10,20,30].map(function(pct){
+    var p=currentPrice?currentPrice*(1+pct/100):strike*(1+pct/100);
+    var pnl=calcPnlAtPrice(Math.max(0,p));
+    return{pct:pct,price:p,pnl:pnl};
+  });
+  var tbl=document.createElement('div');
+  tbl.style.cssText='margin-top:4px';
+  tbl.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Senaryo Tablosu</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
+    '<thead><tr>'+
+    '<th style="text-align:left;padding:5px 8px;color:var(--text-3);font-weight:600">Değişim</th>'+
+    '<th style="text-align:right;padding:5px 8px;color:var(--text-3);font-weight:600">Fiyat</th>'+
+    '<th style="text-align:right;padding:5px 8px;color:var(--text-3);font-weight:600">P&L</th>'+
+    '</tr></thead><tbody>'+
+    scenarios.map(function(s){
+      var c=s.pnl>=0?'var(--profit)':'var(--loss)';
+      return'<tr style="border-top:1px solid rgba(255,255,255,0.05)">'+
+        '<td style="padding:6px 8px;color:'+(s.pct<0?'var(--loss)':s.pct>0?'var(--profit)':'var(--text-2)')+'">'+(s.pct>=0?'+':'')+s.pct+'%</td>'+
+        '<td style="padding:6px 8px;text-align:right;font-family:var(--font-mono);color:var(--text-2)">$'+s.price.toFixed(2)+'</td>'+
+        '<td style="padding:6px 8px;text-align:right;font-family:var(--font-mono);font-weight:700;color:'+c+'">'+(s.pnl>=0?'+':'')+s.pnl.toFixed(0)+'</td>'+
+        '</tr>';
+    }).join('')+'</tbody></table></div>';
+  sh.appendChild(tbl);
+
+  updateResult();
+}
+
+// ═══════════════════ EXPIRY CALENDAR ═══════════════════
+function showExpiryCalendar(){
+  var ov=document.createElement('div'); ov.className='overlay';
+  var sh=document.createElement('div'); sh.className='modal-sheet';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+
+  var hdl=document.createElement('div'); hdl.className='modal-handle'; sh.appendChild(hdl);
+  var titleEl=document.createElement('div');
+  titleEl.style.cssText='font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text)';
+  titleEl.textContent='📅 Expiry Takvimi';
+  sh.appendChild(titleEl);
+
+  var open=getOpenTrades();
+  if(!open.length){
+    sh.innerHTML+='<div style="text-align:center;color:var(--text-3);padding:40px 0">Açık pozisyon yok</div>';
+    return;
+  }
+
+  // Group by expiry date
+  var byDate={};
+  open.forEach(function(t){
+    if(!t.expiry) return;
+    byDate[t.expiry]=(byDate[t.expiry]||[]);
+    byDate[t.expiry].push(t);
+  });
+  var dates=Object.keys(byDate).sort();
+  var now=new Date(); var today=now.toISOString().substring(0,10);
+
+  var subEl=document.createElement('div');
+  subEl.style.cssText='font-size:11px;color:var(--text-3);margin-bottom:16px';
+  subEl.textContent=open.length+' açık pozisyon · '+dates.length+' farklı vade tarihi';
+  sh.appendChild(subEl);
+
+  dates.forEach(function(date){
+    var trades=byDate[date];
+    var dte=getDTE(date);
+    var dteCss=dte<=3?'#EF4444':dte<=7?'#F59E0B':dte<=21?'#3B82F6':'#22C55E';
+    var section=document.createElement('div');
+    section.style.cssText='margin-bottom:14px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08)';
+    var dateHdr=document.createElement('div');
+    dateHdr.style.cssText='background:rgba(255,255,255,0.04);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.06)';
+    var dl=document.createElement('div');dl.style.cssText='font-weight:700;font-size:13px;color:'+dteCss;dl.textContent=date;
+    var dr=document.createElement('div');dr.style.cssText='font-size:11px;font-weight:600;padding:2px 8px;border-radius:8px;background:'+dteCss+'22;color:'+dteCss;
+    dr.textContent=dte===0?'Today':dte===1?'Tomorrow':dte+' DTE';
+    dateHdr.appendChild(dl);dateHdr.appendChild(dr);section.appendChild(dateHdr);
+
+    var tbody=document.createElement('div');tbody.style.cssText='padding:4px 0';
+    trades.forEach(function(t){
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04)';
+      row.onclick=function(){ ov.remove(); openTradeDetail(t.id,t.month); };
+      var lft=document.createElement('div');lft.style.cssText='display:flex;align-items:center;gap:8px';
+      var tc=tcol(t.ticker.split(' ')[0]);
+      var badge=document.createElement('div');badge.style.cssText='width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;background:'+tc.bg+';color:'+tc.color;badge.textContent=t.ticker.split(' ')[0].slice(0,4);
+      var info=document.createElement('div');
+      var tn=document.createElement('div');tn.style.cssText='font-size:13px;font-weight:600;color:var(--text)';tn.textContent=t.ticker+' $'+t.strike;
+      var ts=document.createElement('div');ts.style.cssText='font-size:11px;color:var(--text-3);margin-top:1px';ts.textContent=t.type+' · '+t.q+' contracts';
+      info.appendChild(tn);info.appendChild(ts);lft.appendChild(badge);lft.appendChild(info);
+      var prem=document.createElement('div');
+      prem.style.cssText='font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--info)';
+      prem.textContent=fmtA$(parseFloat(t.openPremium)||parseFloat(t.premium)||0);
+      row.appendChild(lft);row.appendChild(prem);tbody.appendChild(row);
+    });
+    section.appendChild(tbody);sh.appendChild(section);
+  });
+}
+
+// ═══════════════════ TICKER GROUPING ═══════════════════
+var _groupByTicker=false;
+
+function toggleTradeGrouping(){
+  _groupByTicker=!_groupByTicker;
+  var btn=document.getElementById('groupToggleBtn');
+  if(btn){ btn.style.background=_groupByTicker?'rgba(139,92,246,0.2)':'rgba(255,255,255,0.06)'; btn.style.color=_groupByTicker?'var(--purple)':'var(--text-3)'; btn.style.borderColor=_groupByTicker?'rgba(139,92,246,0.35)':'rgba(255,255,255,0.1)'; }
+  renderTradeList(currentFilter);
+}
+
+function renderGroupedTrades(f){
+  var listEl=document.getElementById('tradeList'); if(!listEl) return;
+  var groups={};
+  f.forEach(function(t){ var tk=t.ticker.split(' ')[0]; (groups[tk]=groups[tk]||[]).push(t); });
+  var tickers=Object.keys(groups).sort();
+  listEl.style.overflowX='';
+  listEl.innerHTML=tickers.map(function(tk){
+    var trades=groups[tk];
+    var tc=tcol(tk);
+    var openT=trades.filter(function(t){return!t.closed;});
+    var closedT=trades.filter(function(t){return!!t.closed;});
+    var totalPnl=closedT.reduce(function(s,t){return s+(t.pnl||0);},0);
+    var totalPrem=trades.reduce(function(s,t){return s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
+    var pnlColor=totalPnl>=0?'var(--profit)':'var(--loss)';
+    var html='<div style="margin-bottom:14px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08)">';
+    html+='<div onclick="this.nextSibling.style.display=this.nextSibling.style.display===\'none\'?\'block\':\'none\'" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,0.04);cursor:pointer;">';
+    html+='<div style="display:flex;align-items:center;gap:10px"><div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;background:'+tc.bg+';color:'+tc.color+'">'+tk.slice(0,4)+'</div>';
+    html+='<div><div style="font-size:15px;font-weight:700;color:var(--text)">'+tk+'</div><div style="font-size:11px;color:var(--text-3);margin-top:1px">'+trades.length+' trade'+(trades.length>1?'s':'')+' · '+openT.length+' open · '+closedT.length+' closed</div></div></div>';
+    html+='<div style="text-align:right"><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:'+pnlColor+'">'+(totalPnl>=0?'+':'')+Math.round(totalPnl)+'</div><div style="font-size:10px;color:var(--text-3)">prem: $'+Math.round(totalPrem)+'</div></div></div>';
+    html+='<div style="display:block">';
+    trades.sort(function(a,b){return !a.closed&&b.closed?-1:a.closed&&!b.closed?1:new Date(b.opened)-new Date(a.opened);}).forEach(function(t){
+      var isOpen=!t.closed; var dte=getDTE(t.expiry);
+      var pnlC=t.pnl!=null?(t.pnl>=0?'var(--profit)':'var(--loss)'):'var(--text-3)';
+      html+='<div data-tid="'+t.id+'" data-tmonth="'+t.month+'" onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid rgba(255,255,255,0.05);cursor:pointer">';
+      html+='<div><div style="font-size:12px;font-weight:600;color:var(--text)">'+t.type+' $'+t.strike+' <span style="font-size:10px;color:var(--text-3)">exp:'+t.expiry+'</span></div>';
+      html+='<div style="font-size:11px;color:var(--text-3);margin-top:1px">'+t.q+' cnt · '+t.opened+(isOpen?' · <span style="color:'+(dte<=7?'var(--loss)':dte<=21?'var(--warn)':'var(--info)')+'">'+dte+'DTE</span>':' → '+t.closed)+'</div></div>';
+      html+='<div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:'+pnlC+'">'+(t.pnl!=null?(t.pnl>=0?'+':'')+Math.round(t.pnl):'Open')+'</div>';
+      html+='</div>';
+    });
+    html+='</div></div>';
+    return html;
+  }).join('');
 }
 
 // ═══════════════════ EXPORT / IMPORT ═══════════════════
@@ -4654,6 +4881,14 @@ function openTradeDetail(tradeId, month){
   // Edit button — always visible (both open and closed)
   var editSec=document.createElement('div');
   editSec.style.cssText='margin-top:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06)';
+  // What-If button for open trades
+  if(isOpen){
+    var wiBtn=document.createElement('button');
+    wiBtn.style.cssText='width:100%;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.3);border-radius:12px;padding:10px;color:var(--purple);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px';
+    wiBtn.innerHTML='🎯 <span>What-If P&L Calculator</span>';
+    wiBtn.onclick=function(){ showWhatIfCalc(trade); };
+    editSec.appendChild(wiBtn);
+  }
   var editBtn=document.createElement('button');
   editBtn.style.cssText='width:100%;background:rgba(79,127,255,0.10);border:1px solid rgba(79,127,255,0.25);border-radius:12px;padding:11px;color:#4F7FFF;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer';
   editBtn.textContent='✎ Edit Trade';
