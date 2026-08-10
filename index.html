@@ -4668,6 +4668,22 @@ function parseIBKRCsv(csv){
   return { trades: trades };
 }
 
+// ── Canvas rounded-rect helper (path only — caller calls fill/stroke)
+function _roundRect(ctx, x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y,   x+w, y+r,   r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x,   y+h, x, y+h-r,   r);
+  ctx.lineTo(x, y+r);
+  ctx.arcTo(x,   y,   x+r, y,     r);
+  ctx.closePath();
+}
+
 // ═══════════════════ SHARE CARD PNG EXPORT ═══════════════════
 function exportShareCard(){
   var canvas = document.getElementById('shareCardCanvas');
@@ -4675,53 +4691,117 @@ function exportShareCard(){
   canvas.width = 1080; canvas.height = 600;
   var ctx = canvas.getContext('2d');
   var W = canvas.width, H = canvas.height;
+  ctx.textBaseline = 'alphabetic';
 
-  // Background gradient
-  var bg = ctx.createLinearGradient(0,0,W,H);
-  bg.addColorStop(0, '#1E1408'); bg.addColorStop(1, '#2C1E0E');
-  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  // ── Background
+  var bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#0A0A12'); bg.addColorStop(1, '#12121F');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // Border accent
-  ctx.strokeStyle = 'rgba(196,170,144,0.15)'; ctx.lineWidth = 1.5;
-  ctx.strokeRect(16,16,W-32,H-32);
+  // ── Indigo glow bloom (center)
+  var glow = ctx.createRadialGradient(W/2, H*0.35, 0, W/2, H*0.35, W*0.52);
+  glow.addColorStop(0, 'rgba(99,102,241,0.13)');
+  glow.addColorStop(1, 'rgba(99,102,241,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
 
-  // Logo + Profile
-  ctx.fillStyle = '#C4AA90'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('OptionFlow', 44, 58);
-  ctx.fillStyle = '#7A6A58'; ctx.font = '16px sans-serif';
-  ctx.fillText((PROFILES[ACTIVE_PROFILE]||{}).name || ACTIVE_PROFILE, 44, 82);
+  // ── Top accent bar (gradient indigo)
+  var accG = ctx.createLinearGradient(0, 0, W, 0);
+  accG.addColorStop(0, '#3730A3'); accG.addColorStop(0.5, '#818CF8'); accG.addColorStop(1, '#3730A3');
+  ctx.fillStyle = accG; ctx.fillRect(0, 0, W, 3);
 
-  // Stats
-  var month = getEffectiveDashMonth();
-  var stats = calcStatsFor(month);
-  var closed = getFilteredClosedTrades(month);
-  var _yr = ACTIVE_YEAR !== 'all' ? ACTIVE_YEAR : new Date().getFullYear();
-  // Total P&L
-  var pnlClr = stats.totalPnl >= 0 ? '#22C55E' : '#EF4444';
-  ctx.fillStyle = pnlClr; ctx.font = 'bold 72px monospace'; ctx.textAlign = 'center';
-  ctx.fillText((stats.totalPnl>=0?'+':'')+fmtA$(Math.round(stats.totalPnl)), W/2, H/2-20);
-  ctx.fillStyle = '#7A6A58'; ctx.font = '18px sans-serif';
-  ctx.fillText('Toplam P&L — '+_yr, W/2, H/2+18);
+  // ── Outer border
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, W-1, H-1);
 
-  // Stats row
+  // ── Data
+  var stats = calcStatsFor(getEffectiveDashMonth());
+  var _yr   = ACTIVE_YEAR !== 'all' ? ACTIVE_YEAR : String(new Date().getFullYear());
+  var profName = (PROFILES[ACTIVE_PROFILE]||{}).name || ACTIVE_PROFILE;
+
+  // ── Header left: logo + label
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 24px sans-serif';
+  ctx.fillText('OptionFlow', 44, 52);
+  ctx.fillStyle = '#6366F1'; ctx.font = 'bold 11px sans-serif';
+  ctx.fillText('PERFORMANCE CARD', 44, 72);
+
+  // ── Header right: profile + date
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '15px sans-serif';
+  ctx.fillText(profName, W-44, 52);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '12px sans-serif';
+  ctx.fillText(new Date().toLocaleDateString('tr-TR',{year:'numeric',month:'long',day:'numeric'})+' · '+_yr, W-44, 72);
+
+  // ── P&L Hero
+  var pnlClr = stats.totalPnl >= 0 ? '#4ADE80' : '#F87171';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = pnlClr; ctx.font = 'bold 86px monospace';
+  ctx.fillText((stats.totalPnl>=0?'+':'')+fmtA$(Math.round(stats.totalPnl)), W/2, 206);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.font = '15px sans-serif';
+  ctx.fillText('Toplam P&L  ·  '+_yr, W/2, 234);
+
+  // ── Win/Loss distribution bar
+  var barW=440, barH=5, barX=(W-barW)/2, barY=252;
+  // Loss (full bar, red)
+  ctx.fillStyle = '#F87171';
+  _roundRect(ctx, barX, barY, barW, barH, 3); ctx.fill();
+  // Win overlay (green, proportional)
+  if(stats.winRate > 0){
+    ctx.fillStyle = '#4ADE80';
+    _roundRect(ctx, barX, barY, Math.round(barW*stats.winRate), barH, 3); ctx.fill();
+  }
+  // W/L count text
+  ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.font = '12px sans-serif';
+  ctx.fillText(stats.winners+' W  ·  '+stats.losers+' L', W/2, 280);
+
+  // ── Divider
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(44, 298); ctx.lineTo(W-44, 298); ctx.stroke();
+
+  // ── Stat tiles (3 cols × 2 rows)
+  var pf     = stats.profitFactor || 0;
+  var evVal  = stats.ev || 0;
+  var evStr  = (evVal>=0?'+':'')+fmtA$(Math.round(evVal));
   var statItems = [
-    { lbl:'Win Rate', val: Math.round(stats.winRate*100)+'%' },
-    { lbl:'Trades',   val: String(stats.total) },
-    { lbl:'Avg Win',  val: fmtA$(Math.round(stats.avgWin)) },
-    { lbl:'Payoff',   val: stats.payoff.toFixed(2)+'x' }
+    { lbl:'Win Rate',      val: Math.round(stats.winRate*100)+'%',                    clr:'#818CF8' },
+    { lbl:'Profit Factor', val: pf.toFixed(2),                                        clr: pf>=2?'#4ADE80':'#FCD34D' },
+    { lbl:'EV / Trade',    val: evStr,                                                clr: evVal>=0?'#4ADE80':'#F87171' },
+    { lbl:'Trades',        val: String(stats.total),                                   clr:'#E0E0F4' },
+    { lbl:'Avg Win',       val: fmtA$(Math.round(stats.avgWin||0)),                   clr:'#4ADE80' },
+    { lbl:'Avg Loss',      val: fmtA$(Math.round(Math.abs(stats.avgLoss||0))),        clr:'#F87171' },
   ];
-  var sw = W/statItems.length;
-  statItems.forEach(function(s, i){
-    var cx = sw*i + sw/2;
-    ctx.fillStyle = '#E8D5B8'; ctx.font = 'bold 36px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(s.val, cx, H*0.8);
-    ctx.fillStyle = '#7A6A58'; ctx.font = '14px sans-serif';
-    ctx.fillText(s.lbl, cx, H*0.8+24);
-  });
 
-  // Date stamp
-  ctx.fillStyle = '#4A3C2E'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right';
-  ctx.fillText(new Date().toLocaleDateString('tr-TR',{year:'numeric',month:'long',day:'numeric'}), W-44, H-28);
+  var COLS=3, ROWS=2;
+  var gx=44, gy=312, gw=W-88, gh=H-gy-24;
+  var cw=gw/COLS, ch=gh/ROWS, tp=8;
+
+  statItems.forEach(function(s, i){
+    var col=i%COLS, row=Math.floor(i/COLS);
+    var tx=gx+col*cw+tp, ty=gy+row*ch+tp;
+    var tw=cw-tp*2, th=ch-tp*2;
+
+    // Tile bg + border
+    ctx.fillStyle='rgba(255,255,255,0.035)';
+    _roundRect(ctx, tx, ty, tw, th, 10); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.09)'; ctx.lineWidth=1;
+    _roundRect(ctx, tx+.5, ty+.5, tw-1, th-1, 10); ctx.stroke();
+
+    // Colored top accent on tile
+    var tAccG = ctx.createLinearGradient(tx,ty, tx+tw,ty);
+    tAccG.addColorStop(0, 'transparent'); tAccG.addColorStop(0.5, s.clr+'33'); tAccG.addColorStop(1,'transparent');
+    ctx.fillStyle = tAccG;
+    _roundRect(ctx, tx, ty, tw, 2, 1); ctx.fill();
+
+    // Value
+    ctx.textAlign='center';
+    ctx.fillStyle=s.clr; ctx.font='bold 34px monospace';
+    ctx.fillText(s.val, tx+tw/2, ty+th*0.53);
+
+    // Label
+    ctx.fillStyle='rgba(255,255,255,0.38)'; ctx.font='13px sans-serif';
+    ctx.fillText(s.lbl, tx+tw/2, ty+th*0.53+24);
+  });
 
   // Download
   var a = document.createElement('a');
