@@ -422,6 +422,11 @@
     background: var(--info-dim); border-color: rgba(59,130,246,0.35);
     color: var(--info);
   }
+  /* ── Yıl sekmeleri ── */
+  .year-row { padding: 8px 20px 0; gap: 6px; }
+  .year-pill { font-size: 13px; font-weight: 700; letter-spacing: 0.2px; }
+  .year-pill.active { background: rgba(139,92,246,0.16); border-color: rgba(139,92,246,0.42); color: #a78bfa; }
+  .year-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0 0; }
 
   .trade-list { padding: 0 20px; display: flex; flex-direction: column; gap: 10px; }
   .trade-card {
@@ -779,7 +784,11 @@
 
 <!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
 <div class="screen active" id="screen-dashboard">
-  <div class="filter-row" id="dashMonthFilter" style="padding:12px 20px 4px;">
+  <div class="filter-row year-row" id="dashYearRow">
+    <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
+  </div>
+  <div class="year-divider"></div>
+  <div class="filter-row" id="dashMonthFilter" style="padding:8px 20px 4px;">
     <div class="filter-pill active" data-dash-month="all" onclick="dashMultiMode=false;selectedDashMonths=[];var _db=document.getElementById('dashMultiBtn');if(_db)_db.classList.remove('active');var _dl=document.getElementById('dashMultiLabel');if(_dl)_dl.style.display='none';setDashMonth(this,'all')">All Time</div>
   </div>
   <div class="hero-strip">
@@ -894,6 +903,11 @@
       <div class="section-action" onclick="showAddTrade()">+ New</div>
     </div>
   </div>
+  <!-- Yıl filtresi -->
+  <div class="filter-row year-row" id="tradesYearRow" style="padding:8px 16px 4px;">
+    <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
+  </div>
+  <div class="year-divider" style="margin:0 16px;"></div>
   <!-- Ticker arama -->
   <div style="padding:4px 16px 0;">
     <input type="text" id="tradeTickerSearch" placeholder="🔍 Ticker ara... (örn: NVDA)"
@@ -931,6 +945,10 @@
   <div class="section-head">
     <div><div class="section-title">Statistics</div><div class="section-sub" id="statsSub">Loading...</div></div>
   </div>
+  <div class="filter-row year-row" id="statYearRow">
+    <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
+  </div>
+  <div class="year-divider"></div>
   <div class="filter-row" style="padding:4px 20px 8px;">
     <div class="filter-pill active" data-stat-month="all" onclick="statMultiMode=false;selectedStatMonths=[];var _sb=document.getElementById('statMultiBtn');if(_sb)_sb.classList.remove('active');var _sl=document.getElementById('statMultiLabel');if(_sl)_sl.style.display='none';setStatMonth(this,'all')" id="statAllPill">All Time</div>
   </div>
@@ -969,6 +987,9 @@
   <div style="display:flex;gap:10px;margin:0 20px 16px;flex-wrap:wrap;">
     <button onclick="exportData()" style="flex:1;min-width:140px;background:var(--purple-dim);border:1px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;color:var(--purple);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📤 Export Backup</button>
     <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">📥 Import JSON</button>
+  </div>
+  <div class="filter-row year-row" id="reportYearRow" style="margin:0 0 4px;">
+    <div class="filter-pill year-pill active" data-year="all">Tüm Yıllar</div>
   </div>
   <div class="monthly-table">
     <div style="font-family:var(--font-head);font-size:14px;font-weight:600;margin-bottom:10px;padding:0 2px;">Monthly Breakdown</div>
@@ -1641,7 +1662,7 @@ try {
 }
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
 
-function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); if(typeof buildMonthPills==='function') buildMonthPills(); }
+function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); if(typeof buildMonthPills==='function'){ buildMonthPills(); buildYearPills(); } }
 function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} syncFirestoreIfReady(); }
 
 var _fcmToken = null;
@@ -1725,10 +1746,13 @@ function calcStats() {
 
 function getMonthlyStats() {
   return Object.keys(tradesData).map(function(m){
-    var t = (tradesData[m]||[]).filter(function(x){ return x.closed && x.pnl!=null; });
+    var src = (tradesData[m]||[]);
+    // Yıl filtresi
+    if(ACTIVE_YEAR !== 'all') src = src.filter(function(t){ return getTradeYear(t) === ACTIVE_YEAR; });
+    var t = src.filter(function(x){ return x.closed && x.pnl!=null; });
     // Kısmi kapanmaları da ekle
     var partialTrades = [];
-    (tradesData[m]||[]).forEach(function(x){
+    src.forEach(function(x){
       if(!x.closed && x.partialCloses && x.partialCloses.length>0){
         x.partialCloses.forEach(function(pc){ partialTrades.push({pnl:pc.pnl||0}); });
       }
@@ -1736,7 +1760,7 @@ function getMonthlyStats() {
     var all = t.concat(partialTrades);
     var pnl = all.reduce(function(s,x){return s+x.pnl;},0);
     var wins = all.filter(function(x){return x.pnl>0;}).length;
-    return { month:m, trades:all.length, pnl, wr: all.length ? wins/all.length : 0 };
+    return { month:m, trades:all.length, pnl:pnl, wr: all.length ? wins/all.length : 0 };
   }).filter(function(x){ return x.trades > 0; });
 }
 
@@ -1821,12 +1845,61 @@ var selectedStatMonths = [];   // empty = use currentStatMonth
 var selectedDashMonths = [];   // empty = use currentDashMonth
 var statMultiMode = false;
 var dashMultiMode = false;
+var ACTIVE_YEAR = 'all'; // Tüm sayfalarda geçerli yıl filtresi
 
 function getEffectiveStatMonth(){
   return selectedStatMonths.length > 0 ? selectedStatMonths : currentStatMonth;
 }
 function getEffectiveDashMonth(){
   return selectedDashMonths.length > 0 ? selectedDashMonths : currentDashMonth;
+}
+
+// ── Yıl filtresi yardımcıları ──────────────────────────────────────
+function getTradeYear(t){
+  var d = t.opened || t.closed || '';
+  return d ? d.substring(0,4) : '';
+}
+function getAvailableYears(){
+  var ys = {};
+  getAllTrades().forEach(function(t){ var y=getTradeYear(t); if(y) ys[y]=1; });
+  return Object.keys(ys).sort().reverse();
+}
+function buildYearPills(){
+  var years = getAvailableYears();
+  ['dashYearRow','tradesYearRow','statYearRow','reportYearRow'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.innerHTML = '';
+    var allP = document.createElement('div');
+    allP.className = 'filter-pill year-pill' + (ACTIVE_YEAR==='all'?' active':'');
+    allP.setAttribute('data-year','all');
+    allP.textContent = 'Tüm Yıllar';
+    allP.onclick = function(){ setActiveYear('all'); };
+    el.appendChild(allP);
+    years.forEach(function(y){
+      var p = document.createElement('div');
+      p.className = 'filter-pill year-pill' + (ACTIVE_YEAR===y?' active':'');
+      p.setAttribute('data-year', y);
+      p.textContent = y;
+      p.onclick = (function(_y){ return function(){ setActiveYear(_y); }; })(y);
+      el.appendChild(p);
+    });
+  });
+}
+function setActiveYear(y){
+  ACTIVE_YEAR = y;
+  // Ay filtrelerini sıfırla
+  currentDashMonth='all'; currentStatMonth='all'; currentMonthFilter='all';
+  selectedDashMonths=[]; selectedStatMonths=[];
+  dashMultiMode=false; statMultiMode=false;
+  // Ay seçim arayüzünü ve yıl pillerini güncelle
+  buildYearPills();
+  buildMonthPills();
+  // Aktif sayfayı yeniden çiz
+  if(currentScreen==='dashboard') renderDashboard();
+  else if(currentScreen==='trades') renderTradeList(currentFilter);
+  else if(currentScreen==='statistics') renderStats();
+  else if(currentScreen==='reports') renderReports();
 }
 
 function setDashMonth(el, month){
@@ -1926,10 +1999,17 @@ function buildMonthPills() {
   var nowIdx   = new Date().getMonth();
   var nowMonth = _MONTHS_KEY[nowIdx];
 
-  // Veride olan aylar + bu ay
+  // Veride olan aylar — ACTIVE_YEAR'a göre filtreli
   var inData = {};
-  Object.keys(tradesData || {}).forEach(function(m){ inData[m] = true; });
-  inData[nowMonth] = true;
+  Object.keys(tradesData || {}).forEach(function(m){
+    var arr = tradesData[m] || [];
+    if(ACTIVE_YEAR === 'all'){
+      if(arr.length) inData[m] = true;
+    } else {
+      if(arr.some(function(t){ return getTradeYear(t) === ACTIVE_YEAR; })) inData[m] = true;
+    }
+  });
+  if(ACTIVE_YEAR === 'all') inData[nowMonth] = true;
 
   // Bu aydan geriye, sadece verisi olanlar
   var ordered = [];
@@ -2025,6 +2105,10 @@ function buildMonthPills() {
 
 function getFilteredTrades(month){
   var all = getAllTrades();
+  // Yıl filtresi
+  if(ACTIVE_YEAR !== 'all'){
+    all = all.filter(function(t){ return getTradeYear(t) === ACTIVE_YEAR; });
+  }
   if(!month || month === 'all') return all;
   if(Array.isArray(month)){
     if(month.length === 0) return all;
@@ -2276,6 +2360,10 @@ function renderTradeList(filter, month){
   // Apply month filter on top
   if(currentMonthFilter && currentMonthFilter!=='all'){
     f=f.filter(function(t){return t.month===currentMonthFilter;});
+  }
+  // Apply year filter
+  if(ACTIVE_YEAR !== 'all'){
+    f=f.filter(function(t){ return getTradeYear(t) === ACTIVE_YEAR; });
   }
   // Apply ticker filter
   if(currentTickerFilter){
@@ -2688,10 +2776,17 @@ function renderRisk(){
 
 // ═══════════════════ REPORTS ═══════════════════
 function renderReports(){
-  var m=getMonthlyStats(); var tot={t:0,pnl:0};
-  var rows=m.map(function(x){tot.t+=x.trades;tot.pnl+=x.pnl;var wc=x.wr>=.7?'var(--profit)':x.wr>=.5?'var(--warn)':'var(--loss)';return'<div class="monthly-row"><div class="month">'+x.month+'</div><div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div><div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</div></div>';}).reverse().join('');
-  var as=calcStats();
-  rows+='<div class="monthly-row" style="background:rgba(255,255,255,0.02);"><div class="month" style="font-weight:700;">Total</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(as.winRate*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
+  var m=getMonthlyStats(); var tot={t:0,pnl:0,w:0};
+  var _monthOrder=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+  m.sort(function(a,b){ return _monthOrder.indexOf(b.month)-_monthOrder.indexOf(a.month); });
+  var rows=m.map(function(x){
+    tot.t+=x.trades; tot.pnl+=x.pnl; tot.w+=Math.round(x.wr*x.trades);
+    var wc=x.wr>=.7?'var(--profit)':x.wr>=.5?'var(--warn)':'var(--loss)';
+    var _disp=(_MONTHS_DISP&&_MONTHS_DISP[x.month])?_MONTHS_DISP[x.month]+' ('+x.month+')':x.month;
+    return '<div class="monthly-row"><div class="month">'+_disp+'</div><div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div><div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</div></div>';
+  }).join('');
+  var totWR = tot.t>0?tot.w/tot.t:0;
+  rows+='<div class="monthly-row" style="background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.1);"><div class="month" style="font-weight:700;">Toplam</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(totWR*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
   var tb=document.getElementById('monthlyTableBody'); if(tb)tb.innerHTML=rows;
 }
 
@@ -4832,6 +4927,7 @@ function selectProfile(profile) {
   LS_ZONES        = profileKey('optflow_zones_v1');
 
   // Filtre sıfırla
+  ACTIVE_YEAR = 'all';
   currentTickerFilter = '';
   VERGI_TICKER_FILTER = '';
   var _tts = document.getElementById('tradeTickerSearch');
@@ -4909,7 +5005,7 @@ function reloadProfileData() {
   if(typeof loadNlv === 'function') loadNlv();
   // Ekranı yenile
   switchScreen('dashboard');
-  setTimeout(function(){ buildMonthPills(); renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
+  setTimeout(function(){ buildMonthPills(); buildYearPills(); renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
 }
 
 window.reloadProfileData = reloadProfileData;
