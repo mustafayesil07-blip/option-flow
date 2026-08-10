@@ -682,7 +682,18 @@
   .monthly-row .month { font-weight: 500; }
   .monthly-row .trades { color: var(--text-2); font-family: var(--font-mono); }
   .monthly-row .wr { color: var(--text-2); font-family: var(--font-mono); }
-  .monthly-row .pnl { font-family: var(--font-mono); font-weight: 600; }
+  .monthly-row .pnl { font-family: var(--font-mono); font-weight: 600; display:flex; align-items:center; gap:6px; }
+  .monthly-note-row { padding: 0 14px 10px; display: none; border-bottom: 1px solid var(--border); }
+  .monthly-note-row.open { display: block; }
+  .monthly-note-row textarea {
+    width: 100%; box-sizing: border-box;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: 12px; line-height: 1.5; padding: 8px 10px;
+    resize: vertical; min-height: 54px; font-family: inherit;
+    transition: border-color 0.15s;
+  }
+  .monthly-note-row textarea:focus { outline: none; border-color: var(--accent,#6366f1); }
+  .month-note-btn { background:none; border:none; cursor:pointer; padding:2px 0 2px 2px; font-size:13px; line-height:1; transition:opacity 0.15s; }
 
   /* ═══════════════════════════════════════════
      LEAPS SCREEN
@@ -1872,6 +1883,28 @@ var YUFE_LS = 'optflow_yufe_v1';
 var yufeData = {};
 try { var _yf = localStorage.getItem(YUFE_LS); if(_yf) yufeData = JSON.parse(_yf); } catch(e){}
 function saveYufe(){ try { localStorage.setItem(YUFE_LS, JSON.stringify(yufeData)); } catch(e){} }
+
+// Monthly breakdown notes — { 'YEAR-TurkishMonth': noteText }
+var MONTH_NOTES_LS = 'optflow_month_notes_v1';
+var monthNotesData = {};
+try { var _mnd = localStorage.getItem(MONTH_NOTES_LS); if(_mnd) monthNotesData = JSON.parse(_mnd); } catch(e){}
+function saveMonthNotes(){ try { localStorage.setItem(MONTH_NOTES_LS, JSON.stringify(monthNotesData)); } catch(e){} }
+function getMonthNote(k){ return monthNotesData[k] || ''; }
+function setMonthNote(k,v){ if(v && v.trim()) monthNotesData[k]=v.trim(); else delete monthNotesData[k]; saveMonthNotes(); }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toggleMonthNote(id){
+  var el=document.getElementById(id); if(!el) return;
+  var opening=!el.classList.contains('open');
+  el.classList.toggle('open',opening);
+  if(opening){ var ta=el.querySelector('textarea'); if(ta) ta.focus(); }
+}
+function saveMonthNoteFromTA(k,id){
+  var el=document.getElementById(id); if(!el) return;
+  var ta=el.querySelector('textarea'); if(!ta) return;
+  setMonthNote(k,ta.value);
+  var btn=document.querySelector('.month-note-btn[data-note-key="'+k+'"]');
+  if(btn) btn.style.opacity=monthNotesData[k]?'1':'0.4';
+}
 
 // Get the previous month key (YYYY-MM) for a date string 'YYYY-MM-DD'
 function yufePrevMonthKey(dateStr){
@@ -3864,13 +3897,31 @@ function renderReports(){
   var m=getMonthlyStats(); var tot={t:0,pnl:0,w:0};
   var _monthOrder=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
   m.sort(function(a,b){ return _monthOrder.indexOf(b.month)-_monthOrder.indexOf(a.month); });
-  var rows=m.map(function(x){
+  var yr = (ACTIVE_YEAR==='all') ? 'all' : ACTIVE_YEAR;
+  var rows='';
+  m.forEach(function(x){
     tot.t+=x.trades; tot.pnl+=x.pnl; tot.w+=Math.round(x.wr*x.trades);
     var wc=x.wr>=.7?'var(--profit)':x.wr>=.5?'var(--warn)':'var(--loss)';
-    var _disp=(_MONTHS_DISP&&_MONTHS_DISP[x.month])?_MONTHS_DISP[x.month]+' ('+x.month+')':x.month;
-    return '<div class="monthly-row"><div class="month">'+_disp+'</div><div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div><div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</div></div>';
-  }).join('');
-  var totWR = tot.t>0?tot.w/tot.t:0;
+    var _disp=(_MONTHS_DISP&&_MONTHS_DISP[x.month])?_MONTHS_DISP[x.month]:x.month;
+    var nk=yr+'-'+x.month;
+    var nid='mnote-'+yr+'-'+x.month;
+    var note=getMonthNote(nk);
+    var btnOp=note?'1':'0.4';
+    rows+=
+      '<div class="monthly-row">'+
+        '<div class="month">'+_disp+'</div>'+
+        '<div class="trades" style="font-family:var(--font-mono);">'+x.trades+'</div>'+
+        '<div class="wr" style="font-family:var(--font-mono);color:'+wc+';">'+Math.round(x.wr*100)+'%</div>'+
+        '<div class="pnl">'+
+          '<span style="font-family:var(--font-mono);font-weight:600;color:'+(x.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(x.pnl)+'</span>'+
+          '<button class="month-note-btn" data-note-key="'+nk+'" onclick="toggleMonthNote(\''+nid+'\')" style="opacity:'+btnOp+';color:var(--info,#6366f1);" title="Not ekle / düzenle">📝</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="'+nid+'" class="monthly-note-row">'+
+        '<textarea placeholder="Bu ay için notlar, gözlemler..." onblur="saveMonthNoteFromTA(\''+nk+'\',\''+nid+'\')">'+escHtml(note)+'</textarea>'+
+      '</div>';
+  });
+  var totWR=tot.t>0?tot.w/tot.t:0;
   rows+='<div class="monthly-row" style="background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.1);"><div class="month" style="font-weight:700;">Toplam</div><div class="trades" style="font-family:var(--font-mono);font-weight:600;">'+tot.t+'</div><div class="wr" style="font-family:var(--font-mono);font-weight:600;color:var(--profit);">'+Math.round(totWR*100)+'%</div><div class="pnl" style="font-family:var(--font-mono);font-weight:700;color:'+(tot.pnl>=0?'var(--profit)':'var(--loss)')+';">'+fmt$(tot.pnl)+'</div></div>';
   var tb=document.getElementById('monthlyTableBody'); if(tb)tb.innerHTML=rows;
 }
