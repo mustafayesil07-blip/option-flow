@@ -951,11 +951,6 @@
       <div class="hero-val" id="heroOpen">—</div>
       <div class="hero-change" id="heroOpenSub"></div>
     </div>
-    <div class="hero-card" style="background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(220,38,38,0.04));border-color:rgba(239,68,68,0.2);">
-      <div class="hero-label">Max Possible Loss</div>
-      <div class="hero-val privacy-val" id="heroMaxLoss" style="color:var(--loss)">—</div>
-      <div class="hero-change" id="heroMaxLossSub"></div>
-    </div>
     <div class="hero-card" style="grid-column:1/-1;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.06));border-color:rgba(59,130,246,0.2);">
       <div class="hero-label">Open Position Premiums</div>
       <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -2090,22 +2085,6 @@ function updateHealthBanner(){
     '<div class="hb-tags">'+tags.join('')+'</div>';
 }
 
-// ── Max Loss calculation ───────────────────────────────────
-function calcOpenMaxLoss(){
-  var open = getOpenTrades();
-  var SPREADS = ['PCS','CCS','BCS','IC'];
-  return open.reduce(function(s, t){
-    var prem = parseFloat(t.openPremium)||parseFloat(t.premium)||0;
-    var qty  = t.q || 1;
-    if(typeof isLong === 'function' && isLong(t.type)) return s + prem; // long: max loss = premium paid
-    if(SPREADS.indexOf(t.type) >= 0) return s + (t.teminat||0);
-    if(t.type === 'CSP'){
-      var stk = parseFloat(String(t.strike).replace(',','.')) || 0;
-      return s + Math.max(t.teminat||0, stk * qty * 100) - prem;
-    }
-    return s + (t.teminat||0); // fallback: use collateral
-  }, 0);
-}
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
 function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; return'tag-other'; }
@@ -2600,10 +2579,6 @@ function renderDashboard(){
   var dta=open.filter(function(t){var d=getDTE(t.expiry);return d!==null&&d<=7;}).length;
   var al=da+dta;
   el=document.getElementById('heroOpenSub'); if(el)el.innerHTML=al>0?'<span class="hero-badge warn">'+al+' alert'+(al>1?'s':'')+'</span>':'<span class="hero-badge info">healthy</span>';
-  // Max Loss card
-  var _ml = calcOpenMaxLoss();
-  el=document.getElementById('heroMaxLoss'); if(el){ el.style.color='var(--loss)'; animCountTo(el, _ml, function(v){return '-$'+Math.abs(Math.round(v)).toLocaleString('en-US');}, 700); }
-  el=document.getElementById('heroMaxLossSub'); if(el) el.innerHTML='<span class="hero-badge" style="background:rgba(239,68,68,0.12);color:var(--loss);">'+open.length+' pozisyon, tam zarar senaryosu</span>';
   // Health banner
   updateHealthBanner();
 
