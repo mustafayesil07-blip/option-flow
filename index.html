@@ -1370,6 +1370,29 @@
     </div>
   </div>
 
+  <!-- YİÜFE ENDEKSİ -->
+  <div style="margin:0 20px 12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-family:var(--font-head);font-size:14px;font-weight:600;">&#x1F4CA; YİÜFE Endeksi</div>
+      <div style="font-size:10px;color:var(--text-3);">Aylık endeks değerleri</div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;">
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">GVK 81/3 — Alım ayının bir önceki ayı ile satış ayının bir önceki ayı arasında YİÜFE artışı <strong style="color:var(--warn);">%10+</strong> ise endeksleme yapılır. Oran: (satış öncesi ay ÷ alım öncesi ay).</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:12px;align-items:end;">
+        <div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Ay (YYYY-AA)</div>
+          <input type="month" id="yufeTarih" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box;">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;">Endeks Değeri</div>
+          <input type="number" id="yufeValue" placeholder="örn: 3412.75" step="0.01" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none;width:100%;box-sizing:border-box;">
+        </div>
+        <button onclick="yufeEkle()" style="background:var(--info);border:none;border-radius:10px;padding:11px 16px;color:white;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Ekle</button>
+      </div>
+      <div id="yufeListesi" style="max-height:160px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
   <!-- VERGI TABLOSU -->
   <div style="margin:0 20px 12px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -1843,6 +1866,95 @@ var TAX_LS = 'tax_v1';
 var taxData = {}; // { tradeId: { komisyonAcilis, komisyonKapanis } }
 try { var _tx = localStorage.getItem(TAX_LS); if(_tx) taxData = JSON.parse(_tx); } catch(e){}
 function saveTaxData(){ try { localStorage.setItem(TAX_LS, JSON.stringify(taxData)); } catch(e){} }
+
+// YİÜFE monthly index data — { 'YYYY-MM': value }
+var YUFE_LS = 'optflow_yufe_v1';
+var yufeData = {};
+try { var _yf = localStorage.getItem(YUFE_LS); if(_yf) yufeData = JSON.parse(_yf); } catch(e){}
+function saveYufe(){ try { localStorage.setItem(YUFE_LS, JSON.stringify(yufeData)); } catch(e){} }
+
+// Get the previous month key (YYYY-MM) for a date string 'YYYY-MM-DD'
+function yufePrevMonthKey(dateStr){
+  if(!dateStr) return null;
+  var p = dateStr.split('-'); if(p.length < 2) return null;
+  var yr = parseInt(p[0]), mo = parseInt(p[1]);
+  mo--; if(mo < 1){ mo = 12; yr--; }
+  return yr + '-' + (mo < 10 ? '0' : '') + mo;
+}
+
+// Calculate YİÜFE indexing eligibility for a trade
+// Returns { eligible, ratio, increase, openKey, closeKey, openIdx, closeIdx, reason }
+function calcYufeIndexing(t){
+  if(!t.opened || !t.closed) return { eligible:false, reason:'tarih eksik' };
+  var openKey  = yufePrevMonthKey(t.opened);
+  var closeKey = yufePrevMonthKey(t.closed);
+  if(!openKey || !closeKey) return { eligible:false, reason:'ay belirlenemedi' };
+  var openIdx  = yufeData[openKey];
+  var closeIdx = yufeData[closeKey];
+  if(!openIdx) return { eligible:false, reason:'alım ayı endeksi eksik ('+openKey+')', openKey:openKey, closeKey:closeKey };
+  if(!closeIdx) return { eligible:false, reason:'satış ayı endeksi eksik ('+closeKey+')', openKey:openKey, closeKey:closeKey };
+  var ratio    = closeIdx / openIdx;
+  var increase = (ratio - 1) * 100;
+  if(increase <= 10) return { eligible:false, reason:'artış %'+increase.toFixed(1)+' ≤ %10 (şart sağlanmıyor)', ratio:ratio, increase:increase, openKey:openKey, closeKey:closeKey, openIdx:openIdx, closeIdx:closeIdx };
+  return { eligible:true, ratio:ratio, increase:increase, openKey:openKey, closeKey:closeKey, openIdx:openIdx, closeIdx:closeIdx };
+}
+
+// Apply YİÜFE ratio to a calculated tax result
+// Short: cost side = (closePrem + closeKom) * kapanis_kur — multiply by ratio
+// Long:  cost side = (openPrem  + openKom)  * acilis_kur  — multiply by ratio
+function applyYufeMatrah(r, t, yIdx){
+  if(!yIdx || !yIdx.eligible) return r.matrah_try;
+  var ratio = yIdx.ratio;
+  if(isLong(t.type)){
+    // Long: income = close; cost = open (indexed)
+    var incTRY = (r.closePrem - r.komKapanis) * r.kapanis_kur;
+    var costTRY = (r.openPrem + r.komAcilis) * r.acilis_kur;
+    return Math.round((incTRY - costTRY * ratio) * 100) / 100;
+  } else {
+    // Short: income = open; cost = close (indexed)
+    var incTRY2 = (r.openPrem - r.komAcilis) * r.acilis_kur;
+    var costTRY2 = (r.closePrem + r.komKapanis) * r.kapanis_kur;
+    return Math.round((incTRY2 - costTRY2 * ratio) * 100) / 100;
+  }
+}
+
+function yufeEkle(){
+  var tarih = document.getElementById('yufeTarih').value;  // YYYY-MM
+  var deger = parseFloat(document.getElementById('yufeValue').value);
+  if(!tarih){ alert('Ay seçin'); return; }
+  if(!deger || deger <= 0){ alert('Geçerli bir endeks değeri girin'); return; }
+  yufeData[tarih] = Math.round(deger * 100) / 100;
+  saveYufe();
+  document.getElementById('yufeValue').value = '';
+  renderYufeListesi();
+  renderVergi();
+}
+
+function yufeSil(key){
+  delete yufeData[key];
+  saveYufe();
+  renderYufeListesi();
+  renderVergi();
+}
+
+function renderYufeListesi(){
+  var el = document.getElementById('yufeListesi');
+  if(!el) return;
+  var keys = Object.keys(yufeData).sort().reverse();
+  if(!keys.length){
+    el.innerHTML = '<div style="color:var(--text-3);font-size:12px;text-align:center;padding:8px;">Henüz endeks girilmedi</div>';
+    return;
+  }
+  el.innerHTML = keys.slice(0,24).map(function(k){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.07);">'+
+      '<div style="font-family:var(--font-mono);font-size:13px;">'+k+'</div>'+
+      '<div style="display:flex;align-items:center;gap:10px;">'+
+        '<div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--info);">'+parseFloat(yufeData[k]).toFixed(2)+'</div>'+
+        '<button onclick="yufeSil(\''+k+'\')" style="background:var(--loss-dim);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 8px;color:var(--loss);font-size:11px;cursor:pointer;">Sil</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
 
 // Manual TRY Tax Base overrides
 var VERGI_OVERRIDE_LS = 'optflow_vergi_override_v1';
@@ -4177,14 +4289,18 @@ function fetchTCMBRates(){
   if(btn){ btn.disabled=true; btn.textContent='Çekiliyor...'; }
   if(status){ status.style.display='block'; status.style.background='rgba(59,130,246,0.1)'; status.style.border='1px solid rgba(59,130,246,0.3)'; status.style.color='var(--info)'; status.textContent='TCMB\'den kur verileri çekiliyor...'; }
 
-  // Find dates without rates that need fetching
-  var closedTrades=getAllTrades().filter(function(t){ return t.closed; });
-  var missingDates={};
-  closedTrades.forEach(function(t){
-    var d=t.closed?t.closed.substring(0,10):'';
-    if(d && !kurlarData[d]) missingDates[d]=true;
+  // Find closing/opening dates without rates
+  var allT = getAllTrades();
+  var missingDates = {};
+  allT.forEach(function(t){
+    [t.closed, t.opened].forEach(function(d){
+      if(d && !kurlarData[d.substring(0,10)]) missingDates[d.substring(0,10)] = true;
+    });
+    (t.partialCloses||[]).forEach(function(pc){
+      if(pc.date && !kurlarData[pc.date.substring(0,10)]) missingDates[pc.date.substring(0,10)] = true;
+    });
   });
-  var datesToFetch=Object.keys(missingDates).sort();
+  var datesToFetch = Object.keys(missingDates).sort();
 
   if(!datesToFetch.length){
     if(status){ status.style.background='rgba(34,197,94,0.1)'; status.style.border='1px solid rgba(34,197,94,0.3)'; status.style.color='var(--profit)'; status.textContent='Tüm tarihler zaten mevcut — eksik kur yok.'; }
@@ -4195,50 +4311,70 @@ function fetchTCMBRates(){
 
   // Parse TCMB XML for USD buying rate
   function parseUSDRate(xml){
-    // Try to find USD ForexBuying
-    var match=xml.match(/<Currency\s+CrossOrder="0"[^>]*Kod="USD"[^>]*>[\s\S]*?<ForexBuying>([\d.]+)<\/ForexBuying>/i);
-    if(!match){ match=xml.match(/<ForexBuying>([\d.]+)<\/ForexBuying>/i); }
+    var match = xml.match(/<Currency[^>]+Kod="USD"[^>]*>[\s\S]*?<ForexBuying>([\d.]+)<\/ForexBuying>/i);
+    if(!match) match = xml.match(/<ForexBuying>([\d.]+)<\/ForexBuying>/i);
     if(match) return parseFloat(match[1]);
     return null;
   }
 
-  function formatTCMBDate(isoDate){
-    var p=isoDate.split('-'); if(p.length!==3) return null;
-    return p[2]+p[1]+p[0]; // DDMMYYYY
+  function buildTCMBUrl(isoDate){
+    var p = isoDate.split('-'); if(p.length !== 3) return null;
+    var ddmmyyyy = p[2]+p[1]+p[0]; // DDMMYYYY
+    var yyyymm   = p[0]+p[1];       // YYYYMM
+    return 'https://www.tcmb.gov.tr/kurlar/'+yyyymm+'/'+ddmmyyyy+'.xml';
   }
-  function formatYYYYMM(isoDate){ var p=isoDate.split('-'); return p[0]+p[1]; }
+
+  // Subtract N days from an ISO date string
+  function subtractDays(isoDate, n){
+    var d = new Date(isoDate); d.setDate(d.getDate() - n);
+    return d.toISOString().substring(0, 10);
+  }
+
+  // CORS proxy — TCMB doesn't send Access-Control-Allow-Origin headers
+  var PROXY = 'https://corsproxy.io/?url=';
 
   var added=0, failed=0, total=datesToFetch.length;
   var idx=0;
 
+  // Try the date, then up to 4 days back (for weekends/holidays)
+  function tryFetchDate(isoDate, daysBack, onSuccess, onFail){
+    if(daysBack > 4){ onFail(); return; }
+    var tryDate = daysBack === 0 ? isoDate : subtractDays(isoDate, daysBack);
+    var url = buildTCMBUrl(tryDate);
+    fetch(PROXY + encodeURIComponent(url), {cache:'no-cache'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(function(xml){
+        var rate = parseUSDRate(xml);
+        if(rate && rate > 1){ onSuccess(rate); }
+        else { tryFetchDate(isoDate, daysBack+1, onSuccess, onFail); }
+      })
+      .catch(function(){ tryFetchDate(isoDate, daysBack+1, onSuccess, onFail); });
+  }
+
   function fetchNext(){
-    if(idx>=datesToFetch.length){
-      // Done
-      if(added>0) saveKurlar();
-      var msg=added+' kur eklendi'+(failed>0?', '+failed+' başarısız':'')+'.';
+    if(idx >= datesToFetch.length){
+      if(added > 0) saveKurlar();
+      var msg = added+' kur eklendi'+(failed>0?', '+failed+' başarısız / bulunamadı':'')+'.';
       if(status){ status.style.background=added>0?'rgba(34,197,94,0.1)':'rgba(245,158,11,0.1)'; status.style.border=added>0?'1px solid rgba(34,197,94,0.3)':'1px solid rgba(245,158,11,0.3)'; status.style.color=added>0?'var(--profit)':'var(--warn)'; status.textContent=msg; }
       if(btn){ btn.disabled=false; btn.innerHTML='&#x1F3E6; TCMB\'den Çek'; }
       if(added>0){ if(typeof renderVergi==='function') renderVergi(); if(typeof renderKurListesi==='function') renderKurListesi(); }
-      setTimeout(function(){ if(status) status.style.display='none'; },6000);
+      setTimeout(function(){ if(status) status.style.display='none'; }, 6000);
       return;
     }
-    var date=datesToFetch[idx]; idx++;
-    var ddmmyyyy=formatTCMBDate(date);
-    var yyyymm=formatYYYYMM(date);
-    var url='https://www.tcmb.gov.tr/kurlar/'+yyyymm+'/'+ddmmyyyy+'.xml';
-    if(status) status.textContent='Çekiliyor: '+date+' ('+idx+'/'+total+')...';
-    fetch(url,{cache:'no-cache'})
-      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
-      .then(function(xml){
-        var rate=parseUSDRate(xml);
-        if(rate && rate>1){
-          var rate4=Math.trunc(rate*10000)/10000;
-          kurlarData[date]=rate4;
-          added++;
-        } else { failed++; }
-        setTimeout(fetchNext, 150); // polite delay
-      })
-      .catch(function(){ failed++; setTimeout(fetchNext, 150); });
+    var date = datesToFetch[idx]; idx++;
+    if(status) status.textContent = 'Çekiliyor: '+date+' ('+idx+'/'+total+')...';
+    tryFetchDate(date, 0,
+      function(rate){
+        var rate4 = Math.trunc(rate * 10000) / 10000;
+        kurlarData[date] = rate4;
+        added++;
+        setTimeout(fetchNext, 200);
+      },
+      function(){
+        failed++;
+        setTimeout(fetchNext, 200);
+      }
+    );
   }
   fetchNext();
 }
@@ -5223,7 +5359,10 @@ function _renderVergiInner(){
     } else if(!res.hasKur){
       missingKur++;
     } else {
-      totalMatrah += res.matrah_try;
+      // Apply YİÜFE indexing if eligible
+      var _yIdx = calcYufeIndexing(t);
+      var _effectiveMatrah = _yIdx.eligible ? applyYufeMatrah(res, t, _yIdx) : res.matrah_try;
+      totalMatrah += _effectiveMatrah;
       totalUSD += (t.pnl||0);
     }
     rows.push({t:t, res:res});
@@ -5443,93 +5582,72 @@ function _renderVergiInner(){
       _optCard.innerHTML = _optHtml;
       _vtc.appendChild(_optCard);
 
-      // ── Endeksleme Otomasyonu (TÜFE) ────────────────────────────
+      // ── YİÜFE Endeksleme Özeti ──────────────────────────────────
       var _idxCard = document.createElement('div');
       _idxCard.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;';
-      var _idxLS = 'optflow_tufe_rates_v1';
-      var _tufeRates = {};
-      try { var _tr = localStorage.getItem(_idxLS); if(_tr) _tufeRates = JSON.parse(_tr); } catch(e) {}
-      var _idxYr = vergiYil;
-      var _tufeVal = _tufeRates[_idxYr] || '';
-      var _idxTitle = document.createElement('div');
-      _idxTitle.style.cssText = 'font-size:12px;font-weight:700;color:var(--info);margin-bottom:6px;';
-      _idxTitle.textContent = '\u{1F4C8} Enflasyon Endeksleme (TÜFE)';
-      _idxCard.appendChild(_idxTitle);
-      var _idxNote = document.createElement('div');
-      _idxNote.style.cssText = 'font-size:10px;color:var(--text-3);margin-bottom:10px;line-height:1.4;';
-      _idxNote.textContent = 'Türk Gelir Vergisi Kanunu 81. madde: Menkul kıymetler 1 yıldan uzun süre elde tutulduğunda TÜFE endekslemesi uygulanabilir. '+_idxYr+' yılı TÜFE artış oranını gir (ÜFE farkı %10+).';
-      _idxCard.appendChild(_idxNote);
-      var _idxRow = document.createElement('div');
-      _idxRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px;';
-      var _idxInp = document.createElement('input');
-      _idxInp.type = 'number'; _idxInp.step = '0.1'; _idxInp.min = '0'; _idxInp.max = '200';
-      _idxInp.placeholder = 'TÜFE % (örn: 48.7)';
-      _idxInp.value = _tufeVal;
-      _idxInp.style.cssText = 'flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;';
-      var _idxBtn = document.createElement('button');
-      _idxBtn.textContent = 'Uygula';
-      _idxBtn.style.cssText = 'background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:9px 16px;color:var(--info);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;';
-      _idxBtn.onclick = function(){
-        var _v = parseFloat(_idxInp.value);
-        if(!isNaN(_v) && _v >= 0){
-          _tufeRates[_idxYr] = _v;
-          try { localStorage.setItem(_idxLS, JSON.stringify(_tufeRates)); } catch(e){}
-          renderVergi();
+      var _idxTitle2 = document.createElement('div');
+      _idxTitle2.style.cssText = 'font-size:12px;font-weight:700;color:var(--info);margin-bottom:8px;';
+      _idxTitle2.textContent = '\u{1F4CA} YİÜFE Endeksleme Özeti';
+      _idxCard.appendChild(_idxTitle2);
+
+      // Compute indexing summary for all own closed trades
+      var _idxSum = { eligible:0, ineligible:0, noData:0, origTotal:0, idxTotal:0 };
+      allOwnClosed.forEach(function(t){
+        var r = calcTaxForTrade(t);
+        if(!r.hasKur){ _idxSum.noData++; return; }
+        var yIdx = calcYufeIndexing(t);
+        if(yIdx.eligible){
+          var matrahIdx = applyYufeMatrah(r, t, yIdx);
+          _idxSum.eligible++;
+          _idxSum.origTotal += r.matrah_try;
+          _idxSum.idxTotal  += matrahIdx;
+        } else {
+          _idxSum.ineligible++;
+          _idxSum.origTotal += r.matrah_try;
+          _idxSum.idxTotal  += r.matrah_try;
         }
-      };
-      _idxRow.appendChild(_idxInp); _idxRow.appendChild(_idxBtn);
-      _idxCard.appendChild(_idxRow);
-      // Show indexed matrah if TÜFE is entered
-      if(_tufeVal && parseFloat(_tufeVal) > 0){
-        var _tufePct = parseFloat(_tufeVal) / 100;
-        // For each closed trade, compute indexed cost basis (if held 1+ year)
-        // Track: nonEligibleMatrah (original for <1yr), eligibleOriginal, eligibleIndexed
-        var _idxData = { nonEligibleMatrah:0, eligibleOriginal:0, eligibleIndexed:0, eligible:0, count:0 };
-        allOwnClosed.forEach(function(t){
-          var r = calcTaxForTrade(t);
-          if(!r.hasKur) return;
-          var op = t.opened || ''; var cl = t.closed || '';
-          var msHeld = (op && cl) ? (new Date(cl) - new Date(op)) : 0;
-          if(msHeld >= 365 * 86400000) {
-            // Eligible: apply TÜFE indexing to the opening cost (short: cost = premium received)
-            // For short options: matrah = (openPrem - openKom)*acilis_kur - (closePrem + closeKom)*kapanis_kur
-            // Indexed: replace openPrem*acilis_kur with openPrem*acilis_kur*(1+tufePct)
-            // i.e. indexed matrah = original matrah - openPrem*acilis_kur*tufePct (short)
-            // For long: matrah = (closePrem-closeKom)*kapanis_kur - (openPrem+openKom)*acilis_kur
-            // Indexed: subtract additional openPrem*acilis_kur*tufePct (same effect: more deduction on cost)
-            var _openCostBase = r.openPrem * r.acilis_kur;
-            var matrahIndexed = r.matrah_try - _openCostBase * _tufePct * (isLong(t.type) ? -1 : 1);
-            // For short: indexed < original (cost base is higher after indexing → less profit)
-            // For long:  indexed < original (cost base is higher → more loss or less profit)
-            _idxData.eligibleOriginal += r.matrah_try;
-            _idxData.eligibleIndexed  += matrahIndexed;
-            _idxData.eligible++;
-          } else {
-            _idxData.nonEligibleMatrah += r.matrah_try;
-          }
-          _idxData.count++;
-        });
-        // Total original = nonEligible + eligibleOriginal
-        // Total indexed  = nonEligible + eligibleIndexed
-        var _origM = _idxData.nonEligibleMatrah + _idxData.eligibleOriginal;
-        var _idxAdj = _idxData.nonEligibleMatrah + _idxData.eligibleIndexed;
-        var _saving = _origM - _idxAdj; // positive = tax saving
-        var _idxResult = document.createElement('div');
-        _idxResult.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;';
-        [{l:'Orijinal Matrah', v:_origM.toFixed(0)+' ₺', c:_origM>=0?'var(--profit)':'var(--loss)'},
-         {l:'Endekslenmiş ('+_tufeVal+'%)', v:_idxAdj.toFixed(0)+' ₺', c:_idxAdj>=0?'var(--profit)':'var(--loss)'},
-         {l:'Vergi Farkı (Tahmini)', v:(_saving*0.27).toFixed(0)+' ₺', c:_saving>=0?'var(--profit)':'var(--text-3)'}
-        ].forEach(function(x){
-          var col = document.createElement('div');
-          col.style.cssText = 'background:rgba(255,255,255,0.04);border-radius:6px;padding:8px;text-align:center;';
-          col.innerHTML = '<div style="font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px;">'+x.l+'</div><div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:'+x.c+';">'+x.v+'</div>';
-          _idxResult.appendChild(col);
-        });
-        _idxCard.appendChild(_idxResult);
-        var _idxEligNote = document.createElement('div');
-        _idxEligNote.style.cssText = 'margin-top:8px;font-size:10px;color:var(--text-3);';
-        _idxEligNote.textContent = _idxData.eligible + ' adet trade 1 yıl+ elde tutuldu → endeksleme uygulandı. Not: Endeksleme GVK 81/3. fıkra şartlarını sağlamalıdır.';
-        _idxCard.appendChild(_idxEligNote);
+      });
+
+      var _idxSaving = _idxSum.origTotal - _idxSum.idxTotal;
+      var _idxGrid = document.createElement('div');
+      _idxGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;';
+      [{l:'Endekslenmiş Trade', v:_idxSum.eligible+'', c:_idxSum.eligible>0?'var(--info)':'var(--text-3)'},
+       {l:'Orijinal Matrah', v:_idxSum.origTotal.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:_idxSum.origTotal>=0?'var(--profit)':'var(--loss)'},
+       {l:'Endekslenmiş Matrah', v:_idxSum.idxTotal.toLocaleString('tr-TR',{maximumFractionDigits:0})+' ₺', c:_idxSum.idxTotal>=0?'var(--profit)':'var(--loss)'}
+      ].forEach(function(x){
+        var col = document.createElement('div');
+        col.style.cssText = 'background:rgba(255,255,255,0.04);border-radius:6px;padding:8px;text-align:center;';
+        col.innerHTML = '<div style="font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px;">'+x.l+'</div><div style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:'+x.c+';">'+x.v+'</div>';
+        _idxGrid.appendChild(col);
+      });
+      _idxCard.appendChild(_idxGrid);
+
+      if(_idxSum.eligible > 0){
+        var _savNote = document.createElement('div');
+        _savNote.style.cssText = 'padding:8px 11px;background:rgba(16,185,129,0.08);border-left:3px solid #10B981;border-radius:0 6px 6px 0;font-size:10px;color:var(--text-2);line-height:1.4;margin-bottom:8px;';
+        _savNote.innerHTML = 'Endeksleme uygulandığında matrah farkı: <strong style="color:#10B981;">' + _idxSaving.toLocaleString('tr-TR',{maximumFractionDigits:0}) + ' ₺</strong>. ' +
+          'Tahmini vergi avantajı (en yüksek diliminizle): <strong style="color:#10B981;">' + (_idxSaving * 0.35).toLocaleString('tr-TR',{maximumFractionDigits:0}) + ' ₺</strong>.';
+        _idxCard.appendChild(_savNote);
+      }
+
+      var _noDataNote = document.createElement('div');
+      _noDataNote.style.cssText = 'font-size:10px;color:var(--text-3);line-height:1.4;';
+      var _missingKeys = [];
+      allOwnClosed.forEach(function(t){
+        var r = calcTaxForTrade(t);
+        if(!r.hasKur) return;
+        var yIdx = calcYufeIndexing(t);
+        if(!yIdx.eligible && (yIdx.openKey || yIdx.closeKey)){
+          if(yIdx.openKey && !yufeData[yIdx.openKey] && _missingKeys.indexOf(yIdx.openKey)<0) _missingKeys.push(yIdx.openKey);
+          if(yIdx.closeKey && !yufeData[yIdx.closeKey] && _missingKeys.indexOf(yIdx.closeKey)<0) _missingKeys.push(yIdx.closeKey);
+        }
+      });
+      if(_missingKeys.length){
+        _noDataNote.textContent = 'Eksik endeks ayları: ' + _missingKeys.sort().join(', ') + '. Aşağıdaki YİÜFE bölümünden girin.';
+        _idxCard.appendChild(_noDataNote);
+      } else if(!_idxSum.eligible && !_missingKeys.length && allOwnClosed.length > 0){
+        _noDataNote.textContent = 'Endeksleme şartı sağlayan trade yok (artış ≤ %10 veya endeks verisi girilmedi).';
+        _idxCard.appendChild(_noDataNote);
       }
       _vtc.appendChild(_idxCard);
 
@@ -5540,6 +5658,8 @@ function _renderVergiInner(){
 
   // ── Kur listesi ──
   renderKurListesi();
+  // ── YİÜFE listesi ──
+  renderYufeListesi();
 
   // ── Vergi tablosu ──
   var vt = document.getElementById('vergiTablosu');
@@ -5589,12 +5709,18 @@ function _renderVergiInner(){
         var c9=document.createElement('div');
         c9.style.cssText='display:flex;align-items:center;gap:4px;flex-wrap:wrap;';
 
-        (function(_c9, _tid, _hm, _mv, _res){
+        (function(_c9, _tid, _hm, _mv, _res, _tr){
+          var _yIdx = calcYufeIndexing(_tr);
+          var _yMatrah = _yIdx.eligible ? applyYufeMatrah(_res, _tr, _yIdx) : null;
           function showNormal(){
             _c9.innerHTML='';
-            var dispColor=_hm?'#F59E0B':(!_res.hasKur?'var(--warn)':_res.matrah_try>=0?'var(--profit)':'var(--loss)');
-            var dispTxt=_hm?(_mv.toFixed(2)+' ₺'):(!_res.hasKur?'Rate missing':_res.matrah_try.toFixed(2)+' ₺');
-            if(_hm){var badge=document.createElement('span');badge.textContent='M';badge.style.cssText='font-size:8px;background:rgba(245,158,11,0.25);color:#F59E0B;border-radius:3px;padding:0 3px;font-weight:700;';_c9.appendChild(badge);}
+            // Priority: manual override → yufe indexed → normal
+            var dispMatrah = _hm ? _mv : (_yMatrah !== null ? _yMatrah : _res.matrah_try);
+            var dispColor = _hm ? '#F59E0B' : (!_res.hasKur ? 'var(--warn)' : dispMatrah >= 0 ? 'var(--profit)' : 'var(--loss)');
+            var dispTxt = _hm ? (_mv.toFixed(2)+' ₺') : (!_res.hasKur ? 'Rate missing' : dispMatrah.toFixed(2)+' ₺');
+            // Badges
+            if(_hm){ var badge=document.createElement('span');badge.textContent='M';badge.style.cssText='font-size:8px;background:rgba(245,158,11,0.25);color:#F59E0B;border-radius:3px;padding:0 3px;font-weight:700;';badge.title='Manuel değer';_c9.appendChild(badge); }
+            else if(_yIdx.eligible){ var yBadge=document.createElement('span');yBadge.textContent='YİÜFE';yBadge.style.cssText='font-size:7px;background:rgba(59,130,246,0.2);color:var(--info);border-radius:3px;padding:0 4px;font-weight:700;letter-spacing:.3px;';yBadge.title='Endeksleme uygulandı: x'+_yIdx.ratio.toFixed(4)+' (artış %'+_yIdx.increase.toFixed(1)+')';_c9.appendChild(yBadge); }
             var valS=document.createElement('span');valS.style.cssText='font-family:var(--font-mono);font-weight:600;color:'+dispColor+';font-size:11px;';valS.textContent=dispTxt;
             var editB=document.createElement('button');editB.textContent='✎';editB.title=_hm?'Manuel değer — düzenle':'Manuel değer gir';
             editB.style.cssText='background:'+(_hm?'rgba(245,158,11,0.15)':'rgba(255,255,255,0.07)')+';border:1px solid '+(_hm?'rgba(245,158,11,0.35)':'rgba(255,255,255,0.12)')+';border-radius:4px;padding:2px 6px;color:'+(_hm?'#F59E0B':'var(--text-3)')+';font-size:10px;cursor:pointer;font-family:inherit;';
@@ -5624,7 +5750,7 @@ function _renderVergiInner(){
             inp.focus();inp.select();
           }
           showNormal();
-        })(c9, tid, hasManual, manualVal, res);
+        })(c9, tid, hasManual, manualVal, res, tr);
 
         row.appendChild(c1);row.appendChild(c2);row.appendChild(c3);row.appendChild(c4);
         row.appendChild(c5);row.appendChild(c6);row.appendChild(c7);row.appendChild(c8);row.appendChild(c9);
