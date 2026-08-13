@@ -1063,15 +1063,17 @@
       autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
       style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 14px;color:var(--text);font-size:13px;outline:none;font-family:var(--font-body);">
   </div>
+  <div class="filter-row" id="statusFilterRow">
+    <div class="filter-pill active" data-status-filter="all">All</div>
+    <div class="filter-pill" data-status-filter="open">Open</div>
+    <div class="filter-pill" data-status-filter="closed">Closed</div>
+  </div>
   <div class="filter-row" id="typeFilterRow">
-    <div class="filter-pill active" data-filter="all">All</div>
-    <div class="filter-pill" data-filter="open">Open</div>
-    <div class="filter-pill" data-filter="closed">Closed</div>
-    <div class="filter-pill" data-filter="CSP">CSP</div>
-    <div class="filter-pill" data-filter="PCS">PCS</div>
-    <div class="filter-pill" data-filter="CC">CC</div>
-    <div class="filter-pill" data-filter="PMCC">PMCC</div>
-    <div class="filter-pill" data-filter="IC">IC</div>
+    <div class="filter-pill" data-type-filter="CSP">CSP</div>
+    <div class="filter-pill" data-type-filter="PCS">PCS</div>
+    <div class="filter-pill" data-type-filter="CC">CC</div>
+    <div class="filter-pill" data-type-filter="PMCC">PMCC</div>
+    <div class="filter-pill" data-type-filter="IC">IC</div>
   </div>
   <div class="filter-row" id="monthFilterRow">
     <div class="filter-pill active" data-month="all">All Months</div>
@@ -2816,7 +2818,8 @@ function renderDashboard(){
 }
 
 // ═══════════════════ TRADES ═══════════════════
-var currentFilter='all';
+var currentFilter='all';      // status: 'all' | 'open' | 'closed'
+var activeTypeFilters=[];     // multi-select type: [] = all types
 var currentMonthFilter='all';
 var currentTradeView = 'list'; // 'cards' | 'list'
 var currentTickerFilter = ''; // Trades sayfası ticker arama
@@ -2842,9 +2845,11 @@ function renderTradeList(filter, month){
   if(filter !== undefined) currentFilter = filter || 'all';
   if(month !== undefined) currentMonthFilter = month || 'all';
   var all=getAllTrades(); var f=all;
+  // Status filter (single-select)
   if(currentFilter==='open')f=all.filter(function(t){return!t.closed;});
   else if(currentFilter==='closed')f=all.filter(function(t){return!!t.closed;});
-  else if(currentFilter&&currentFilter!=='all')f=all.filter(function(t){return t.type===currentFilter;});
+  // Type filter (multi-select — empty array = all types)
+  if(activeTypeFilters.length>0)f=f.filter(function(t){return activeTypeFilters.indexOf(t.type)>=0;});
   // Apply month filter on top
   if(currentMonthFilter && currentMonthFilter!=='all'){
     f=f.filter(function(t){return t.month===currentMonthFilter;});
@@ -3192,15 +3197,25 @@ function attachSwipeActions(container){
 }
 
 document.addEventListener('click',function(e){
-  // Type filter (All, Open, Closed, CSP, etc.)
-  var p=e.target.closest('[data-filter]');
-  if(p){
-    document.querySelectorAll('#typeFilterRow .filter-pill').forEach(function(x){x.classList.remove('active');});
-    p.classList.add('active');
-    renderTradeList(p.dataset.filter, undefined);
+  // Status filter (All / Open / Closed) — single-select
+  var sp=e.target.closest('[data-status-filter]');
+  if(sp){
+    document.querySelectorAll('#statusFilterRow .filter-pill').forEach(function(x){x.classList.remove('active');});
+    sp.classList.add('active');
+    renderTradeList(sp.dataset.statusFilter, undefined);
     return;
   }
-  // Month filter
+  // Type filter (CSP / PCS / CC / PMCC / IC) — multi-select toggle
+  var tp=e.target.closest('[data-type-filter]');
+  if(tp){
+    var t=tp.dataset.typeFilter;
+    var idx=activeTypeFilters.indexOf(t);
+    if(idx>=0){ activeTypeFilters.splice(idx,1); tp.classList.remove('active'); }
+    else       { activeTypeFilters.push(t);       tp.classList.add('active');    }
+    renderTradeList(undefined, undefined);
+    return;
+  }
+  // Month filter — single-select
   var m=e.target.closest('[data-month]');
   if(m){
     document.querySelectorAll('#monthFilterRow .filter-pill').forEach(function(x){x.classList.remove('active');});
@@ -6710,11 +6725,15 @@ function switchScreen(name){
     }
     // Filtre ve ay'ı set et
     currentFilter='open';
+    activeTypeFilters=[];
     currentMonthFilter='all';
     currentTradeView='list';
     // Filter pill'leri güncelle
+    document.querySelectorAll('#statusFilterRow .filter-pill').forEach(function(x){
+      x.classList.toggle('active', x.dataset.statusFilter==='open');
+    });
     document.querySelectorAll('#typeFilterRow .filter-pill').forEach(function(x){
-      x.classList.toggle('active', x.dataset.filter==='open');
+      x.classList.remove('active');
     });
     document.querySelectorAll('#monthFilterRow .filter-pill').forEach(function(x){
       x.classList.toggle('active', x.dataset.month===_curM);
