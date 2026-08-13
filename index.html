@@ -2165,7 +2165,13 @@ function getMonthlyStats() {
   }).filter(function(x){ return x.trades > 0; });
 }
 
-function getDTE(exp){ if(!exp) return null; return Math.max(0, Math.round((new Date(exp)-new Date())/86400000)); }
+function getDTE(exp){
+  if(!exp) return null;
+  var p=exp.split('-'); if(p.length<3) return null;
+  var today=new Date(); today=new Date(today.getFullYear(),today.getMonth(),today.getDate()); // local midnight
+  var expD=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));                          // local midnight
+  return Math.max(0,Math.round((expD-today)/86400000));
+}
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 
 // ── Theme toggle ──────────────────────────────────────────
@@ -2927,9 +2933,11 @@ function renderTradeList(filter, month){
         var statusTxt=isAlert?'⚠️':(!isOpen?'●':(_partlyOpen?'◑':'●'));
         var statusColor=isOpen?(_partlyOpen?'var(--warn)':(isAlert?'var(--loss)':'var(--profit)')):'var(--text-3)';
         var rowBg=isAlert?'rgba(239,68,68,0.05)':'';
-        var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#EF4444':dte<=21?'#F59E0B':dte<=45?'#3B82F6':'#22C55E'):'transparent';
+        // DTE border: colours deliberately offset from badge colours to avoid conflicts
+        var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#FF4444':dte<=21?'#FB923C':dte<=45?'#38BDF8':'#4ADE80'):'transparent';
         var tc=tcol(t.ticker.split(' ')[0]);
-        var tagC={'CSP':'#22c55e','CC':'#3b82f6','PCS':'#f59e0b','PMCC':'#a78bfa','IC':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
+        // Type badge colours — kept consistent with card-view strategy tags
+        var tagC={'CSP':'#3b82f6','CC':'#22c55e','PCS':'#8b5cf6','PMCC':'#f59e0b','IC':'#ef4444','BCS':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||'#94a3b8';
         return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
