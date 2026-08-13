@@ -83,6 +83,8 @@
   /* SCREENS */
   .screen { display: none; padding: 0 0 16px; animation: fadeUp 0.3s ease both; }
   .screen.active { display: block; }
+  /* Open-mode darker background — 2 tones below --bg (#2E1C0E) */
+  #screen-trades.open-mode { background: #1C1008; transition: background 0.25s ease; }
 
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
@@ -2165,7 +2167,13 @@ function getMonthlyStats() {
   }).filter(function(x){ return x.trades > 0; });
 }
 
-function getDTE(exp){ if(!exp) return null; return Math.max(0, Math.round((new Date(exp)-new Date())/86400000)); }
+function getDTE(exp){
+  if(!exp) return null;
+  var p=exp.split('-'); if(p.length<3) return null;
+  var today=new Date(); today=new Date(today.getFullYear(),today.getMonth(),today.getDate()); // local midnight
+  var expD=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));                          // local midnight
+  return Math.max(0,Math.round((expD-today)/86400000));
+}
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 
 // ── Theme toggle ──────────────────────────────────────────
@@ -2882,6 +2890,9 @@ function renderTradeList(filter, month){
   var oc=all.filter(function(t){return!t.closed;}).length; var cc=all.filter(function(t){return!!t.closed;}).length;
   var sub=document.getElementById('tradesSub'); if(sub)sub.textContent=all.length+' total · '+oc+' open · '+cc+' closed';
   var listEl=document.getElementById('tradeList'); if(!listEl)return;
+  // Toggle open-mode class for darker background
+  var _scEl=document.getElementById('screen-trades');
+  if(_scEl) _scEl.classList.toggle('open-mode', currentFilter==='open');
   listEl.onclick=function(e){
     var card=e.target.closest('[data-tid]');
     if(card) openTradeDetail(card.dataset.tid, card.dataset.tmonth);
@@ -2894,10 +2905,12 @@ function renderTradeList(filter, month){
   // ── Liste view ──
   if(currentTradeView === 'list'){
     listEl.style.overflowX = '';
+    var _stickyThBg = currentFilter==='open' ? '#2E1C0E' : '#5C5049';
+    var _stickyTdBg = currentFilter==='open' ? '#251510' : '#3C2718';
     listEl.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 16px 8px;position:relative;">' +
       '<table style="width:100%;min-width:520px;border-collapse:collapse;font-size:12px;">' +
       '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">' +
-        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap;position:sticky;left:0;z-index:3;background:#5C5049;">Ticker</th>' +
+        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap;position:sticky;left:0;z-index:3;background:'+_stickyThBg+';">Ticker</th>' +
         '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Type</th>' +
         '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Strike</th>' +
         '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Expiry</th>' +
@@ -2927,13 +2940,15 @@ function renderTradeList(filter, month){
         var statusTxt=isAlert?'⚠️':(!isOpen?'●':(_partlyOpen?'◑':'●'));
         var statusColor=isOpen?(_partlyOpen?'var(--warn)':(isAlert?'var(--loss)':'var(--profit)')):'var(--text-3)';
         var rowBg=isAlert?'rgba(239,68,68,0.05)':'';
-        var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#EF4444':dte<=21?'#F59E0B':dte<=45?'#3B82F6':'#22C55E'):'transparent';
+        // DTE border: colours deliberately offset from badge colours to avoid conflicts
+        var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#FF4444':dte<=21?'#FB923C':dte<=45?'#38BDF8':'#4ADE80'):'transparent';
         var tc=tcol(t.ticker.split(' ')[0]);
-        var tagC={'CSP':'#22c55e','CC':'#3b82f6','PCS':'#f59e0b','PMCC':'#a78bfa','IC':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
+        // Type badge colours — kept consistent with card-view strategy tags
+        var tagC={'CSP':'#3b82f6','CC':'#22c55e','PCS':'#8b5cf6','PMCC':'#f59e0b','IC':'#ef4444','BCS':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||'#94a3b8';
         return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
-          '<td style="padding:9px 8px;position:sticky;left:0;z-index:2;background:#3C2718;box-shadow:4px 0 8px rgba(0,0,0,0.3);">' +
+          '<td style="padding:9px 8px;position:sticky;left:0;z-index:2;background:'+_stickyTdBg+';box-shadow:4px 0 8px rgba(0,0,0,0.3);">' +
             '<div style="display:flex;align-items:center;gap:6px;">' +
               '<div style="width:24px;height:24px;border-radius:6px;background:'+tc.bg+';color:'+tc.color+';font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
               '<div style="display:flex;flex-direction:column;gap:1px;">'+
