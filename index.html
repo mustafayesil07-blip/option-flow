@@ -83,8 +83,8 @@
   /* SCREENS */
   .screen { display: none; padding: 0 0 16px; animation: fadeUp 0.3s ease both; }
   .screen.active { display: block; }
-  /* Open-mode darker background — 2 tones below --bg (#2E1C0E) */
-  #screen-trades.open-mode { background: #1C1008; transition: background 0.25s ease; }
+  /* Open-mode darker background — subtle shift from --bg (#2E1C0E) */
+  #screen-trades.open-mode { background: #22100A; transition: background 0.25s ease; }
 
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(12px); }
@@ -154,17 +154,17 @@
 
   /* ── Light mode theme ── */
   html.light-mode {
-    --bg: #F2E8D8; --bg2: #E8DCC8; --bg3: #DED0B8;
-    --card: rgba(60,40,20,0.07); --card-hover: rgba(60,40,20,0.12);
-    --border: rgba(60,40,20,0.14); --border-bright: rgba(60,40,20,0.28);
-    --text: #1C0E05; --text-2: #3E2812; --text-3: #8A6030;
+    --bg: #D8C8B0; --bg2: #CCBCA2; --bg3: #C0B094;
+    --card: rgba(60,40,20,0.08); --card-hover: rgba(60,40,20,0.15);
+    --border: rgba(60,40,20,0.16); --border-bright: rgba(60,40,20,0.32);
+    --text: #1C0E05; --text-2: #3E2812; --text-3: #7A5020;
   }
   html.light-mode body {
-    background: radial-gradient(ellipse at top right,rgba(200,140,60,0.10),transparent 55%),radial-gradient(ellipse at bottom left,rgba(150,100,30,0.06),transparent 50%),var(--bg);
+    background: radial-gradient(ellipse at top right,rgba(180,110,40,0.14),transparent 55%),radial-gradient(ellipse at bottom left,rgba(130,80,20,0.10),transparent 50%),var(--bg);
   }
-  html.light-mode .topbar { background: rgba(230,210,180,0.96); }
-  html.light-mode .nav-bar { background: rgba(235,218,185,0.97); border-top-color: rgba(60,40,20,0.12); }
-  html.light-mode .screen-header { background: rgba(230,210,180,0.90); }
+  html.light-mode .topbar { background: rgba(200,180,148,0.97); }
+  html.light-mode .nav-bar { background: rgba(205,185,152,0.98); border-top-color: rgba(60,40,20,0.14); }
+  html.light-mode .screen-header { background: rgba(200,180,148,0.92); }
   html.light-mode table tbody tr { background: transparent; }
 
   /* ── Theme toggle button ── */
@@ -2905,8 +2905,8 @@ function renderTradeList(filter, month){
   // ── Liste view ──
   if(currentTradeView === 'list'){
     listEl.style.overflowX = '';
-    var _stickyThBg = currentFilter==='open' ? '#2E1C0E' : '#5C5049';
-    var _stickyTdBg = currentFilter==='open' ? '#251510' : '#3C2718';
+    var _stickyThBg = currentFilter==='open' ? '#2C1610' : '#5C5049';
+    var _stickyTdBg = currentFilter==='open' ? '#291210' : '#3C2718';
     listEl.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 16px 8px;position:relative;">' +
       '<table style="width:100%;min-width:520px;border-collapse:collapse;font-size:12px;">' +
       '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">' +
