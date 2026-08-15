@@ -5199,23 +5199,95 @@ var BACKUP_LS_KEY = 'optflow_last_backup_v1';
 var BACKUP_DISMISS_KEY = 'optflow_backup_dismiss_v1';
 var BACKUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 gün
 
+// ── VERİ DEPOLARI KAYIT DEFTERİ ───────────────────────────────────────
+// Uygulamadaki TÜM kalıcı veri burada listelenir. Yeni bir veri türü
+// eklendiğinde SADECE bu listeye bir satır eklenir; yedekleme, geri
+// yükleme ve kalıcılaştırma otomatik olarak kapsar. Tek tek "şunu da
+// ekle" demeye gerek yok.
+//
+// shared:true  → profil bağımsız (tüm profiller aynı veriyi kullanır) ve
+//                reloadProfileData() tarafından yeniden okunmaz; geri
+//                yükleme sonrası ayrıca tazelenmesi gerekir.
+// Anahtarlar çalışma anında okunur: profil değişince (selectProfile)
+// LS/TAX_LS gibi değişkenler yeniden bağlandığı için bu fonksiyon her
+// çağrıldığında güncel anahtarları verir.
+function dataStores() {
+  var out = [];
+  function add(name, key, get, set, shared) {
+    try { if (key) out.push({ name:name, key:key, get:get, set:set, shared:!!shared }); } catch(e) {}
+  }
+  try { add('trades',        LS,                function(){return tradesData;},          function(v){tradesData=v;}); } catch(e){}
+  try { add('leaps',         LEAPS_LS,          function(){return leapsData;},           function(v){leapsData=v;}); } catch(e){}
+  try { add('tax',           TAX_LS,            function(){return taxData;},             function(v){taxData=v;}); } catch(e){}
+  try { add('vergiOverride', VERGI_OVERRIDE_LS, function(){return vergiManualOverride;}, function(v){vergiManualOverride=v;}); } catch(e){}
+  try { add('planned',       PLAN_LS,           function(){return plannedTrades;},       function(v){plannedTrades=v;}); } catch(e){}
+  try { add('deletedIds',    DELETED_IDS_LS,    function(){return deletedIds;},          function(v){deletedIds=v;}); } catch(e){}
+  // Profil bağımsız depolar
+  try { add('kurlar',     KURLAR_LS,       function(){return kurlarData;},     function(v){kurlarData=v;}); } catch(e){}
+  try { add('yufe',       YUFE_LS,         function(){return yufeData;},       function(v){yufeData=v;},       true); } catch(e){}
+  try { add('monthNotes', MONTH_NOTES_LS,  function(){return monthNotesData;}, function(v){monthNotesData=v;}, true); } catch(e){}
+  return out;
+}
+
+// Yeniden üretilebilen piyasa cache'leri — yedeğe girmesi anlamsız.
+function _isCacheKey(k) {
+  return !k || k.indexOf('optflow_prices')  !== -1
+            || k.indexOf('optflow_prepost') !== -1
+            || k.indexOf('optflow_zones')   !== -1;
+}
+
+// Bellekteki her depoyu localStorage'a yazar. Yedek almadan ÖNCE
+// çağrılır: böylece "tüm localStorage" gerçekten "tüm veri" demek olur.
+// (Örn. kurlarData koda gömülü seed + kullanıcı girdisi birleşimidir;
+// saveKurlar() hiç çalışmadıysa localStorage'da karşılığı olmazdı.)
+function persistAllStores() {
+  dataStores().forEach(function(s) {
+    try {
+      var v = s.get();
+      if (v !== undefined && v !== null) localStorage.setItem(s.key, JSON.stringify(v));
+    } catch(e) {}
+  });
+}
+
+// Profil bağımsız depoları localStorage'dan tazeler. Geri yükleme
+// sonrası şart: reloadProfileData() bunlara dokunmaz, dokunmasaydık
+// ekranda eski (yedek öncesi) notlar/endeksler kalırdı.
+function reloadSharedStores() {
+  dataStores().forEach(function(s) {
+    if (!s.shared) return;
+    try {
+      var raw = localStorage.getItem(s.key);
+      if (raw != null) s.set(JSON.parse(raw));
+    } catch(e) {}
+  });
+}
+
 // Tüm uygulama verilerini tek JSON'a toplar
 function fullBackupJSON() {
-  var snapshot = { version: 3, exportedAt: new Date().toISOString(), profile: ACTIVE_PROFILE, ls: {} };
+  // Önce belleği diske indir — yedeğin eksiksiz olmasının garantisi bu.
+  try { persistAllStores(); } catch(e) {}
+
+  var snapshot = { version: 4, exportedAt: new Date().toISOString(), profile: ACTIVE_PROFILE, ls: {}, mem: {} };
+
+  // localStorage'ın TAMAMI (yalnızca yeniden üretilebilir cache'ler hariç)
   for (var i = 0; i < localStorage.length; i++) {
     var k = localStorage.key(i);
-    // Fiyat/zone cache'leri hariç her şeyi dahil et
-    if (k && k.indexOf('optflow_prices') === -1 && k.indexOf('optflow_prepost') === -1 && k.indexOf('optflow_zones') === -1) {
-      snapshot.ls[k] = localStorage.getItem(k);
-    }
+    if (k && !_isCacheKey(k)) snapshot.ls[k] = localStorage.getItem(k);
   }
-  // ── Kur ve YİÜFE'yi AYRICA bellekteki efektif haliyle yaz ──
-  // kurlarData koda gömülü KURLAR_SEED + kullanıcı girdileri + TCMB
-  // çekimlerinin birleşimi. localStorage'daki kurlar_v2 anahtarı ancak
-  // saveKurlar() çalıştıysa var; hiç çalışmadıysa yedekte kur çıkmazdı.
-  // Bu iki alan yedeği seed'den bağımsız, kendi kendine yeter kılıyor.
+
+  // Ayrıca her deponun bellekteki efektif hali — yedeği koda gömülü
+  // seed'lerden bağımsız, kendi kendine yeter kılar.
+  dataStores().forEach(function(s) {
+    try {
+      var v = s.get();
+      if (v !== undefined && v !== null) snapshot.mem[s.name] = { key: s.key, value: v };
+    } catch(e) {}
+  });
+
+  // Geriye uyum: v3 okuyucuları bu iki alanı bekliyor
   try { if (typeof kurlarData === 'object' && kurlarData) snapshot.kurlar = kurlarData; } catch(e) {}
   try { if (typeof yufeData   === 'object' && yufeData)   snapshot.yufe   = yufeData;   } catch(e) {}
+
   return JSON.stringify(snapshot, null, 2);
 }
 
@@ -5497,11 +5569,25 @@ function importData(){
       var d=JSON.parse(raw);
       if(typeof d!=='object'||Array.isArray(d)){alert('Invalid format.');return;}
 
-      // Yeni tam yedek formatı (version:2, ls:{...})
-      if((d.version===2||d.version===3) && d.ls && typeof d.ls==='object'){
+      // Yeni tam yedek formatı (version:2/3/4, ls:{...})
+      if((d.version===2||d.version===3||d.version===4) && d.ls && typeof d.ls==='object'){
         Object.keys(d.ls).forEach(function(k){
           try{ localStorage.setItem(k, d.ls[k]); }catch(e){}
         });
+
+        // v4: her deponun bellekteki hali de yedekte. ls'te karşılığı
+        // olmayanları buradan yaz — eski cihazda hiç kaydedilmemiş
+        // (yalnızca bellekte yaşayan) veriler böyle kurtarılıyor.
+        try{
+          if(d.mem && typeof d.mem==='object'){
+            Object.keys(d.mem).forEach(function(name){
+              var e = d.mem[name];
+              if(!e || !e.key || e.value===undefined || e.value===null) return;
+              if(Object.prototype.hasOwnProperty.call(d.ls, e.key)) return; // ls zaten yazdı
+              try{ localStorage.setItem(e.key, JSON.stringify(e.value)); }catch(x){}
+            });
+          }
+        }catch(e){}
 
         // v3: kur + YİÜFE ayrı alanlarda geliyor. selectProfile()'dan ÖNCE
         // localStorage'a yazılmalı — reloadProfileData() bunları oradan
@@ -5536,11 +5622,18 @@ function importData(){
           if(typeof renderPlannedList==='function')renderPlannedList();
           if(typeof renderVergi==='function')renderVergi();
         }
+        // Profil bağımsız depolar (aylık notlar, YİÜFE) reloadProfileData()
+        // tarafından okunmaz — ekranda eski veri kalmasın diye tazele.
+        try{ if(typeof reloadSharedStores==='function') reloadSharedStores(); }catch(e){}
+        try{ if(typeof renderReports==='function') renderReports(); }catch(e){}
+
         var tot=getAllTrades().length;
+        var _notAdet=0;
+        try{ _notAdet=Object.keys(monthNotesData||{}).length; }catch(e){}
         m.remove();
         var t=document.createElement('div');
         t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--profit);color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
-        t.textContent='✅ Tüm veriler geri yüklendi — '+tot+' trade';
+        t.textContent='✅ Geri yüklendi — '+tot+' trade'+(_notAdet?', '+_notAdet+' not':'');
         document.body.appendChild(t);
         setTimeout(function(){t.remove();},3500);
       } else {
