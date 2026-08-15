@@ -5021,7 +5021,7 @@ var BACKUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 gün
 
 // Tüm uygulama verilerini tek JSON'a toplar
 function fullBackupJSON() {
-  var snapshot = { version: 2, exportedAt: new Date().toISOString(), profile: ACTIVE_PROFILE, ls: {} };
+  var snapshot = { version: 3, exportedAt: new Date().toISOString(), profile: ACTIVE_PROFILE, ls: {} };
   for (var i = 0; i < localStorage.length; i++) {
     var k = localStorage.key(i);
     // Fiyat/zone cache'leri hariç her şeyi dahil et
@@ -5029,6 +5029,13 @@ function fullBackupJSON() {
       snapshot.ls[k] = localStorage.getItem(k);
     }
   }
+  // ── Kur ve YİÜFE'yi AYRICA bellekteki efektif haliyle yaz ──
+  // kurlarData koda gömülü KURLAR_SEED + kullanıcı girdileri + TCMB
+  // çekimlerinin birleşimi. localStorage'daki kurlar_v2 anahtarı ancak
+  // saveKurlar() çalıştıysa var; hiç çalışmadıysa yedekte kur çıkmazdı.
+  // Bu iki alan yedeği seed'den bağımsız, kendi kendine yeter kılıyor.
+  try { if (typeof kurlarData === 'object' && kurlarData) snapshot.kurlar = kurlarData; } catch(e) {}
+  try { if (typeof yufeData   === 'object' && yufeData)   snapshot.yufe   = yufeData;   } catch(e) {}
   return JSON.stringify(snapshot, null, 2);
 }
 
@@ -5135,9 +5142,20 @@ function triggerBackup() {
   } catch(e) {}
   var profLine = profNames.length
     ? '<div style="font-size:12px;color:var(--profit);background:var(--profit-dim);border-radius:8px;' +
-      'padding:9px 11px;margin-bottom:14px;line-height:1.5;">✅ <b>Tüm profiller tek dosyada:</b><br>' +
+      'padding:9px 11px;margin-bottom:8px;line-height:1.5;">✅ <b>Tüm profiller tek dosyada:</b><br>' +
       profNames.join(' &nbsp;·&nbsp; ') + '</div>'
     : '';
+
+  // Kur / YİÜFE / vergi sayıları — yedeğin gerçekten içerdiğini göster
+  var nKur = 0, nYufe = 0, nTax = 0;
+  try { nKur  = Object.keys(kurlarData || {}).length; } catch(e) {}
+  try { nYufe = Object.keys(yufeData   || {}).length; } catch(e) {}
+  try { nTax  = Object.keys(taxData    || {}).length; } catch(e) {}
+  var dataLine =
+    '<div style="font-size:12px;color:var(--info);background:var(--info-dim);border-radius:8px;' +
+    'padding:9px 11px;margin-bottom:14px;line-height:1.5;">💱 <b>Vergi verileri:</b><br>' +
+    nKur + ' TCMB kuru &nbsp;·&nbsp; ' + nYufe + ' YİÜFE endeksi &nbsp;·&nbsp; ' +
+    nTax + ' komisyon kaydı</div>';
 
   var m = document.createElement('div');
   m.id = 'backup-choice-modal';
@@ -5152,7 +5170,7 @@ function triggerBackup() {
     '<div style="font-family:var(--font-head);font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">💾 Verilerini Yedekle</div>' +
     '<div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">' +
       sizeKB + ' KB · vergi kayıtları, YİÜFE endeksi, TCMB kurları, LEAPS, planlar ve notlar dahil</div>' +
-    profLine +
+    profLine + dataLine +
     '<button id="_bkShare" style="width:100%;padding:15px;margin-bottom:9px;background:var(--info-dim);' +
       'border:1px solid var(--info);border-radius:12px;color:var(--info);font-family:var(--font-head);' +
       'font-size:15px;font-weight:600;cursor:pointer;text-align:left;">📤 &nbsp;Paylaş<div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">Drive, WhatsApp, Dosyalar…</div></button>' +
@@ -5300,10 +5318,26 @@ function importData(){
       if(typeof d!=='object'||Array.isArray(d)){alert('Invalid format.');return;}
 
       // Yeni tam yedek formatı (version:2, ls:{...})
-      if(d.version===2 && d.ls && typeof d.ls==='object'){
+      if((d.version===2||d.version===3) && d.ls && typeof d.ls==='object'){
         Object.keys(d.ls).forEach(function(k){
           try{ localStorage.setItem(k, d.ls[k]); }catch(e){}
         });
+
+        // v3: kur + YİÜFE ayrı alanlarda geliyor. selectProfile()'dan ÖNCE
+        // localStorage'a yazılmalı — reloadProfileData() bunları oradan
+        // tekrar okuyor, sonra yazarsak üzerine yazılır.
+        try{
+          if(d.kurlar && typeof d.kurlar==='object'){
+            Object.keys(d.kurlar).forEach(function(k){ kurlarData[k]=d.kurlar[k]; });
+            if(typeof saveKurlar==='function') saveKurlar();
+          }
+        }catch(e){}
+        try{
+          if(d.yufe && typeof d.yufe==='object'){
+            Object.keys(d.yufe).forEach(function(k){ yufeData[k]=d.yufe[k]; });
+            if(typeof saveYufe==='function') saveYufe();
+          }
+        }catch(e){}
         // Yedek TÜM profilleri içerir. Geri yükledikten sonra profili
         // yeniden seçmek şart: LS, TAX_LS, PLAN_LS gibi anahtar
         // değişkenleri profil önekiyle yeniden kurulmalı, yoksa öneksiz
