@@ -5012,6 +5012,27 @@ function triggerBackup() {
   var tradeCount = 0;
   try { tradeCount = getAllTrades().length; } catch(e) {}
 
+  // Yedekte verisi bulunan profilleri say — yedek TÜM profilleri kapsar
+  var profNames = [];
+  try {
+    Object.keys(PROFILES).forEach(function(pk) {
+      // Mustafa eski verileriyle uyumluluk için öneksiz anahtar kullanır
+      var raw = localStorage.getItem(pk === 'mustafa' ? 'opt_v22' : pk + '_opt_v22');
+      if (!raw) return;
+      var n = 0;
+      try {
+        var td = JSON.parse(raw);
+        Object.keys(td).forEach(function(mo) { if (Array.isArray(td[mo])) n += td[mo].length; });
+      } catch(e) {}
+      if (n > 0) profNames.push(PROFILES[pk].emoji + ' ' + PROFILES[pk].name + ' (' + n + ')');
+    });
+  } catch(e) {}
+  var profLine = profNames.length
+    ? '<div style="font-size:12px;color:var(--profit);background:var(--profit-dim);border-radius:8px;' +
+      'padding:9px 11px;margin-bottom:14px;line-height:1.5;">✅ <b>Tüm profiller tek dosyada:</b><br>' +
+      profNames.join(' &nbsp;·&nbsp; ') + '</div>'
+    : '';
+
   var m = document.createElement('div');
   m.id = 'backup-choice-modal';
   m.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);' +
@@ -5023,8 +5044,9 @@ function triggerBackup() {
   sh.innerHTML =
     '<div style="width:32px;height:3px;background:var(--border-bright);border-radius:2px;margin:0 auto 18px"></div>' +
     '<div style="font-family:var(--font-head);font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">💾 Verilerini Yedekle</div>' +
-    '<div style="font-size:12px;color:var(--text-3);margin-bottom:18px;line-height:1.5;">' +
-      tradeCount + ' trade · ' + sizeKB + ' KB · tüm ayarlar, vergi kayıtları ve notlar dahil</div>' +
+    '<div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">' +
+      sizeKB + ' KB · tüm ayarlar, vergi kayıtları, LEAPS ve notlar dahil</div>' +
+    profLine +
     '<button id="_bkShare" style="width:100%;padding:15px;margin-bottom:9px;background:var(--info-dim);' +
       'border:1px solid var(--info);border-radius:12px;color:var(--info);font-family:var(--font-head);' +
       'font-size:15px;font-weight:600;cursor:pointer;text-align:left;">📤 &nbsp;Paylaş<div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">Drive, WhatsApp, Dosyalar…</div></button>' +
@@ -5176,14 +5198,26 @@ function importData(){
         Object.keys(d.ls).forEach(function(k){
           try{ localStorage.setItem(k, d.ls[k]); }catch(e){}
         });
-        // Veriyi yeniden yükle
-        try{ tradesData=JSON.parse(localStorage.getItem(YUFE_LS)||'{}'); }catch(e){}
-        if(typeof deletedIds!=='undefined'){try{deletedIds=JSON.parse(localStorage.getItem(DELETED_IDS_LS)||'[]');}catch(e){deletedIds=[];}}
+        // Yedek TÜM profilleri içerir. Geri yükledikten sonra profili
+        // yeniden seçmek şart: LS, TAX_LS, PLAN_LS gibi anahtar
+        // değişkenleri profil önekiyle yeniden kurulmalı, yoksa öneksiz
+        // varsayılana ('opt_v22') bakıp yanlış veri gösteriyor.
+        var _restoredProfile = null;
+        try { _restoredProfile = localStorage.getItem('optflow_active_profile'); } catch(e){}
+        if(typeof selectProfile==='function' && _restoredProfile &&
+           typeof PROFILES!=='undefined' && PROFILES[_restoredProfile]){
+          selectProfile(_restoredProfile);   // reloadProfileData() içeride çağrılıyor
+        } else if(typeof reloadProfileData==='function'){
+          reloadProfileData();
+        } else {
+          try{ tradesData=JSON.parse(localStorage.getItem(LS)||'{}'); }catch(e){}
+          if(typeof deletedIds!=='undefined'){try{deletedIds=JSON.parse(localStorage.getItem(DELETED_IDS_LS)||'[]');}catch(e){deletedIds=[];}}
+          renderDashboard();renderTradeList('all');
+          if(typeof renderPlannedList==='function')renderPlannedList();
+          if(typeof renderVergi==='function')renderVergi();
+        }
         var tot=getAllTrades().length;
         m.remove();
-        renderDashboard();renderTradeList('all');
-        if(typeof renderPlannedList==='function')renderPlannedList();
-        if(typeof renderVergi==='function')renderVergi();
         var t=document.createElement('div');
         t.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--profit);color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;white-space:nowrap';
         t.textContent='✅ Tüm veriler geri yüklendi — '+tot+' trade';
