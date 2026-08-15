@@ -4381,9 +4381,51 @@ function renderGroupedTrades(f){
 }
 
 // ═══════════════════ TCMB KUR ENTEGRASYONU ═══════════════════
-function fetchTCMBRates(){
-  var btn=document.getElementById('tcmbFetchBtn');
-  var status=document.getElementById('tcmbStatus');
+// TCMB kuru yalnızca hafta içi (Pzt–Cum) yayınlar. Hafta sonu ve resmî
+// tatillerde yayın yok; o günler için son açıklanan kur geçerlidir.
+
+function _tcmbIso(d){
+  return d.getFullYear() + '-' +
+    ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+}
+function _tcmbParse(iso){
+  var p = String(iso).substring(0,10).split('-');
+  if(p.length !== 3) return null;
+  var d = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+  return isNaN(d.getTime()) ? null : d;
+}
+// Pazartesi–Cuma mı? (getDay: 0=Pazar, 6=Cumartesi)
+function isWeekdayISO(iso){
+  var d = _tcmbParse(iso); if(!d) return false;
+  var w = d.getDay();
+  return w >= 1 && w <= 5;
+}
+// Bu tarihe uygulanacak kurun yayınlandığı iş günü.
+// Hafta içiyse kendisi; Cumartesi/Pazar ise önceki Cuma.
+function rateSourceDate(iso){
+  var d = _tcmbParse(iso); if(!d) return iso;
+  var w = d.getDay();
+  if(w === 6) d.setDate(d.getDate() - 1);      // Cumartesi → Cuma
+  else if(w === 0) d.setDate(d.getDate() - 2); // Pazar    → Cuma
+  return _tcmbIso(d);
+}
+// N iş günü geri git (hafta sonlarını atlar) — resmî tatil geri çekilmesi için
+function prevBusinessDay(iso, steps){
+  var d = _tcmbParse(iso); if(!d) return iso;
+  var moved = 0, guard = 0;
+  while(moved < steps && guard++ < 60){
+    d.setDate(d.getDate() - 1);
+    var w = d.getDay();
+    if(w >= 1 && w <= 5) moved++;
+  }
+  return _tcmbIso(d);
+}
+
+function fetchTCMBRates(opts){
+  opts = opts || {};
+  var silent = !!opts.silent;
+  var btn=silent?null:document.getElementById('tcmbFetchBtn');
+  var status=silent?null:document.getElementById('tcmbStatus');
   if(btn){ btn.disabled=true; btn.textContent='Çekiliyor...'; }
   if(status){ status.style.display='block'; status.style.background='rgba(59,130,246,0.1)'; status.style.border='1px solid rgba(59,130,246,0.3)'; status.style.color='var(--info)'; status.textContent='TCMB\'den kur verileri çekiliyor...'; }
 
@@ -4422,31 +4464,64 @@ function fetchTCMBRates(){
     return 'https://www.tcmb.gov.tr/kurlar/'+yyyymm+'/'+ddmmyyyy+'.xml';
   }
 
-  // Subtract N days from an ISO date string
-  function subtractDays(isoDate, n){
-    var d = new Date(isoDate); d.setDate(d.getDate() - n);
-    return d.toISOString().substring(0, 10);
-  }
-
-  // CORS proxy — TCMB doesn't send Access-Control-Allow-Origin headers
-  var PROXY = 'https://corsproxy.io/?url=';
+  // TCMB Access-Control-Allow-Origin göndermiyor → CORS proxy şart.
+  // Tek proxy'ye bağlı kalmak kırılgan (biri ölürse fonksiyon tamamen
+  // çalışmaz hale geliyordu); sırayla deniyoruz.
+  var TCMB_PROXIES = [
+    function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+    function(u){ return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
+    function(u){ return 'https://corsproxy.io/?url=' + encodeURIComponent(u); },
+    function(u){ return 'https://thingproxy.freeboard.io/fetch/' + u; }
+  ];
 
   var added=0, failed=0, total=datesToFetch.length;
   var idx=0;
 
-  // Try the date, then up to 4 days back (for weekends/holidays)
-  function tryFetchDate(isoDate, daysBack, onSuccess, onFail){
-    if(daysBack > 4){ onFail(); return; }
-    var tryDate = daysBack === 0 ? isoDate : subtractDays(isoDate, daysBack);
-    var url = buildTCMBUrl(tryDate);
-    fetch(PROXY + encodeURIComponent(url), {cache:'no-cache'})
+  // Çalışan proxy'yi hatırla: biri ölüyse her istek baştan timeout
+  // ödemesin. _tcmbGoodProxy oturum boyunca korunur.
+  if(typeof window._tcmbGoodProxy !== 'number') window._tcmbGoodProxy = 0;
+
+  // Tek bir iş günü için XML çek — proxy'leri sırayla dener
+  function fetchBusinessDay(isoDate, attempt, startIdx){
+    if(startIdx === undefined) startIdx = window._tcmbGoodProxy;
+    if(attempt >= TCMB_PROXIES.length) return Promise.resolve(null);
+    var proxyIdx = (startIdx + attempt) % TCMB_PROXIES.length;
+    var url = buildTCMBUrl(isoDate);
+    if(!url) return Promise.resolve(null);
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if(ctrl) ctrl.abort(); }, 12000);
+    return fetch(TCMB_PROXIES[proxyIdx](url), ctrl ? {cache:'no-cache', signal:ctrl.signal} : {cache:'no-cache'})
       .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
       .then(function(xml){
+        clearTimeout(timer);
         var rate = parseUSDRate(xml);
-        if(rate && rate > 1){ onSuccess(rate); }
-        else { tryFetchDate(isoDate, daysBack+1, onSuccess, onFail); }
+        // Geçerli kur bulundu → bu proxy çalışıyor, bir daha onunla başla
+        if(rate && rate > 1){ window._tcmbGoodProxy = proxyIdx; return rate; }
+        // XML geldi ama USD yok → o gün yayın yapılmamış (resmî tatil)
+        if(/<Tarih_Date|<Currency/i.test(xml)){ window._tcmbGoodProxy = proxyIdx; return null; }
+        // Proxy hata sayfası döndürmüş olabilir → sıradaki proxy
+        return fetchBusinessDay(isoDate, attempt + 1, startIdx);
       })
-      .catch(function(){ tryFetchDate(isoDate, daysBack+1, onSuccess, onFail); });
+      .catch(function(){
+        clearTimeout(timer);
+        return fetchBusinessDay(isoDate, attempt + 1, startIdx);
+      });
+  }
+
+  // Hedef tarihin kurunu bul: hafta sonuysa önceki Cuma'dan başla,
+  // tatil nedeniyle yayın yoksa iş günü iş günü geriye git.
+  function resolveRate(isoDate, onSuccess, onFail){
+    var start = rateSourceDate(isoDate);   // Cmt/Paz → önceki Cuma
+    var MAX_BACK = 10;                     // uzun bayram tatillerini kapsar
+    function step(back){
+      if(back > MAX_BACK){ onFail(); return; }
+      var tryDate = back === 0 ? start : prevBusinessDay(start, back);
+      fetchBusinessDay(tryDate, 0).then(function(rate){
+        if(rate) onSuccess(rate, tryDate);
+        else step(back + 1);
+      });
+    }
+    step(0);
   }
 
   function fetchNext(){
@@ -4461,7 +4536,7 @@ function fetchTCMBRates(){
     }
     var date = datesToFetch[idx]; idx++;
     if(status) status.textContent = 'Çekiliyor: '+date+' ('+idx+'/'+total+')...';
-    tryFetchDate(date, 0,
+    resolveRate(date,
       function(rate){
         var rate4 = Math.trunc(rate * 10000) / 10000;
         kurlarData[date] = rate4;
@@ -4475,6 +4550,37 @@ function fetchTCMBRates(){
     );
   }
   fetchNext();
+}
+
+// ── Otomatik kur çekme ────────────────────────────────────────
+// Uygulama açılışında sessizce çalışır. Yalnızca hafta içi (Pzt–Cum)
+// dener; hafta sonu TCMB yayın yapmadığı için boşuna istek atmaz.
+// Günde bir kez denenir — başarısız olsa bile aynı gün tekrar denenmez.
+var TCMB_AUTO_KEY = 'optflow_tcmb_autofetch_v1';
+
+function autoFetchTCMB(){
+  try {
+    var today = _tcmbIso(new Date());
+    // Hafta sonu: yeni kur yayınlanmaz, son açıklanan geçerli → çekme
+    if(!isWeekdayISO(today)) return;
+    // Bugün zaten denendi
+    if(localStorage.getItem(TCMB_AUTO_KEY) === today) return;
+    // Eksik kur var mı? Yoksa ağa hiç çıkma
+    var eksik = false;
+    var all = (typeof getAllTrades === 'function') ? getAllTrades() : [];
+    for(var i = 0; i < all.length && !eksik; i++){
+      var t = all[i];
+      [t.closed, t.opened].forEach(function(d){
+        if(d && !kurlarData[String(d).substring(0,10)]) eksik = true;
+      });
+      (t.partialCloses || []).forEach(function(pc){
+        if(pc.date && !kurlarData[String(pc.date).substring(0,10)]) eksik = true;
+      });
+    }
+    if(!eksik) return;
+    localStorage.setItem(TCMB_AUTO_KEY, today);
+    fetchTCMBRates({ silent: true });
+  } catch(e) {}
 }
 
 // ═══════════════════ CSV / EXCEL EXPORT ═══════════════════
@@ -5045,7 +5151,7 @@ function triggerBackup() {
     '<div style="width:32px;height:3px;background:var(--border-bright);border-radius:2px;margin:0 auto 18px"></div>' +
     '<div style="font-family:var(--font-head);font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">💾 Verilerini Yedekle</div>' +
     '<div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.5;">' +
-      sizeKB + ' KB · tüm ayarlar, vergi kayıtları, LEAPS ve notlar dahil</div>' +
+      sizeKB + ' KB · vergi kayıtları, YİÜFE endeksi, TCMB kurları, LEAPS, planlar ve notlar dahil</div>' +
     profLine +
     '<button id="_bkShare" style="width:100%;padding:15px;margin-bottom:9px;background:var(--info-dim);' +
       'border:1px solid var(--info);border-radius:12px;color:var(--info);font-family:var(--font-head);' +
@@ -7700,6 +7806,8 @@ function reloadProfileData() {
   setTimeout(function(){ buildMonthPills(); buildYearPills(); renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
   // Yedekleme hatırlatıcısını kontrol et
   setTimeout(checkBackupReminder, 3000);
+  // TCMB kurlarını sessizce çek (hafta içi, günde bir kez)
+  setTimeout(function(){ if(typeof autoFetchTCMB==='function') autoFetchTCMB(); }, 5000);
 }
 
 window.reloadProfileData = reloadProfileData;

@@ -1,4 +1,4 @@
-const CACHE = 'optflow-v8';
+const CACHE = 'optflow-v9';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
