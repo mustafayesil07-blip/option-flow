@@ -60,6 +60,15 @@ function tcmbUrl(isoDate) {
   return `https://www.tcmb.gov.tr/kurlar/${y}${m}/${dd}${m}${y}.xml`;
 }
 
+// Kuru 4 ondalige kirpar. Duz Math.trunc(v*10000) kayan nokta yuzunden
+// zaten 4 haneli degerleri 0.0001 asagi ceker (41.4984 -> 41.4983);
+// kucuk epsilon bunu engeller, gercek kirpmayi bozmaz.
+function kur4(v) {
+  const n = parseFloat(v);
+  if (!isFinite(n)) return n;
+  return Math.trunc(n * 10000 + 1e-6) / 10000;
+}
+
 function parseUsdForexBuying(xml) {
   const block = xml.match(/<Currency[^>]*Kod="USD"[^>]*>([\s\S]*?)<\/Currency>/i);
   if (block) {
@@ -148,7 +157,7 @@ async function main() {
     const day = todo[i];
     if (!r) { errored++; return; }
     if (r.kind === 'rate') {
-      rates[day] = Math.trunc(r.rate * 10000) / 10000;
+      rates[day] = kur4(r.rate);
       added++;
     } else if (r.kind === 'holiday') {
       holidays.add(day);

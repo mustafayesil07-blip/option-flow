@@ -1884,12 +1884,20 @@ var kurlarData = JSON.parse(JSON.stringify(KURLAR_SEED));
 try { var _k = localStorage.getItem(KURLAR_LS); if(_k){ var _ks=JSON.parse(_k); Object.keys(_ks).forEach(function(d){ kurlarData[d]=_ks[d]; }); } } catch(e){}
 // Also import from old app's kurlar key
 try { var _ko = localStorage.getItem('kurlar'); if(_ko){ var _kod=JSON.parse(_ko); Object.keys(_kod).forEach(function(d){ if(!kurlarData[d]) kurlarData[d]=_kod[d]; }); } } catch(e){}
-// Migrate all existing kur values to 4 decimal places (truncate, no rounding)
+// Kuru 4 ondalige indirger (yuvarlamadan kirpar).
+// DIKKAT: duz Math.trunc(v*10000) kayan nokta yuzunden ZATEN 4 haneli
+// degerleri 0.0001 asagi cekiyordu (41.4984*10000 = 414983.99999999994
+// -> 41.4983). Kucuk bir epsilon bunu engeller, gercek kirpmayi bozmaz.
+function kur4(v){
+  var n = parseFloat(v);
+  if(!isFinite(n)) return n;
+  return Math.trunc(n * 10000 + 1e-6) / 10000;
+}
+// Mevcut kur degerlerini 4 ondalige tasi
 (function(){
   var changed = false;
   Object.keys(kurlarData).forEach(function(d){
-    var v = parseFloat(kurlarData[d]);
-    var v4 = Math.trunc(v * 10000) / 10000;
+    var v4 = kur4(kurlarData[d]);
     if(kurlarData[d] !== v4){ kurlarData[d] = v4; changed = true; }
   });
   if(changed) try { localStorage.setItem(KURLAR_LS, JSON.stringify(kurlarData)); } catch(e){}
@@ -4437,8 +4445,9 @@ function prevBusinessDay(iso, steps){
 // Çözüm: .github/workflows/tcmb-kurlar.yml her hafta içi TCMB'den kurları
 // sunucu tarafında çekip kurlar.json'a yazıyor. Uygulama bu dosyayı KENDİ
 // origin'inden indiriyor — CORS yok, proxy yok, tek istek.
-var KUR_JSON_MAX  = null;   // kurlar.json'un kapsadığı en son tarih
-var KUR_JSON_STAT = null;   // son indirme sonucu (debug ekranı için)
+var KUR_JSON_MAX   = null;  // kurlar.json'un kapsadığı en son tarih
+var KUR_JSON_STAT  = null;  // son indirme sonucu (debug ekranı için)
+var KUR_JSON_FIXED = 0;     // resmî veriyle düzeltilen kur sayısı
 
 function fetchKurlarJSON(){
   var url = 'kurlar.json?t=' + (new Date()).getTime();
@@ -4446,15 +4455,23 @@ function fetchKurlarJSON(){
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(map){
       if(!map || typeof map !== 'object') return 0;
-      var added = 0;
+      var added = 0, fixed = 0;
       Object.keys(map).forEach(function(d){
         var v = parseFloat(map[d]);
         if(!(v > 0)) return;
         if(!KUR_JSON_MAX || d > KUR_JSON_MAX) KUR_JSON_MAX = d;
-        if(!kurlarData[d]){ kurlarData[d] = v; added++; }
+        if(!kurlarData[d]){
+          kurlarData[d] = v; added++;
+        } else if(Math.abs(kurlarData[d] - v) > 0.00005){
+          // Resmî TCMB verisi elle girilmiş değerden üstündür — vergi
+          // hesabı yanlış kurla yapılmasın.
+          kurlarData[d] = v; fixed++;
+        }
       });
-      if(added > 0) saveKurlar();
-      KUR_JSON_STAT = 'OK — kapsam: ' + KUR_JSON_MAX + ', yeni: ' + added;
+      if(added > 0 || fixed > 0) saveKurlar();
+      KUR_JSON_FIXED = fixed;
+      KUR_JSON_STAT  = 'OK — kapsam: ' + KUR_JSON_MAX + ', yeni: ' + added
+                     + (fixed ? ', düzeltilen: ' + fixed : '');
       return added;
     })
     .catch(function(e){
@@ -4655,7 +4672,7 @@ function fetchTCMBRates(opts){
       var d = dates[idx++];
       return resolveNet(d).then(function(rate){
         done++;
-        if(rate){ kurlarData[d] = Math.trunc(rate * 10000) / 10000; added++; }
+        if(rate){ kurlarData[d] = kur4(rate); added++; }
         else failed++;
         setStatus('TCMB\'den çekiliyor: ' + done + '/' + dates.length + ' (' + added + ' bulundu)...');
         return worker();
@@ -4690,8 +4707,9 @@ function autoFetchTCMB(){
       silent: true,
       allowNetwork: allowNetwork,
       onDone: function(added, failed){
-        if(added > 0){
-          _backupToast('💱 ' + added + ' kur otomatik güncellendi', true);
+        if(added > 0 || KUR_JSON_FIXED > 0){
+          _backupToast('💱 ' + added + ' kur güncellendi'
+            + (KUR_JSON_FIXED ? ', ' + KUR_JSON_FIXED + ' tanesi düzeltildi' : ''), true);
         } else if(failed > 0){
           _backupToast('⚠️ ' + failed + ' tarih için kur bulunamadı', false);
         }
@@ -6570,9 +6588,8 @@ function kurEkle(){
   var deger = parseFloat(document.getElementById('kurDeger').value);
   if(!tarih){ alert('Select a date'); return; }
   if(!deger || deger <= 0){ alert('Enter a valid rate'); return; }
-  // Store exact value truncated to 4 decimal places (no rounding)
-  var factor = 10000;
-  kurlarData[tarih] = Math.trunc(deger * factor) / factor;
+  // 4 ondalige kirpilmis degeri sakla (kur4 kayan nokta hatasini onler)
+  kurlarData[tarih] = kur4(deger);
   saveKurlar();
   document.getElementById('kurDeger').value = '';
   renderVergi();
