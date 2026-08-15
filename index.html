@@ -2204,6 +2204,33 @@ function getDTE(exp){
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 
 // ── Theme toggle ──────────────────────────────────────────
+// ── Grafik renkleri temaya göre ───────────────────────────────────────
+// Chart.js canvas'a çizdiği için CSS değişkenlerini göremez; renkler
+// koda gömülüydü ve açık modda (açık zemin üstüne açık bej yazı)
+// eksen/legend yazıları okunmuyordu. Tek kaynak burası.
+function chartTheme(){
+  var light = document.documentElement.classList.contains('light-mode');
+  return light ? {
+    tick:'#4A3826', grid:'rgba(60,40,20,.16)', gridSoft:'rgba(60,40,20,.10)',
+    tipBg:'rgba(255,251,244,.98)', tipBorder:'rgba(60,40,20,.28)',
+    tipTitle:'#3A2A1A', tipBody:'#3A2A1A',
+    green:'#15803D', blue:'#1D4ED8', amber:'#B45309', red:'#B91C1C'
+  } : {
+    tick:'#C4AA90', grid:'rgba(255,255,255,.10)', gridSoft:'rgba(255,255,255,.06)',
+    tipBg:'rgba(50,40,32,.97)', tipBorder:'rgba(196,170,144,.3)',
+    tipTitle:'#F5EDE3', tipBody:'#F5EDE3',
+    green:'#22C55E', blue:'#3B82F6', amber:'#F59E0B', red:'#EF4444'
+  };
+}
+// Tooltip'in ortak tema ayarları
+function chartTip(extra){
+  var C = chartTheme();
+  var o = { backgroundColor:C.tipBg, borderColor:C.tipBorder, borderWidth:1,
+            titleColor:C.tipTitle, bodyColor:C.tipBody };
+  if(extra) Object.keys(extra).forEach(function(k){ o[k]=extra[k]; });
+  return o;
+}
+
 function toggleTheme(){
   var isLight = document.documentElement.classList.toggle('light-mode');
   var btn = document.getElementById('themeBtn');
@@ -2211,6 +2238,14 @@ function toggleTheme(){
   try { localStorage.setItem('optflow_theme_v1', isLight ? 'light' : 'dark'); } catch(e){}
   // Inline beyaz overlay'leri yeni temaya çevir / geri al
   if (typeof _applyLightInline === 'function') _applyLightInline(document.body);
+  // Grafikler canvas — CSS ile güncellenmez, yeniden çizilmeleri şart.
+  try { applyChartDefaults(); } catch(e){}
+  try {
+    if(currentScreen==='dashboard' && typeof renderDashboard==='function') renderDashboard();
+    else if(currentScreen==='statistics' && typeof renderStats==='function') renderStats();
+    else if(currentScreen==='reports' && typeof renderReports==='function') renderReports();
+    else if(currentScreen==='risk' && typeof renderRisk==='function') renderRisk();
+  } catch(e){}
 }
 (function _applyTheme(){
   try {
@@ -2288,16 +2323,20 @@ function switchScreen(name) {
 // Chart.js CDN'den geliyor — offline/yavaş ağda yüklenmeyebilir.
 // Guard olmadan buradaki ReferenceError scriptin TAMAMINI durduruyor
 // (yedekleme, tema çevirici, profil kodu dahil hiçbiri çalışmıyordu).
-if (typeof Chart !== 'undefined') {
-  Chart.defaults.color = '#C4AA90';
-  Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+function applyChartDefaults(){
+  if (typeof Chart === 'undefined') return;
+  var C = chartTheme();
+  Chart.defaults.color = C.tick;              // eksen/legend varsayilan yazi
+  Chart.defaults.borderColor = C.gridSoft;
   Chart.defaults.font.family = "'Inter', sans-serif";
   Chart.defaults.font.size = 11;
 }
+applyChartDefaults();
 
 var equityChartInst, monthlyChartInst, donutChartInst;
 
 function buildEquityChart(){
+  var _CT = chartTheme();
   var all=getClosedTrades().sort(function(a,b){return new Date(a.closed)-new Date(b.closed);});
   var r=PORT_SIZE,eq=[PORT_SIZE],pl=[0],lb=['Start'];
   all.forEach(function(t){r+=t.pnl;eq.push(r);pl.push(r-PORT_SIZE);lb.push(t.closed.slice(5));});
@@ -2310,11 +2349,12 @@ function buildEquityChart(){
   var g=ctx.createLinearGradient(0,0,0,160);
   g.addColorStop(0,lp>=0?'rgba(34,197,94,.25)':'rgba(239,68,68,.25)');g.addColorStop(1,'rgba(0,0,0,0)');
   if(equityChartInst)equityChartInst.destroy();
-  equityChartInst=new Chart(ctx,{type:'line',data:{labels:sl,datasets:[{data:se,borderColor:lc,borderWidth:2,fill:true,backgroundColor:g,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:lc}]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.97)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,padding:10,callbacks:{label:function(c){return fmtA$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:5,color:'#C4AA90'}},y:{grid:{color:'rgba(255,255,255,.10)'},border:{display:false},ticks:{maxTicksLimit:4,color:'#C4AA90',callback:function(v){return'$'+(v/1000).toFixed(0)+'K';}}}}}});
+  equityChartInst=new Chart(ctx,{type:'line',data:{labels:sl,datasets:[{data:se,borderColor:lc,borderWidth:2,fill:true,backgroundColor:g,tension:0.4,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:lc}]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:chartTip({padding:10,callbacks:{label:function(c){return fmtA$(c.raw);}}})},scales:{x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:5,color:_CT.tick}},y:{grid:{color:_CT.grid},border:{display:false},ticks:{maxTicksLimit:4,color:_CT.tick,callback:function(v){return'$'+(v/1000).toFixed(0)+'K';}}}}}});
   equityChartInst._eq=se;equityChartInst._pl=sp;equityChartInst._lc=lc;
 }
 
 function buildMonthlyChart(){
+  var _CT = chartTheme();
   var m=getMonthlyStats();
   var lb=m.map(function(x){return x.month.slice(0,3);});
   var vl=m.map(function(x){return x.pnl;});
@@ -2322,7 +2362,7 @@ function buildMonthlyChart(){
   var bd=vl.map(function(v){return v>=0?'#22C55E':'#EF4444';});
   var ctx2=document.getElementById('monthlyChart').getContext('2d');
   if(monthlyChartInst)monthlyChartInst.destroy();
-  monthlyChartInst=new Chart(ctx2,{type:'bar',data:{labels:lb,datasets:[{data:vl,backgroundColor:bc,borderColor:bd,borderWidth:1,borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.97)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return fmt$(c.raw);}}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},y:{grid:{color:'rgba(255,255,255,.10)'},border:{display:false},ticks:{maxTicksLimit:4,color:'#C4AA90',callback:function(v){return(v>=0?'+':'')+'$'+(v/1000).toFixed(1)+'K';}}}}}});
+  monthlyChartInst=new Chart(ctx2,{type:'bar',data:{labels:lb,datasets:[{data:vl,backgroundColor:bc,borderColor:bd,borderWidth:1,borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:chartTip({callbacks:{label:function(c){return fmt$(c.raw);}}})},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:_CT.tick}},y:{grid:{color:_CT.grid},border:{display:false},ticks:{maxTicksLimit:4,color:_CT.tick,callback:function(v){return(v>=0?'+':'')+'$'+(v/1000).toFixed(1)+'K';}}}}}});
 }
 
 function switchChartTab(el,type){
@@ -3686,6 +3726,7 @@ function setWrWindow(n, btn){
 }
 
 function buildStratCompChart(){
+  var _CT = chartTheme();
   var el = document.getElementById('stratCompChart'); if(!el) return;
   var closed = getFilteredClosedTrades(getEffectiveStatMonth());
   var STRATS = ['CSP','PCS','IC','CC','PMCC','Long Call'];
@@ -3712,28 +3753,33 @@ function buildStratCompChart(){
       responsive:true, maintainAspectRatio:false,
       interaction:{intersect:false,mode:'index'},
       plugins:{
-        legend:{display:true,position:'top',labels:{color:'#C4AA90',padding:12,font:{size:11}}},
-        tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return c.dataset.label+': '+(c.datasetIndex===0?c.raw+'%':'$'+c.raw);}}}
+        legend:{display:true,position:'top',labels:{color:_CT.tick,padding:12,font:{size:11}}},
+        tooltip:chartTip({callbacks:{label:function(c){return c.dataset.label+': '+(c.datasetIndex===0?c.raw+'%':'$'+c.raw);}}})
       },
       scales:{
-        x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},
-        wr:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{color:'#22C55E',callback:function(v){return v+'%';}}},
-        pnl:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:'#3B82F6',callback:function(v){return '$'+v;}}}
+        x:{grid:{display:false},border:{display:false},ticks:{color:_CT.tick}},
+        wr:{type:'linear',position:'left',grid:{color:_CT.gridSoft},border:{display:false},ticks:{color:_CT.green,callback:function(v){return v+'%';}}},
+        pnl:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:_CT.blue,callback:function(v){return '$'+v;}}}
       }
     }
   });
 }
 
 function buildWinRateChart(){
+  var _CT = chartTheme();
   var el = document.getElementById('winRateChart'); if(!el) return;
   var closed = getFilteredClosedTrades('all').sort(function(a,b){return new Date(a.closed)-new Date(b.closed);});
   if(closed.length < 2){ el.getContext('2d').clearRect(0,0,el.width,el.height); return; }
   var n = _wrWindow;
+  // Veri birden fazla yila yayiliyorsa etikette yil da olmali; yoksa
+  // '03-23' hangi yila ait belli olmuyordu.
+  var _wrMultiYear = String(closed[0].closed).substring(0,4)
+                  !== String(closed[closed.length-1].closed).substring(0,4);
   var labels=[], wrs=[];
   for(var i=n-1; i<closed.length; i++){
     var window = closed.slice(i-n+1, i+1);
     var wins = window.filter(function(t){return t.pnl>0;}).length;
-    labels.push(closed[i].closed ? closed[i].closed.slice(5) : i);
+    labels.push(closed[i].closed ? (_wrMultiYear ? closed[i].closed.slice(2) : closed[i].closed.slice(5)) : i);
     wrs.push(Math.round((wins/n)*100));
   }
   var ctx = el.getContext('2d');
@@ -3745,10 +3791,10 @@ function buildWinRateChart(){
     data:{ labels:labels, datasets:[{data:wrs,borderColor:lc,borderWidth:2,fill:true,backgroundColor:grad,tension:0.35,pointRadius:0,pointHoverRadius:4}] },
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return 'Win Rate: '+c.raw+'%';}}}},
+      plugins:{legend:{display:false},tooltip:chartTip({callbacks:{label:function(c){return 'Win Rate: '+c.raw+'%';}}})},
       scales:{
-        x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:6,color:'#C4AA90'}},
-        y:{grid:{color:'rgba(255,255,255,.06)'},border:{display:false},min:0,max:100,ticks:{color:'#C4AA90',callback:function(v){return v+'%';}}}
+        x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:6,color:_CT.tick}},
+        y:{grid:{color:_CT.gridSoft},border:{display:false},min:0,max:100,ticks:{color:_CT.tick,callback:function(v){return v+'%';}}}
       }
     }
   });
@@ -3756,21 +3802,41 @@ function buildWinRateChart(){
 
 function buildPremiumTrendChart(){
   var el = document.getElementById('premiumTrendChart'); if(!el) return;
-  var MONTH_ORDER=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
-  var monthly = getMonthlyStats();
-  monthly.sort(function(a,b){ return MONTH_ORDER.indexOf(a.month)-MONTH_ORDER.indexOf(b.month); });
-  // Monthly premium collected
-  var premByMonth = {};
-  var closed = getFilteredClosedTrades('all');
-  closed.forEach(function(t){
-    if(!t.month) return;
-    var prem = parseFloat(t.openPremium)||parseFloat(t.premium)||0;
-    premByMonth[t.month] = (premByMonth[t.month]||0) + prem;
+  var _CT = chartTheme();
+
+  // Prim AÇILIŞTA tahsil edilir → açılış tarihine göre grupla.
+  // ÖNEMLİ: t.month yalnızca ay ADI ('Mart'), yıl bilgisi yok. Eskiden
+  // buna göre gruplanıyordu; "All Time"da Mart 2025 ile Mart 2026 aynı
+  // kovaya toplanıyor, kümülatif çizgi de yıllar arası karışıyordu.
+  // Artık YYYY-MM anahtarı kullanılıyor.
+  // Ayrıca yalnızca KAPALI trade'ler sayılıyordu; oysa açık pozisyonun
+  // primi de tahsil edilmiştir — hepsi dahil.
+  var byYM = {};
+  getFilteredTrades('all').forEach(function(t){
+    var d = t.opened || t.closed; if(!d) return;
+    var ym = String(d).substring(0,7);                  // YYYY-MM
+    if(ym.length !== 7) return;
+    var prem = parseFloat(t.openPremium);
+    if(!isFinite(prem)) prem = parseFloat(t.premium);
+    if(!isFinite(prem)) return;
+    byYM[ym] = (byYM[ym]||0) + prem;
   });
-  var labels = [], monthPrem = [], cumPrem = [];
-  var cum = 0;
-  MONTH_ORDER.forEach(function(m){ if(premByMonth[m]){ labels.push(m.slice(0,3)); var v=premByMonth[m]; monthPrem.push(Math.round(v)); cum+=v; cumPrem.push(Math.round(cum)); } });
-  if(!labels.length) return;
+
+  var keys = Object.keys(byYM).sort();                  // kronolojik
+  if(!keys.length) return;
+  var SHORT = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+  var multiYear = keys[0].substring(0,4) !== keys[keys.length-1].substring(0,4);
+
+  var labels = [], monthPrem = [], cumPrem = [], cum = 0;
+  keys.forEach(function(k){
+    var mi = parseInt(k.substring(5,7),10) - 1;
+    labels.push((SHORT[mi]||k) + (multiYear ? " '" + k.substring(2,4) : ''));
+    var v = byYM[k];
+    monthPrem.push(Math.round(v));
+    cum += v;
+    cumPrem.push(Math.round(cum));
+  });
+
   var ctx = el.getContext('2d');
   if(premTrendChartInst) premTrendChartInst.destroy();
   var cumGrad=ctx.createLinearGradient(0,0,0,150); cumGrad.addColorStop(0,'rgba(59,130,246,.25)'); cumGrad.addColorStop(1,'rgba(0,0,0,0)');
@@ -3779,17 +3845,20 @@ function buildPremiumTrendChart(){
     data:{
       labels:labels,
       datasets:[
-        {type:'line',label:'Kümülatif',data:cumPrem,borderColor:'#3B82F6',borderWidth:2,fill:true,backgroundColor:cumGrad,tension:0.35,pointRadius:0,yAxisID:'cum'},
+        {type:'line',label:'Kümülatif',data:cumPrem,borderColor:_CT.blue,borderWidth:2,fill:true,backgroundColor:cumGrad,tension:0.35,pointRadius:0,yAxisID:'cum'},
         {type:'bar',label:'Aylık',data:monthPrem,backgroundColor:'rgba(245,158,11,0.55)',borderColor:'#F59E0B',borderWidth:1,borderRadius:4,yAxisID:'monthly'}
       ]
     },
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'top',labels:{color:'#C4AA90',padding:10,font:{size:11}}},tooltip:{backgroundColor:'rgba(50,40,32,.95)',borderColor:'rgba(196,170,144,.3)',borderWidth:1,callbacks:{label:function(c){return c.dataset.label+': $'+c.raw.toLocaleString();}}}},
+      plugins:{
+        legend:{display:true,position:'top',labels:{color:_CT.tick,padding:10,font:{size:11}}},
+        tooltip:chartTip({callbacks:{label:function(c){return c.dataset.label+': $'+c.raw.toLocaleString();}}})
+      },
       scales:{
-        x:{grid:{display:false},border:{display:false},ticks:{color:'#C4AA90'}},
-        monthly:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:'#F59E0B',callback:function(v){return '$'+(v/1000).toFixed(1)+'K';}}},
-        cum:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{color:'#3B82F6',callback:function(v){return '$'+(v/1000).toFixed(0)+'K';}}}
+        x:{grid:{display:false},border:{display:false},ticks:{color:_CT.tick}},
+        monthly:{type:'linear',position:'right',grid:{display:false},border:{display:false},ticks:{color:_CT.amber,callback:function(v){return '$'+(v/1000).toFixed(1)+'K';}}},
+        cum:{type:'linear',position:'left',grid:{color:_CT.gridSoft},border:{display:false},ticks:{color:_CT.blue,callback:function(v){return '$'+(v/1000).toFixed(0)+'K';}}}
       }
     }
   });
@@ -3865,6 +3934,7 @@ function buildHeatmap(){
 var _equityCurveInst = null;
 function buildEquityCurve(){
   var el = document.getElementById('equityCurveChart'); if(!el) return;
+  var _CT = chartTheme();
   if(_equityCurveInst){ try { _equityCurveInst.destroy(); } catch(e){} _equityCurveInst=null; }
   // Get all closed trades sorted by date
   var closed = getFilteredClosedTrades('all').filter(function(t){ return t.closed; });
@@ -3917,27 +3987,24 @@ function buildEquityCurve(){
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: 'rgba(200,185,170,0.7)', font: { size: 10 }, boxWidth: 12 } },
-        tooltip: {
-          backgroundColor: 'rgba(30,22,14,0.95)',
-          borderColor: 'rgba(196,170,144,.3)',
-          borderWidth: 1,
+        legend: { labels: { color: _CT.tick, font: { size: 10 }, boxWidth: 12 } },
+        tooltip: chartTip({
           callbacks: {
             label: function(c){ return c.dataset.label + ': ' + (c.raw >= 0 ? '+' : '') + '$' + Math.abs(c.raw).toLocaleString('en-US'); }
           }
-        }
+        })
       },
       scales: {
         y: {
           ticks: {
-            color: 'rgba(200,185,170,0.5)', font: { size: 9 },
+            color: _CT.tick, font: { size: 9 },
             callback: function(v){ return (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(); }
           },
-          grid: { color: 'rgba(255,255,255,0.04)' }
+          grid: { color: _CT.gridSoft }
         },
         x: {
           ticks: {
-            color: 'rgba(200,185,170,0.5)', font: { size: 9 },
+            color: _CT.tick, font: { size: 9 },
             maxTicksLimit: 8,
             maxRotation: 0
           },
@@ -8157,7 +8224,17 @@ function reloadProfileData() {
   if(typeof loadNlv === 'function') loadNlv();
   // Ekranı yenile
   switchScreen('dashboard');
-  setTimeout(function(){ buildMonthPills(); buildYearPills(); renderDashboard(); renderTrades(); renderLeaps(); renderVergi(); }, 100);
+  // DIKKAT: burada renderTrades() çağrılıyordu — böyle bir fonksiyon yok
+  // (doğrusu renderTradeList). Fırlattığı ReferenceError callback'i yarıda
+  // kesiyordu; profil değiştirince renderLeaps() ve renderVergi() hiç
+  // çalışmıyor, LEAPS ve Vergi ekranları eski profilin verisiyle kalıyordu.
+  setTimeout(function(){
+    try { buildMonthPills(); buildYearPills(); } catch(e){}
+    try { renderDashboard(); } catch(e){}
+    try { renderTradeList(currentFilter); } catch(e){}
+    try { if(typeof renderLeaps==='function') renderLeaps(); } catch(e){}
+    try { if(typeof renderVergi==='function') renderVergi(); } catch(e){}
+  }, 100);
   // Yedekleme hatırlatıcısını kontrol et
   setTimeout(checkBackupReminder, 3000);
   // TCMB kurlarını sessizce çek (hafta içi, günde bir kez)
@@ -8418,15 +8495,15 @@ function _renderAileDashboard() {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: 'rgba(200,185,170,0.7)', font: { size: 10 }, boxWidth: 12 } }
+          legend: { labels: { color: chartTheme().tick, font: { size: 10 }, boxWidth: 12 } }
         },
         scales: {
           yPnl: {
             type: 'linear', position: 'left',
-            ticks: { color: 'rgba(200,185,170,0.5)', font: { size: 9 },
+            ticks: { color: chartTheme().tick, font: { size: 9 },
               callback: function(v){ return (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(); }
             },
-            grid: { color: 'rgba(255,255,255,0.04)' }
+            grid: { color: chartTheme().gridSoft }
           },
           yWr: {
             type: 'linear', position: 'right',
@@ -8436,7 +8513,7 @@ function _renderAileDashboard() {
             },
             grid: { drawOnChartArea: false }
           },
-          x: { ticks: { color: 'rgba(200,185,170,0.7)', font: { size: 10 } }, grid: { display: false } }
+          x: { ticks: { color: chartTheme().tick, font: { size: 10 } }, grid: { display: false } }
         }
       }
     });
