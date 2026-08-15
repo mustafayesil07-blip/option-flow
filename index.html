@@ -4532,6 +4532,7 @@ function fetchTCMBRates(opts){
       if(btn){ btn.disabled=false; btn.innerHTML='&#x1F3E6; TCMB\'den Çek'; }
       if(added>0){ if(typeof renderVergi==='function') renderVergi(); if(typeof renderKurListesi==='function') renderKurListesi(); }
       setTimeout(function(){ if(status) status.style.display='none'; }, 6000);
+      if(typeof opts.onDone === 'function'){ try{ opts.onDone(added, failed); }catch(e){} }
       return;
     }
     var date = datesToFetch[idx]; idx++;
@@ -4579,7 +4580,18 @@ function autoFetchTCMB(){
     }
     if(!eksik) return;
     localStorage.setItem(TCMB_AUTO_KEY, today);
-    fetchTCMBRates({ silent: true });
+    fetchTCMBRates({
+      silent: true,
+      // Sessiz mod hiç geri bildirim vermiyordu; başarısız olunca
+      // kullanıcı "hiç çalışmıyor" diye düşünüyordu.
+      onDone: function(added, failed){
+        if(added > 0){
+          _backupToast('💱 ' + added + ' TCMB kuru otomatik eklendi', true);
+        } else if(failed > 0){
+          _backupToast('⚠️ TCMB kuru çekilemedi — Vergi ekranından elle deneyin', false);
+        }
+      }
+    });
   } catch(e) {}
 }
 
@@ -7532,10 +7544,58 @@ if ('serviceWorker' in navigator) {
   if (_isHosted) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('/option-flow/firebase-messaging-sw.js', {scope: '/option-flow/'})
-        .then(function(reg) { console.log('[PWA] SW registered'); })
+        .then(function(reg) {
+          console.log('[PWA] SW registered');
+          // Her acilista guncelleme kontrolu zorla. Chrome kendi basina
+          // 24 saate kadar bekleyebiliyor; PWA'da eski surumde takili
+          // kalmanin baslica sebebi buydu.
+          try { reg.update(); } catch(e) {}
+          // Yeni surum hazir olunca kullaniciya bildir
+          reg.addEventListener('updatefound', function() {
+            var nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', function() {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                showUpdateBanner();
+              }
+            });
+          });
+        })
         .catch(function() {});
+
+      // Yeni SW kontrolu devraldiginda sayfayi bir kez yenile
+      var _reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (_reloaded) return;
+        _reloaded = true;
+        window.location.reload();
+      });
     });
   }
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('sw-update-banner')) return;
+  var b = document.createElement('div');
+  b.id = 'sw-update-banner';
+  b.style.cssText = 'position:fixed;top:calc(var(--topbar-h, 56px) + 8px);left:12px;right:12px;z-index:9000;' +
+    'background:#1E40AF;border:1px solid rgba(147,197,253,.5);border-radius:12px;padding:11px 14px;' +
+    'display:flex;align-items:center;gap:10px;box-shadow:0 4px 18px rgba(0,0,0,.35)';
+  var t = document.createElement('div');
+  t.style.cssText = 'flex:1;min-width:0;font-size:13px;color:#EFF6FF;font-weight:600';
+  t.textContent = '🎉 Yeni sürüm hazır';
+  var go = document.createElement('button');
+  go.style.cssText = 'flex-shrink:0;padding:8px 14px;background:#EFF6FF;border:none;border-radius:8px;' +
+    'color:#1E40AF;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-head)';
+  go.textContent = 'Güncelle';
+  go.addEventListener('click', function() { window.location.reload(true); });
+  var x = document.createElement('button');
+  x.style.cssText = 'flex-shrink:0;background:none;border:none;color:rgba(239,246,255,.7);' +
+    'font-size:18px;cursor:pointer;padding:4px;line-height:1';
+  x.textContent = '✕';
+  x.addEventListener('click', function() { b.remove(); });
+  b.appendChild(t); b.appendChild(go); b.appendChild(x);
+  document.body.appendChild(b);
 }
 </script>
 

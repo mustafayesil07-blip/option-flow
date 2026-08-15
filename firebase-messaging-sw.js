@@ -2,7 +2,11 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
 // ── Offline cache ─────────────────────────────────────────────────────────
-var CACHE = 'optflow-v9';
+// DIKKAT: Uygulamanin GERCEK service worker'i bu dosyadir (index.html
+// bunu register ediyor). Depodaki sw.js hicbir yerde kayitli degil —
+// oradaki CACHE surumunu artirmak hicbir sey yapmaz.
+// Yeni surum yayinlarken CACHE degerini burada artirin.
+var CACHE = 'optflow-v11';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -32,7 +36,13 @@ self.addEventListener('fetch', function(e) {
 
   e.respondWith(
     caches.match(e.request).then(function(cached) {
-      return fetch(e.request).then(function(response) {
+      // Sayfa gezinmelerinde HTTP cache'i tamamen atla. Aksi halde
+      // GitHub Pages'in cache header'lari yuzunden network-first olmasina
+      // ragmen bayat index.html donebiliyor.
+      var req = (e.request.mode === 'navigate')
+        ? new Request(e.request.url, { cache: 'reload', credentials: 'same-origin' })
+        : e.request;
+      return fetch(req).then(function(response) {
         if (response && response.status === 200) {
           var clone = response.clone();
           caches.open(CACHE).then(function(c) { c.put(e.request, clone); });
