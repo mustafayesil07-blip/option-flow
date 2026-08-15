@@ -172,6 +172,10 @@
   html.light-mode .screen-header { background: rgba(178,154,114,0.92); }
   html.light-mode table tbody tr { background: transparent; }
 
+  /* Sheet/modal kenarlıkları — inline beyaz overlay'ler JS ile çevriliyor
+     (bkz. _applyLightInline); burada yalnızca CSS sınıflı olanlar var. */
+  html.light-mode .modal-sheet { border-top-color: var(--border-bright); }
+
   /* ── Theme toggle button ── */
   .tb-btn-theme {
     display: inline-flex; align-items: center; justify-content: center;
@@ -799,7 +803,7 @@
   }
 
   .overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.65);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .18s ease}
-  .modal-sheet{width:100%;max-width:520px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;animation:slideUp .28s cubic-bezier(.16,1,.3,1);max-height:88vh;overflow-y:auto}
+  .modal-sheet{width:100%;max-width:520px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;animation:slideUp .28s cubic-bezier(.16,1,.3,1);max-height:88vh;overflow-y:auto}
   .modal-handle{width:32px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;margin:0 auto 18px}
   @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -1494,7 +1498,7 @@ function showStatInfo(key){
   _ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:flex-end;justify-content:center';
 
   var _sh = document.createElement('div');
-  _sh.style.cssText = 'width:100%;max-width:480px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.12);padding:20px 22px 40px;animation:slideUp .25s cubic-bezier(.16,1,.3,1)';
+  _sh.style.cssText = 'width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.12);padding:20px 22px 40px;animation:slideUp .25s cubic-bezier(.16,1,.3,1)';
 
   var _hdl = document.createElement('div');
   _hdl.style.cssText = 'width:32px;height:3px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 18px';
@@ -1704,7 +1708,7 @@ function showDeleteConfirm(onConfirm){
   _delOv.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:24px';
 
   var box=document.createElement('div');
-  box.style.cssText='background:#3C2718;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center';
+  box.style.cssText='background:var(--bg2);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center';
 
   var icon=document.createElement('div');icon.style.cssText='font-size:32px;margin-bottom:10px';icon.textContent='🗑';
   var title=document.createElement('div');title.style.cssText='font-size:16px;font-weight:700;color:#F5EDE0;margin-bottom:8px';title.textContent='Delete Position';
@@ -2187,6 +2191,8 @@ function toggleTheme(){
   var btn = document.getElementById('themeBtn');
   if(btn) btn.textContent = isLight ? '☀️' : '🌙';
   try { localStorage.setItem('optflow_theme_v1', isLight ? 'light' : 'dark'); } catch(e){}
+  // Inline beyaz overlay'leri yeni temaya çevir / geri al
+  if (typeof _applyLightInline === 'function') _applyLightInline(document.body);
 }
 (function _applyTheme(){
   try {
@@ -2261,10 +2267,15 @@ function switchScreen(name) {
 }
 
 // ═══════════════════ CHARTS + DYNAMIC DATA ═══════════════════
-Chart.defaults.color = '#C4AA90';
-Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.font.size = 11;
+// Chart.js CDN'den geliyor — offline/yavaş ağda yüklenmeyebilir.
+// Guard olmadan buradaki ReferenceError scriptin TAMAMINI durduruyor
+// (yedekleme, tema çevirici, profil kodu dahil hiçbiri çalışmıyordu).
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.color = '#C4AA90';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.font.size = 11;
+}
 
 var equityChartInst, monthlyChartInst, donutChartInst;
 
@@ -4843,6 +4854,60 @@ function exportShareCard(){
   a.click();
 }
 
+// ═══════════════ AÇIK MOD — INLINE STİL ÇEVİRİCİ ═══════════════
+// Modal/sheet'lerde inline yazılmış beyaz overlay'ler (rgba(255,255,255,x))
+// açık zeminde görünmez kalıyor. CSS attribute-selector'ları güvenilir değil:
+// style.cssText ile atanan stiller tarayıcı tarafından boşluklu olarak yeniden
+// serialize ediliyor. Bu yüzden attribute'u JS ile okuyup çeviriyoruz.
+function _applyLightInline(root) {
+  if (!root || root.nodeType !== 1) return;
+  // Regex'ler fonksiyon içinde — modül seviyesinde var kullanılırsa
+  // toggleTheme() bu satırlardan önce çağrıldığında undefined oluyor.
+  var trigger = /rgba\(\s*255\s*,\s*255\s*,\s*255\s*,|#FFF3E0|#F1F5F9/i;
+  var white   = /rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*([\d.]+)\s*\)/gi;
+
+  var light = document.documentElement.classList.contains('light-mode');
+  var nodes = [];
+  if (root.hasAttribute && root.hasAttribute('style')) nodes.push(root);
+  if (root.querySelectorAll) nodes = nodes.concat([].slice.call(root.querySelectorAll('[style]')));
+
+  nodes.forEach(function(el) {
+    if (light) {
+      if (el.dataset._lmOrig !== undefined) return; // zaten çevrildi
+      var s = el.getAttribute('style');
+      if (!s || !trigger.test(s)) return;
+      el.dataset._lmOrig = s;
+      el.setAttribute('style', s
+        .replace(white, function(m, a) {
+          // Aynı görsel yoğunlukta koyu overlay
+          return 'rgba(60, 40, 20, ' + Math.min(0.92, parseFloat(a) * 1.3).toFixed(3) + ')';
+        })
+        .replace(/#FFF3E0/gi, '#1C0E05')
+        .replace(/#F1F5F9/gi, '#1C0E05'));
+    } else if (el.dataset._lmOrig !== undefined) {
+      el.setAttribute('style', el.dataset._lmOrig);
+      delete el.dataset._lmOrig;
+    }
+  });
+}
+
+// Yeni eklenen DOM düğümlerini otomatik yakala (modal/sheet açılışları)
+(function() {
+  function start() {
+    if (!document.body) { setTimeout(start, 50); return; }
+    _applyLightInline(document.body);
+    try {
+      new MutationObserver(function(muts) {
+        if (!document.documentElement.classList.contains('light-mode')) return;
+        muts.forEach(function(mu) {
+          [].forEach.call(mu.addedNodes, function(n) { _applyLightInline(n); });
+        });
+      }).observe(document.body, { childList: true, subtree: true });
+    } catch(e) {}
+  }
+  start();
+})();
+
 // ═══════════════════ OTO-YEDEKLEME SİSTEMİ ═══════════════════
 var BACKUP_LS_KEY = 'optflow_last_backup_v1';
 var BACKUP_DISMISS_KEY = 'optflow_backup_dismiss_v1';
@@ -4861,35 +4926,127 @@ function fullBackupJSON() {
   return JSON.stringify(snapshot, null, 2);
 }
 
-// Web Share API (mobil) veya download ile yedek gönder
-function triggerBackup(onDone) {
+function _backupMarkDone() {
+  try { localStorage.setItem(BACKUP_LS_KEY, Date.now().toString()); } catch(e) {}
+  hideBackupBanner();
+}
+
+function _backupToast(msg, ok) {
+  var t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:100000;' +
+    'background:' + (ok ? 'var(--profit)' : 'var(--loss)') + ';color:#fff;padding:12px 20px;border-radius:10px;' +
+    'font-size:14px;font-weight:600;max-width:88vw;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 3200);
+}
+
+// Yöntem 1 — Paylaş (Drive / WhatsApp / Dosyalar)
+function backupViaShare() {
   var json = fullBackupJSON();
   var date = new Date().toISOString().split('T')[0];
-  var fname = 'optflow-yedek-' + date + '.json';
-  function markDone() {
-    localStorage.setItem(BACKUP_LS_KEY, Date.now().toString());
-    if (onDone) onDone();
-    hideBackupBanner();
-  }
+  // Chrome Android application/json paylaşımını reddediyor — text/plain kullan
   try {
-    var file = new File([json], fname, { type: 'application/json' });
+    var file = new File([json], 'optflow-yedek-' + date + '.json', { type: 'text/plain' });
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({ files: [file], title: 'OptionFlow Yedek ' + date })
-        .then(markDone).catch(function() {});
-      return;
+        .then(function(){ _backupMarkDone(); _backupToast('✅ Yedek paylaşıldı', true); })
+        .catch(function(err){ if(err && err.name !== 'AbortError') _backupToast('Paylaşım başarısız — İndir seçeneğini dene', false); });
+      return true;
     }
   } catch(e) {}
-  // Fallback: indirme linki
-  var blob = new Blob([json], { type: 'application/json' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = fname;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
-  markDone();
+  _backupToast('Bu cihazda paylaşım desteklenmiyor — İndir veya Kopyala kullan', false);
+  return false;
 }
+
+// Yöntem 2 — Dosya olarak indir
+function backupViaDownload() {
+  try {
+    var json = fullBackupJSON();
+    var date = new Date().toISOString().split('T')[0];
+    var blob = new Blob([json], { type: 'application/octet-stream' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'optflow-yedek-' + date + '.json';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+    _backupMarkDone();
+    _backupToast('✅ İndirilenler klasörüne kaydedildi', true);
+  } catch(e) {
+    _backupToast('İndirme başarısız: ' + e.message, false);
+  }
+}
+
+// Yöntem 3 — Panoya kopyala (her zaman çalışır)
+function backupViaClipboard() {
+  var json = fullBackupJSON();
+  function fallbackCopy() {
+    var ta = document.createElement('textarea');
+    ta.value = json;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    if (ok) { _backupMarkDone(); _backupToast('✅ Panoya kopyalandı — bir nota yapıştır', true); }
+    else _backupToast('Kopyalama başarısız', false);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json)
+      .then(function(){ _backupMarkDone(); _backupToast('✅ Panoya kopyalandı — bir nota yapıştır', true); })
+      .catch(fallbackCopy);
+  } else fallbackCopy();
+}
+
+// Yedekleme seçenekleri sayfası
+function triggerBackup() {
+  var existing = document.getElementById('backup-choice-modal');
+  if (existing) existing.remove();
+
+  var json = fullBackupJSON();
+  var sizeKB = Math.round(json.length / 1024);
+  var tradeCount = 0;
+  try { tradeCount = getAllTrades().length; } catch(e) {}
+
+  var m = document.createElement('div');
+  m.id = 'backup-choice-modal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);' +
+    'display:flex;align-items:flex-end;justify-content:center';
+
+  var sh = document.createElement('div');
+  sh.className = 'modal-sheet';
+
+  sh.innerHTML =
+    '<div style="width:32px;height:3px;background:var(--border-bright);border-radius:2px;margin:0 auto 18px"></div>' +
+    '<div style="font-family:var(--font-head);font-size:19px;font-weight:700;color:var(--text);margin-bottom:4px;">💾 Verilerini Yedekle</div>' +
+    '<div style="font-size:12px;color:var(--text-3);margin-bottom:18px;line-height:1.5;">' +
+      tradeCount + ' trade · ' + sizeKB + ' KB · tüm ayarlar, vergi kayıtları ve notlar dahil</div>' +
+    '<button id="_bkShare" style="width:100%;padding:15px;margin-bottom:9px;background:var(--info-dim);' +
+      'border:1px solid var(--info);border-radius:12px;color:var(--info);font-family:var(--font-head);' +
+      'font-size:15px;font-weight:600;cursor:pointer;text-align:left;">📤 &nbsp;Paylaş<div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">Drive, WhatsApp, Dosyalar…</div></button>' +
+    '<button id="_bkDl" style="width:100%;padding:15px;margin-bottom:9px;background:var(--profit-dim);' +
+      'border:1px solid var(--profit);border-radius:12px;color:var(--profit);font-family:var(--font-head);' +
+      'font-size:15px;font-weight:600;cursor:pointer;text-align:left;">⬇️ &nbsp;Dosya olarak indir<div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">İndirilenler klasörüne kaydeder</div></button>' +
+    '<button id="_bkCopy" style="width:100%;padding:15px;margin-bottom:14px;background:var(--purple-dim);' +
+      'border:1px solid var(--purple);border-radius:12px;color:var(--purple);font-family:var(--font-head);' +
+      'font-size:15px;font-weight:600;cursor:pointer;text-align:left;">📋 &nbsp;Panoya kopyala<div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">Not uygulamasına yapıştır — her zaman çalışır</div></button>' +
+    '<button id="_bkCancel" style="width:100%;padding:13px;background:var(--card);border:1px solid var(--border);' +
+      'border-radius:10px;color:var(--text-2);font-size:14px;cursor:pointer;font-family:inherit;">Kapat</button>';
+
+  m.appendChild(sh);
+  document.body.appendChild(m);
+
+  sh.querySelector('#_bkShare').onclick = function(){ m.remove(); backupViaShare(); };
+  sh.querySelector('#_bkDl').onclick    = function(){ m.remove(); backupViaDownload(); };
+  sh.querySelector('#_bkCopy').onclick  = function(){ m.remove(); backupViaClipboard(); };
+  sh.querySelector('#_bkCancel').onclick= function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+}
+window.triggerBackup = triggerBackup;
 
 function hideBackupBanner() {
   var b = document.getElementById('auto-backup-banner');
@@ -4900,20 +5057,38 @@ function showBackupBanner() {
   if (document.getElementById('auto-backup-banner')) return;
   var b = document.createElement('div');
   b.id = 'auto-backup-banner';
+  // Amber zemin her iki temada da okunur — beyaz metinle yüksek kontrast
   b.style.cssText = 'position:fixed;bottom:calc(var(--nav-h) + 10px);left:12px;right:12px;z-index:500;' +
-    'background:rgba(146,64,14,0.97);border:1px solid rgba(255,180,80,0.35);border-radius:14px;' +
-    'padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.4);' +
-    'backdrop-filter:blur(10px);';
-  b.innerHTML =
-    '<span style="font-size:20px;flex-shrink:0;">💾</span>' +
-    '<div style="flex:1;min-width:0;">' +
-      '<div style="font-family:var(--font-head);font-weight:700;font-size:13px;color:#FFF3E0;">Verilerini yedekle</div>' +
-      '<div style="font-size:11px;color:rgba(255,243,224,0.75);margin-top:1px;">7+ gün yedek alınmadı — bir daha kaybetme</div>' +
-    '</div>' +
-    '<button onclick="triggerBackup()" style="flex-shrink:0;padding:8px 14px;background:#FFF3E0;border:none;border-radius:8px;' +
-      'color:#92400E;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-head);">Yedekle</button>' +
-    '<button onclick="var d=document.getElementById(\'auto-backup-banner\');d&&d.remove();localStorage.setItem(\''+BACKUP_DISMISS_KEY+'\',Date.now())" ' +
-      'style="flex-shrink:0;background:none;border:none;color:rgba(255,243,224,0.6);font-size:18px;cursor:pointer;padding:4px;">✕</button>';
+    'background:#92400E;border:1px solid rgba(255,180,80,0.45);border-radius:14px;' +
+    'padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.35);';
+
+  var icon = document.createElement('span');
+  icon.style.cssText = 'font-size:20px;flex-shrink:0';
+  icon.textContent = '💾';
+
+  var txt = document.createElement('div');
+  txt.style.cssText = 'flex:1;min-width:0';
+  txt.innerHTML =
+    '<div style="font-family:var(--font-head);font-weight:700;font-size:13px;color:#FFF8EE;">Verilerini yedekle</div>' +
+    '<div style="font-size:11px;color:rgba(255,248,238,0.8);margin-top:1px;">7+ gün yedek alınmadı — bir daha kaybetme</div>';
+
+  var act = document.createElement('button');
+  act.style.cssText = 'flex-shrink:0;padding:9px 15px;background:#FFF8EE;border:none;border-radius:8px;' +
+    'color:#92400E;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-head)';
+  act.textContent = 'Yedekle';
+  act.addEventListener('click', function(e){ e.stopPropagation(); triggerBackup(); });
+
+  var close = document.createElement('button');
+  close.style.cssText = 'flex-shrink:0;background:none;border:none;color:rgba(255,248,238,0.65);' +
+    'font-size:18px;cursor:pointer;padding:4px;line-height:1';
+  close.textContent = '✕';
+  close.addEventListener('click', function(e){
+    e.stopPropagation();
+    b.remove();
+    try { localStorage.setItem(BACKUP_DISMISS_KEY, Date.now().toString()); } catch(err) {}
+  });
+
+  b.appendChild(icon); b.appendChild(txt); b.appendChild(act); b.appendChild(close);
   document.body.appendChild(b);
 }
 
@@ -4943,7 +5118,7 @@ function importData(){
   m.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
 
   var sh=document.createElement('div');
-  sh.style.cssText='width:100%;max-width:500px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.12);padding:20px 20px 40px;max-height:85vh;overflow-y:auto;';
+  sh.style.cssText='width:100%;max-width:500px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.12);padding:20px 20px 40px;max-height:85vh;overflow-y:auto;';
 
   var hdl=document.createElement('div');
   hdl.style.cssText='width:32px;height:3px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 18px';
@@ -5046,8 +5221,8 @@ function importData(){
 var SHORT_TYPES = ['CSP','CC','PCS','PMCC','IC','HEDGE','COLLAR CALL','COLLAR PUT'];
 function isShortType(type){ return SHORT_TYPES.indexOf((type||'').trim()) !== -1; }
 
-function _fldStyle(){ return 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 13px;color:#FFF3E0;font-size:14px;outline:none;width:100%;-webkit-appearance:none'; }
-function _lblStyle(){ return 'font-size:12px;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px'; }
+function _fldStyle(){ return 'background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:14px;outline:none;width:100%;-webkit-appearance:none'; }
+function _lblStyle(){ return 'font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px'; }
 function _fldWrap(labelTxt, inputHtml){
   return '<div><div style="'+_lblStyle()+'">'+labelTxt+'</div>'+inputHtml+'</div>';
 }
@@ -5063,7 +5238,7 @@ function showAddTrade(existingTrade){
   var _initialType = isEdit ? existingTrade.type : 'CSP';
 
   var sheet=document.createElement('div');
-  sheet.style.cssText='width:100%;max-width:500px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:90vh;overflow-y:auto;';
+  sheet.style.cssText='width:100%;max-width:500px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:90vh;overflow-y:auto;';
   m.appendChild(sheet);
   document.body.appendChild(m);
 
@@ -5220,7 +5395,7 @@ function showAddTrade(existingTrade){
         if(existing){ existing.remove(); return; }
         var dd = document.createElement('div');
         dd.id = '_ty_dropdown';
-        dd.style.cssText = 'position:fixed;z-index:99999;background:#3C2718;border:1px solid rgba(255,255,255,.15);border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:200px;max-height:70vh;overflow-y:auto';
+        dd.style.cssText = 'position:fixed;z-index:99999;background:var(--bg2);border:1px solid rgba(255,255,255,.15);border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:200px;max-height:70vh;overflow-y:auto';
         // Pozisyonu belirle
         var rect = _tyBtn.getBoundingClientRect();
         var top = rect.bottom + 4;
@@ -6161,7 +6336,7 @@ function showAddLeap(existingLeap){
   var _IS='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:13px 14px;color:#FFF3E0;font-size:14px;outline:none;width:100%;box-sizing:border-box;';
   var _LB=function(t){return'<div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px">'+t+'</div>';};
   var _FW=function(lbl,inp){return'<div>'+_LB(lbl)+inp+'</div>';};
-  m.innerHTML='<div style="width:100%;max-width:500px;background:#3C2718;border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
+  m.innerHTML='<div style="width:100%;max-width:500px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:85vh;overflow-y:auto;">'+
     '<div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>'+
     '<div style="font-family:var(--font-head);font-size:18px;font-weight:700;margin-bottom:20px;">LEAPS Position</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
@@ -7836,7 +8011,7 @@ function _updateAileHedefBar(pnl, hedef) {
 
 <!-- NLV MODAL -->
 <div id="nlv-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);align-items:flex-end;justify-content:center;">
-  <div style="background:#3C2718;border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-width:500px;border-top:1px solid rgba(255,255,255,.1);">
+  <div style="background:var(--bg2);border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-width:500px;border-top:1px solid rgba(255,255,255,.1);">
     <div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 20px;"></div>
     <div style="font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px;">NLV Starting Value</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:20px;">Enter your starting portfolio value in USD. Closed trades are automatically added/subtracted from this value.</div>
