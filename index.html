@@ -230,7 +230,7 @@
   .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
     height: var(--nav-h);
-    background: rgba(30,18,8,0.97);
+    background: rgba(56,34,14,0.97);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--border);
@@ -2939,13 +2939,19 @@ function renderTradeList(filter, month){
         var isAlert=isOpen&&((t.delta&&t.delta>35)||(dte!==null&&dte<=7));
         var statusTxt=isAlert?'⚠️':(!isOpen?'●':(_partlyOpen?'◑':'●'));
         var statusColor=isOpen?(_partlyOpen?'var(--warn)':(isAlert?'var(--loss)':'var(--profit)')):'var(--text-3)';
-        var rowBg=isAlert?'rgba(239,68,68,0.05)':'';
+        var rowBg=isAlert?'var(--loss-dim)':'';
         // DTE border: colours deliberately offset from badge colours to avoid conflicts
         var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#FF4444':dte<=21?'#FB923C':dte<=45?'#38BDF8':'#4ADE80'):'transparent';
         var tc=tcol(t.ticker.split(' ')[0]);
-        // Type badge colours — kept consistent with card-view strategy tags
-        var tagC={'CSP':'#3b82f6','CC':'#22c55e','PCS':'#8b5cf6','PMCC':'#f59e0b','IC':'#ef4444','BCS':'#8b5cf6','LEAPS':'#10b981','Long Call':'#ef4444','HEDGE':'#64748b'};
-        var typeColor=tagC[t.type]||'#94a3b8';
+        // Type badge colours — read from CSS vars so they adapt to light/dark mode
+        var _cs=getComputedStyle(document.documentElement);
+        var _cInfo=(_cs.getPropertyValue('--info')||'#3b82f6').trim();
+        var _cProfit=(_cs.getPropertyValue('--profit')||'#22c55e').trim();
+        var _cWarn=(_cs.getPropertyValue('--warn')||'#f59e0b').trim();
+        var _cLoss=(_cs.getPropertyValue('--loss')||'#ef4444').trim();
+        var _cPurple=(_cs.getPropertyValue('--purple')||'#8b5cf6').trim();
+        var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'LEAPS':_cProfit,'Long Call':_cLoss,'HEDGE':'#64748b'};
+        var typeColor=tagC[t.type]||(_cs.getPropertyValue('--text-3')||'#94a3b8').trim();
         return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
           '<td style="padding:9px 8px;position:sticky;left:0;z-index:2;background:var(--bg2);box-shadow:4px 0 8px rgba(0,0,0,0.3);">' +
@@ -2992,7 +2998,7 @@ function renderTradeList(filter, month){
               else if(_isShortCall){ _dist=(_stk-_sp)/_sp*100; _arrow='↑'; }
             }
             var _itm=_dist!==null&&_dist<0;
-            var _dc=_dist===null?'var(--text-2)':_itm?'#ef4444':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
+            var _dc=_dist===null?'var(--text-2)':_itm?'var(--loss)':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
             return '<td style="padding:9px 8px;text-align:right;white-space:nowrap;">'+
               '<div style="font-family:var(--font-mono);color:var(--text);font-size:16px;font-weight:700;letter-spacing:-0.3px;">$'+t.strike+'</div>'+
               (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:13px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
