@@ -1350,6 +1350,16 @@
     <span class="nav-label">Vergi</span>
   </div>
 
+  <div class="nav-item" onclick="showDebugInfo()" id="nav-debug">
+    <div class="nav-indicator"></div>
+    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <span class="nav-label">Debug</span>
+  </div>
+
 </nav>
 
 <!-- VERGI -->
@@ -4593,6 +4603,71 @@ function autoFetchTCMB(){
       }
     });
   } catch(e) {}
+}
+
+// ═══════════════════ DEBUG: TCMB AUTO-FETCH STATUS ═══════════════════
+function showDebugInfo(){
+  try {
+    var today = _tcmbIso(new Date());
+    var isWeekday = isWeekdayISO(today);
+    var dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date().getDay()];
+
+    var lastAttempt = localStorage.getItem(TCMB_AUTO_KEY) || 'hiç';
+    var all = (typeof getAllTrades === 'function') ? getAllTrades() : [];
+    var eksik = false;
+    var missingDates = [];
+
+    all.forEach(function(t){
+      [t.closed, t.opened].forEach(function(d){
+        var dateStr = String(d).substring(0,10);
+        if(d && !kurlarData[dateStr]) { eksik = true; missingDates.push(dateStr); }
+      });
+      (t.partialCloses || []).forEach(function(pc){
+        if(pc.date && !kurlarData[String(pc.date).substring(0,10)]) {
+          eksik = true;
+          missingDates.push(String(pc.date).substring(0,10));
+        }
+      });
+    });
+
+    var msg = '📊 TCMB Otomatik Kur Çekme Durumu\n\n';
+    msg += '📅 Bugün: ' + today + ' (' + dayName + ')\n';
+    msg += '📍 Hafta İçi mi? ' + (isWeekday ? '✅ Evet' : '❌ Hayır (Hafta Sonu)') + '\n';
+    msg += '📝 Son Çekme: ' + lastAttempt + '\n';
+    msg += '💼 Ticaret Sayısı: ' + all.length + '\n';
+    msg += '📊 Eksik Kur Var mı? ' + (eksik ? '❌ Evet' : '✅ Hayır') + '\n';
+    if(eksik && missingDates.length > 0) {
+      msg += '   Eksik Tarihler: ' + missingDates.slice(0,5).join(', ') + (missingDates.length > 5 ? '...' : '') + '\n';
+    }
+    msg += '\n💡 Durum:\n';
+
+    if(!isWeekday) {
+      msg += '❌ HAFTA SONU - Pazartesi-Cuma günlerine kur yayınlanır\n';
+    } else if(lastAttempt === today) {
+      msg += '✅ Bugün zaten çekildi\n';
+    } else if(!eksik) {
+      msg += '✅ Tüm tarihler için kur var, çekmeye gerek yok\n';
+    } else {
+      msg += '🔄 Çekme hazır - elle denemeyi istersen şu butona bas →\n';
+    }
+
+    alert(msg);
+
+    // Elle çekme önerisini göster
+    if(isWeekday && eksik) {
+      setTimeout(function(){
+        var manualFetch = confirm('Elle kur çek mi?');
+        if(manualFetch) {
+          fetchTCMBRates({ onDone: function(added, failed){
+            var result = added > 0 ? '✅ ' + added + ' kur eklendi' : '❌ Hata oluştu';
+            alert(result);
+          }});
+        }
+      }, 500);
+    }
+  } catch(e) {
+    alert('❌ Debug hatası: ' + e.message);
+  }
 }
 
 // ═══════════════════ CSV / EXCEL EXPORT ═══════════════════
