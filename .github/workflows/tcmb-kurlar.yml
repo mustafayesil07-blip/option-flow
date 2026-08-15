@@ -1,0 +1,47 @@
+name: TCMB kurlarini guncelle
+
+on:
+  schedule:
+    # TCMB kurlari 15:30 (TR, UTC+3) civari yayinlanir → 13:30 UTC guvenli.
+    # Hafta ici her gun.
+    - cron: '30 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Baslangic tarihi (YYYY-MM-DD) — geriye donuk doldurma icin'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tcmb-kurlar
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Kurlari cek
+        env:
+          TCMB_FROM: ${{ inputs.from }}
+        run: node scripts/fetch-tcmb.mjs
+
+      - name: Degisiklikleri commit'le
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain kurlar.json tcmb-holidays.json)" ]; then
+            echo "Degisiklik yok."
+            exit 0
+          fi
+          git add kurlar.json tcmb-holidays.json
+          git commit -m "chore: TCMB kurlari guncellendi"
+          git push

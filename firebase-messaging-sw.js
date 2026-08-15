@@ -6,7 +6,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // bunu register ediyor). Depodaki sw.js hicbir yerde kayitli degil —
 // oradaki CACHE surumunu artirmak hicbir sey yapmaz.
 // Yeni surum yayinlarken CACHE degerini burada artirin.
-var CACHE = 'optflow-v11';
+var CACHE = 'optflow-v12';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -33,6 +33,10 @@ self.addEventListener('fetch', function(e) {
   if (e.request.method !== 'GET') return;
   var url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Kur tablosu her zaman taze olmali — cache'e hic dokunma.
+  // (Cache-bust query'si yuzunden onbellegi de sisirirdi.)
+  if (url.pathname.indexOf('kurlar.json') !== -1) return;
 
   e.respondWith(
     caches.match(e.request).then(function(cached) {
