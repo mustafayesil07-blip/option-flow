@@ -4457,13 +4457,17 @@ function renderGroupedTrades(f){
     var openT=trades.filter(function(t){return!t.closed;});
     var closedT=trades.filter(function(t){return!!t.closed;});
     var totalPnl=closedT.reduce(function(s,t){return s+(t.pnl||0);},0);
-    var totalPrem=trades.reduce(function(s,t){return s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
+    // Prim yalnizca SHORT islemlerde tahsil edilir; long'da (Long Put/
+    // Long Call/LEAPS) odenir. Ikisi ayni toplamda birlesince odenen para
+    // tahsil edilmis gibi gorunuyordu.
+    var totalPrem=trades.reduce(function(s,t){return isLong(t.type)?s:s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
+    var totalPaid=trades.reduce(function(s,t){return isLong(t.type)?s+Math.abs(parseFloat(t.openPremium)||parseFloat(t.premium)||0):s;},0);
     var pnlColor=totalPnl>=0?'var(--profit)':'var(--loss)';
     var html='<div style="margin-bottom:14px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08)">';
     html+='<div onclick="this.nextSibling.style.display=this.nextSibling.style.display===\'none\'?\'block\':\'none\'" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,0.04);cursor:pointer;">';
     html+='<div style="display:flex;align-items:center;gap:10px"><div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;background:'+tc.bg+';color:'+tc.color+'">'+tk.slice(0,4)+'</div>';
     html+='<div><div style="font-size:15px;font-weight:700;color:var(--text)">'+tk+'</div><div style="font-size:11px;color:var(--text-3);margin-top:1px">'+trades.length+' trade'+(trades.length>1?'s':'')+' · '+openT.length+' open · '+closedT.length+' closed</div></div></div>';
-    html+='<div style="text-align:right"><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:'+pnlColor+'">'+(totalPnl>=0?'+':'')+Math.round(totalPnl)+'</div><div style="font-size:10px;color:var(--text-3)">prem: $'+Math.round(totalPrem)+'</div></div></div>';
+    html+='<div style="text-align:right"><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:'+pnlColor+'">'+(totalPnl>=0?'+':'')+Math.round(totalPnl)+'</div><div style="font-size:10px;color:var(--text-3)">prem: $'+Math.round(totalPrem)+(totalPaid>0?' · ödenen $'+Math.round(totalPaid):'')+'</div></div></div>';
     html+='<div style="display:block">';
     trades.sort(function(a,b){return !a.closed&&b.closed?-1:a.closed&&!b.closed?1:new Date(b.opened)-new Date(a.opened);}).forEach(function(t){
       var isOpen=!t.closed; var dte=getDTE(t.expiry);
@@ -4895,7 +4899,6 @@ function showBeyannamePDF(){
   if(!allTrades.length){ alert('Seçili yıl için kapalı trade bulunamadı.'); return; }
 
   var totalPnl=allTrades.reduce(function(s,t){return s+(t.pnl||0);},0);
-  var totalPrem=allTrades.reduce(function(s,t){return s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
   var totalMatrah=0; var missingKur=0;
   allTrades.forEach(function(t){
     var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false};
