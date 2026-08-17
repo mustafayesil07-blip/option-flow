@@ -3728,7 +3728,7 @@ function buildStratCompChart(){
   var _CT = chartTheme();
   var el = document.getElementById('stratCompChart'); if(!el) return;
   var closed = getFilteredClosedTrades(getEffectiveStatMonth());
-  var STRATS = ALL_TRADE_TYPES;
+  var STRATS = KNOWN_TRADE_TYPES;
   var data = STRATS.map(function(s){
     var t = closed.filter(function(x){ return x.type===s; });
     var wins = t.filter(function(x){ return x.pnl>0; }).length;
@@ -5755,12 +5755,26 @@ var TRADE_TYPE_DEFS = [
   { code:'IC',          dir:'short', opt:'mixed' },
   { code:'COLLAR PUT',  dir:'short', opt:'put'   },
   { code:'COLLAR CALL', dir:'short', opt:'call'  },
-  { code:'HEDGE',       dir:'short', opt:'call'  },
+  // HEDGE artik YENI islemlerde secilemiyor (kullanici kaldirilmasini istedi).
+  // Tanim burada KALIYOR: gecmis HEDGE kayitlarinin siniflandirmasi, vergi
+  // matrahi, rengi ve filtrelenmesi aynen calismaya devam etsin diye.
+  { code:'HEDGE',       dir:'short', opt:'call', legacy:true },
   { code:'Long Call',   dir:'long',  opt:'call'  },
   { code:'Long Put',    dir:'long',  opt:'put'   },
   { code:'LEAPS',       dir:'long',  opt:'call'  }
 ];
-var ALL_TRADE_TYPES = TRADE_TYPE_DEFS.map(function(d){ return d.code; });
+// KNOWN = uygulamanin TANIDIGI tum turler (eski kayitlar dahil)
+// ALL_TRADE_TYPES = kullanicinin YENI islemde secebilecegi turler
+var KNOWN_TRADE_TYPES = TRADE_TYPE_DEFS.map(function(d){ return d.code; });
+var ALL_TRADE_TYPES = TRADE_TYPE_DEFS.filter(function(d){ return !d.legacy; }).map(function(d){ return d.code; });
+// Duzenleme sirasinda mevcut turu listeden dusurme — yoksa eski bir HEDGE
+// kaydi acilip kaydedildiginde turu sessizce degisirdi.
+function selectableTypes(currentType){
+  var list = ALL_TRADE_TYPES.slice();
+  var c = (currentType||'').trim();
+  if(c && list.indexOf(c) === -1 && _typeDef(c)) list.push(c);
+  return list;
+}
 var SHORT_TYPES = TRADE_TYPE_DEFS.filter(function(d){ return d.dir==='short'; }).map(function(d){ return d.code; });
 var LONG_TYPES  = TRADE_TYPE_DEFS.filter(function(d){ return d.dir==='long';  }).map(function(d){ return d.code; });
 
@@ -5791,7 +5805,6 @@ function showAddTrade(existingTrade){
   var _moKeys = Object.keys(tradesData).length > 0 ? Object.keys(tradesData) : ['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
   var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=LONG_TYPES;
-  var ALL_TYPES=ALL_TRADE_TYPES;
   var _initialType = isEdit ? existingTrade.type : 'CSP';
 
   var sheet=document.createElement('div');
@@ -5802,6 +5815,8 @@ function showAddTrade(existingTrade){
   function rebuildSheet(){
     // Mevcut seçili türü koru — select yoksa initial değeri kullan
     var typeVal = sheet.querySelector('#nt_ty') ? sheet.querySelector('#nt_ty').value : _initialType;
+    // Seçilebilir liste + düzenlenen kaydın kendi türü (eski HEDGE gibi)
+    var ALL_TYPES = selectableTypes(_initialType);
     // Geçerli bir tür değilse initial'a dön
     if(ALL_TYPES.indexOf(typeVal) === -1) typeVal = _initialType;
     // Hesap sahibi — Mustafa profili için
