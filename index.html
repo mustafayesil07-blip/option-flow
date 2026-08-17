@@ -4520,7 +4520,6 @@ function prevBusinessDay(iso, steps){
 // origin'inden indiriyor — CORS yok, proxy yok, tek istek.
 var KUR_JSON_MAX   = null;  // kurlar.json'un kapsadığı en son tarih
 var KUR_JSON_STAT  = null;  // son indirme sonucu (debug ekranı için)
-var KUR_JSON_FIXED = 0;     // resmî veriyle düzeltilen kur sayısı
 
 function fetchKurlarJSON(){
   var url = 'kurlar.json?t=' + (new Date()).getTime();
@@ -4528,23 +4527,17 @@ function fetchKurlarJSON(){
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(map){
       if(!map || typeof map !== 'object') return 0;
-      var added = 0, fixed = 0;
+      var added = 0;
       Object.keys(map).forEach(function(d){
         var v = parseFloat(map[d]);
         if(!(v > 0)) return;
         if(!KUR_JSON_MAX || d > KUR_JSON_MAX) KUR_JSON_MAX = d;
-        if(!kurlarData[d]){
-          kurlarData[d] = v; added++;
-        } else if(Math.abs(kurlarData[d] - v) > 0.00005){
-          // Resmî TCMB verisi elle girilmiş değerden üstündür — vergi
-          // hesabı yanlış kurla yapılmasın.
-          kurlarData[d] = v; fixed++;
-        }
+        // SADECE eksik tarihleri doldur. Kullanıcı kurları elle girdiği için
+        // mevcut bir değerin üzerine ASLA yazma.
+        if(!kurlarData[d]){ kurlarData[d] = v; added++; }
       });
-      if(added > 0 || fixed > 0) saveKurlar();
-      KUR_JSON_FIXED = fixed;
-      KUR_JSON_STAT  = 'OK — kapsam: ' + KUR_JSON_MAX + ', yeni: ' + added
-                     + (fixed ? ', düzeltilen: ' + fixed : '');
+      if(added > 0) saveKurlar();
+      KUR_JSON_STAT  = 'OK — kapsam: ' + KUR_JSON_MAX + ', yeni: ' + added;
       return added;
     })
     .catch(function(e){
@@ -4780,9 +4773,8 @@ function autoFetchTCMB(){
       silent: true,
       allowNetwork: allowNetwork,
       onDone: function(added, failed){
-        if(added > 0 || KUR_JSON_FIXED > 0){
-          _backupToast('💱 ' + added + ' kur güncellendi'
-            + (KUR_JSON_FIXED ? ', ' + KUR_JSON_FIXED + ' tanesi düzeltildi' : ''), true);
+        if(added > 0){
+          _backupToast('💱 ' + added + ' eksik kur dolduruldu', true);
         } else if(failed > 0){
           _backupToast('⚠️ ' + failed + ' tarih için kur bulunamadı', false);
         }
@@ -4812,10 +4804,11 @@ function showDebugInfo(){
     }
 
     msg += '\n💡 Nasıl çalışıyor:\n';
-    msg += 'TCMB tarayıcıya doğrudan izin vermiyor. Kurlar GitHub\'da\n';
-    msg += 'her hafta içi sunucuda çekilip kurlar.json\'a yazılıyor,\n';
-    msg += 'uygulama da onu indiriyor. Hafta sonu/tatil günleri son\n';
-    msg += 'yayınlanan kurdan hesaplanıyor.\n';
+    msg += 'Otomatik kur güncellemesi KAPALI — kurları elle giriyorsun.\n';
+    msg += 'Vergi ekranındaki "TCMB\'den Çek" butonu yalnızca elle\n';
+    msg += 'basınca çalışır ve sadece EKSİK tarihleri doldurur;\n';
+    msg += 'girdiğin değerlerin üzerine asla yazmaz.\n';
+    msg += 'Hafta sonu/tatil günleri son yayınlanan kurdan hesaplanır.\n';
 
     alert(msg);
 
@@ -5383,17 +5376,37 @@ function _backupToast(msg, ok) {
 function backupViaShare() {
   var json = fullBackupJSON();
   var date = new Date().toISOString().split('T')[0];
-  // Chrome Android application/json paylaşımını reddediyor — text/plain kullan
-  try {
-    var file = new File([json], 'optflow-yedek-' + date + '.json', { type: 'text/plain' });
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file], title: 'OptionFlow Yedek ' + date })
-        .then(function(){ _backupMarkDone(); _backupToast('✅ Yedek paylaşıldı', true); })
-        .catch(function(err){ if(err && err.name !== 'AbortError') _backupToast('Paylaşım başarısız — İndir seçeneğini dene', false); });
-      return true;
+  var base = 'optflow-yedek-' + date;
+
+  // Chrome Android, dosya ADI UZANTISI ile MIME TİPİNİN uyuşmasını şart
+  // koşuyor. Eskiden '.json' adı 'text/plain' tipiyle gönderiliyordu; bu
+  // uyuşmazlık NotAllowedError'a düşüp "Paylaşım başarısız" veriyordu.
+  // Uyumlu kombinasyonları sırayla dene.
+  var adaylar = [
+    { name: base + '.json', type: 'application/json' },
+    { name: base + '.txt',  type: 'text/plain' }
+  ];
+
+  if (navigator.share && navigator.canShare) {
+    for (var i = 0; i < adaylar.length; i++) {
+      try {
+        var f = new File([json], adaylar[i].name, { type: adaylar[i].type });
+        if (!navigator.canShare({ files: [f] })) continue;
+        navigator.share({ files: [f], title: 'OptionFlow Yedek ' + date })
+          .then(function(){ _backupMarkDone(); _backupToast('✅ Yedek paylaşıldı', true); })
+          .catch(function(err){
+            if (err && err.name === 'AbortError') return;   // kullanıcı vazgeçti
+            // Paylaşım tutmadı — kullanıcıyı yönlendirmek yerine indir.
+            _backupToast('Paylaşım açılmadı, indiriliyor…', false);
+            setTimeout(backupViaDownload, 400);
+          });
+        return true;
+      } catch(e) { /* sıradaki kombinasyonu dene */ }
     }
-  } catch(e) {}
-  _backupToast('Bu cihazda paylaşım desteklenmiyor — İndir veya Kopyala kullan', false);
+  }
+  // Paylaşım hiç desteklenmiyor → doğrudan indir
+  _backupToast('Paylaşım desteklenmiyor, indiriliyor…', false);
+  setTimeout(backupViaDownload, 400);
   return false;
 }
 
@@ -5607,7 +5620,7 @@ function importData(){
   fileBtn.textContent='📂 Select JSON File';
 
   var fileInp=document.createElement('input');
-  fileInp.type='file'; fileInp.accept='.json'; fileInp.style.display='none';
+  fileInp.type='file'; fileInp.accept='.json,.txt,application/json,text/plain'; fileInp.style.display='none';
 
   var ta=document.createElement('textarea');
   ta.placeholder='or paste JSON contents here...';
@@ -8293,7 +8306,9 @@ function reloadProfileData() {
   // Yedekleme hatırlatıcısını kontrol et
   setTimeout(checkBackupReminder, 3000);
   // TCMB kurlarını sessizce çek (hafta içi, günde bir kez)
-  setTimeout(function(){ if(typeof autoFetchTCMB==='function') autoFetchTCMB(); }, 5000);
+  // Otomatik kur çekme kullanıcı isteğiyle KAPATILDI — kurlar elle giriliyor.
+  // Vergi ekranındaki "TCMB'den Çek" butonu duruyor; yalnızca elle basınca
+  // çalışır ve mevcut değerlerin ÜZERİNE YAZMAZ.
 }
 
 window.reloadProfileData = reloadProfileData;
