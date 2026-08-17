@@ -4871,73 +4871,193 @@ function exportCSV(){
 }
 
 function exportTaxCSV(){
-  var allTrades=getCrossProfileClosedTrades ? getCrossProfileClosedTrades(ACTIVE_PROFILE,'all') : getFilteredClosedTrades('all');
-  var headers=['Ticker','Type','Açılış','Kapanış','Expiry','Qty','USD P&L','Tarih Kuru','TRY Matrah','Manuel Override'];
-  var rows=[headers.join(',')];
-  allTrades.forEach(function(t){
-    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false};
-    var manualVal=vergiManualOverride[String(t.id)];
-    var tryVal=manualVal!==undefined?manualVal:(res.hasKur?res.matrah_try:'');
-    var row=[
-      '"'+t.ticker+'"', t.type, t.opened||'', t.closed||'', t.expiry||'',
-      t.q||1, (t.pnl||0).toFixed(2),
-      res.kur||'', tryVal!==''?Number(tryVal).toFixed(2):'',
-      manualVal!==undefined?'EVET':''
-    ];
-    rows.push(row.join(','));
+  // PDF ile ayni kaynak: ekrandaki Trade Tax Table (yil + hesap sekmesi).
+  // ESKIDEN: getCrossProfileClosedTrades(ACTIVE_PROFILE,'all') cagriliyordu;
+  // o fonksiyon 'Mustafa'/'Eda' bekliyor, ACTIVE_PROFILE ise 'mustafa' —
+  // hicbir kayitla eslesmiyordu. Ayrica res.kur diye bir alan yok
+  // (dogrusu acilis_kur / kapanis_kur), kur sutunu hep bos cikiyordu.
+  try { if(typeof renderVergi === 'function') renderVergi(); } catch(e){}
+
+  var ctx = _VERGI_PDF_CTX;
+  if(!ctx || !ctx.rows || !ctx.rows.length){
+    alert('Seçili yıl için kapalı trade bulunamadı.');
+    return;
+  }
+
+  function cell(v){
+    var x = (v==null) ? '' : String(v);
+    return /[",\n;]/.test(x) ? '"'+x.replace(/"/g,'""')+'"' : x;
+  }
+  var n2 = function(v){ return (v==null||isNaN(v)) ? '' : Number(v).toFixed(2); };
+  var n4 = function(v){ return (v>0) ? Number(v).toFixed(4) : ''; };
+
+  var headers = ['Ticker','Tip','Açılış','Kapanış','Expiry','Adet',
+                 'Alınan Prim (USD)','Ödenen Prim (USD)','Açılış Kom. (USD)','Kapanış Kom. (USD)',
+                 'Açılış Kuru','Kapanış Kuru','USD P&L','TRY Matrah','Not'];
+  var lines = [headers.join(';')];
+
+  ctx.rows.forEach(function(r){
+    var t = r.t, res = r.res;
+    var alinan = isLong(t.type) ? res.closePrem : res.openPrem;
+    var odenen = isLong(t.type) ? res.openPrem  : res.closePrem;
+
+    var manual = vergiManualOverride[String(t.id)];
+    var yIdx   = (typeof calcYufeIndexing === 'function') ? calcYufeIndexing(t) : {eligible:false};
+    var yMat   = (yIdx.eligible && typeof applyYufeMatrah === 'function') ? applyYufeMatrah(res, t, yIdx) : null;
+    var matrah = (manual !== undefined) ? manual
+               : (yMat !== null ? yMat : (res.hasKur ? res.matrah_try : null));
+
+    var not = [];
+    if(manual !== undefined) not.push('MANUEL');
+    else if(yIdx.eligible)   not.push('YİÜFE');
+    if(!res.hasKur)          not.push('kur eksik');
+    if(res.isPartialOnly)    not.push('kısmi');
+
+    var kapanis = res.isPartialOnly
+      ? ((t.partialCloses && t.partialCloses.length) ? t.partialCloses[t.partialCloses.length-1].date : '')
+      : (t.closed || '');
+
+    lines.push([
+      cell(t.ticker), cell(t.type), cell(t.opened||''), cell(kapanis), cell(t.expiry||''), cell(t.q||1),
+      n2(alinan), n2(odenen), n2(res.komAcilis), n2(res.komKapanis),
+      n4(res.acilis_kur), n4(res.kapanis_kur),
+      n2(t.pnl), (matrah!==null?n2(matrah):''), cell(not.join(' | '))
+    ].join(';'));
   });
-  var csv=rows.join('\n');
-  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='optionflow-vergi-'+new Date().toISOString().split('T')[0]+'.csv'; a.click();
+
+  // Excel'in Turkce yerelinde ayirici ';' — noktali virgulle yaziyoruz.
+  var csv = lines.join('\r\n');
+  var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'optionflow-vergi-'+ctx.yil+'-'+ctx.owner+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
 }
 
 // ═══════════════════ YIL SONU BEYANNAME PDF ═══════════════════
 function showBeyannamePDF(){
-  var yr=new Date().getFullYear()-1; // previous year
-  var allTrades=getFilteredClosedTrades('all').filter(function(t){ return getTradeYear(t)==String(yr); });
-  if(!allTrades.length){ alert('Seçili yıl için kapalı trade bulunamadı.'); return; }
+  // Ekrandaki tabloyla ayni veriyi kullan: yil seciciyi, hesap sekmesini
+  // (Mustafa/Eda) ve Own/Others/Total secimini oldugu gibi yansitir.
+  // ESKIDEN: yil "gecen yil" olarak SABIT kodluydu (getFullYear()-1), bu
+  // yuzden 2026 seciliyken 2025 raporu cikiyordu; hesap sekmesi de yok
+  // sayiliyordu.
+  try { if(typeof renderVergi === 'function') renderVergi(); } catch(e){}
 
-  var totalPnl=allTrades.reduce(function(s,t){return s+(t.pnl||0);},0);
-  var totalMatrah=0; var missingKur=0;
-  allTrades.forEach(function(t){
-    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false};
-    var manualVal=vergiManualOverride[String(t.id)];
-    if(manualVal!==undefined) totalMatrah+=manualVal;
-    else if(res.hasKur) totalMatrah+=res.matrah_try;
-    else missingKur++;
-  });
+  var ctx = _VERGI_PDF_CTX;
+  if(!ctx || !ctx.rows || !ctx.rows.length){
+    alert('Seçili yıl için kapalı trade bulunamadı.');
+    return;
+  }
 
-  var w=window.open('','_blank');
-  var rows=allTrades.map(function(t){
-    var res=typeof calcTaxForTrade==='function'?calcTaxForTrade(t):{matrah_try:0,hasKur:false,kur:null};
-    var manualVal=vergiManualOverride[String(t.id)];
-    var tryVal=manualVal!==undefined?manualVal:(res.hasKur?res.matrah_try:null);
-    return '<tr><td>'+t.ticker+'</td><td>'+t.type+'</td><td>'+t.opened+'</td><td>'+t.closed+'</td><td>'+(t.q||1)+'</td>'+
-      '<td style="text-align:right">'+(t.pnl!=null?'$'+(t.pnl>=0?'+':'')+t.pnl.toFixed(2):'—')+'</td>'+
-      '<td style="text-align:right">'+(res.kur||'—')+'</td>'+
-      '<td style="text-align:right;color:'+(tryVal!==null?(tryVal>=0?'green':'red'):'gray')+'">'+(tryVal!==null?'₺'+Math.round(tryVal).toLocaleString('tr-TR'):(missingKur?'—':' '))+'</td>'+
-      (manualVal!==undefined?'<td style="font-size:11px;color:orange">MANUEL</td>':'<td></td>')+'</tr>';
+  var yr = ctx.yil;
+  var esc = function(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  var usd = function(n){ return (n==null||isNaN(n)) ? '—' : '$'+Number(n).toFixed(2); };
+  var kur = function(n){ return (n>0) ? Number(n).toFixed(4) : '—'; };
+  var num = function(n){ return Number(n).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+
+  // Toplamlar — tabloda gosterilen sutunlarin tamami icin
+  var tAlinan=0, tOdenen=0, tKomA=0, tKomK=0, tUSD=0, tMatrah=0, eksikKur=0, manuelAdet=0, yufeAdet=0;
+
+  var rowsHtml = ctx.rows.map(function(r){
+    var t = r.t, res = r.res;
+    // Alinan/odenen prim yone gore: long'da acilista ODENIR, kapanista ALINIR
+    var alinan = isLong(t.type) ? res.closePrem : res.openPrem;
+    var odenen = isLong(t.type) ? res.openPrem  : res.closePrem;
+
+    var manual = vergiManualOverride[String(t.id)];
+    var yIdx   = (typeof calcYufeIndexing === 'function') ? calcYufeIndexing(t) : {eligible:false};
+    var yMat   = (yIdx.eligible && typeof applyYufeMatrah === 'function') ? applyYufeMatrah(res, t, yIdx) : null;
+    var matrah = (manual !== undefined) ? manual
+               : (yMat !== null ? yMat : (res.hasKur ? res.matrah_try : null));
+
+    var not = [];
+    if(manual !== undefined) { not.push('MANUEL'); manuelAdet++; }
+    else if(yIdx.eligible)   { not.push('YİÜFE');  yufeAdet++; }
+    if(!res.hasKur)          { not.push('kur eksik'); eksikKur++; }
+    if(res.isPartialOnly)      not.push('kısmi');
+
+    var kapanis = res.isPartialOnly
+      ? ((t.partialCloses && t.partialCloses.length) ? t.partialCloses[t.partialCloses.length-1].date : '')
+      : (t.closed || '');
+
+    tAlinan += alinan||0; tOdenen += odenen||0;
+    tKomA += res.komAcilis||0; tKomK += res.komKapanis||0;
+    tUSD += (t.pnl||0);
+    if(matrah !== null) tMatrah += matrah;
+
+    return '<tr>'
+      + '<td>'+esc(t.ticker)+'</td>'
+      + '<td>'+esc(t.type)+'</td>'
+      + '<td>'+esc(t.opened||'')+'</td>'
+      + '<td>'+esc(kapanis)+'</td>'
+      + '<td class="r">'+(t.q||1)+'</td>'
+      + '<td class="r pos">'+(alinan>0?usd(alinan):'—')+'</td>'
+      + '<td class="r neg">'+(odenen>0?usd(odenen):'—')+'</td>'
+      + '<td class="r">'+(res.komAcilis>0?usd(res.komAcilis):'—')+'</td>'
+      + '<td class="r">'+(res.komKapanis>0?usd(res.komKapanis):'—')+'</td>'
+      + '<td class="r">'+kur(res.acilis_kur)+'</td>'
+      + '<td class="r">'+kur(res.kapanis_kur)+'</td>'
+      + '<td class="r '+((t.pnl||0)>=0?'pos':'neg')+'">'+(t.pnl!=null?((t.pnl>=0?'+':'')+usd(t.pnl).replace('$-','-$')):'—')+'</td>'
+      + '<td class="r '+(matrah===null?'':(matrah>=0?'pos':'neg'))+'"><b>'+(matrah!==null?num(matrah)+' ₺':'—')+'</b></td>'
+      + '<td class="note">'+esc(not.join(' · '))+'</td>'
+      + '</tr>';
   }).join('');
 
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OptionFlow — '+yr+' Vergi Beyannamesi</title>'+
-    '<style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h1{font-size:16px;margin-bottom:4px}h2{font-size:13px;color:#444}'+
-    'table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#f0f0f0;border:1px solid #ccc;padding:5px 8px;text-align:left;font-size:10px}'+
-    'td{border:1px solid #ddd;padding:4px 8px}tr:nth-child(even){background:#f9f9f9}'+
-    '.summary{background:#e8f4e8;border:1px solid #4caf50;border-radius:6px;padding:12px;margin:12px 0}'+
-    '@media print{button{display:none!important}}</style></head><body>'+
-    '<h1>OptionFlow Trading Journal — Vergi Beyannamesi Özeti</h1>'+
-    '<h2>'+yr+' Yılı · '+ACTIVE_PROFILE+' Profili</h2>'+
-    '<p style="font-size:10px;color:#666">Oluşturulma: '+new Date().toLocaleDateString('tr-TR')+'</p>'+
-    '<div class="summary">'+
-    '<b>Toplam Trade:</b> '+allTrades.length+' &nbsp;&nbsp; '+
-    '<b>USD P&L:</b> '+(totalPnl>=0?'+':'')+totalPnl.toFixed(2)+' &nbsp;&nbsp; '+
-    '<b>TRY Matrah:</b> ₺'+Math.round(totalMatrah).toLocaleString('tr-TR')+
-    (missingKur?' <span style="color:orange">('+missingKur+' trade kur eksik)</span>':'')+'</div>'+
-    '<button onclick="window.print()" style="background:#1a73e8;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;margin-bottom:12px">🖨️ Yazdır / PDF Kaydet</button>'+
-    '<table><thead><tr><th>Ticker</th><th>Tip</th><th>Açılış</th><th>Kapanış</th><th>Adet</th><th>USD P&L</th><th>Kur</th><th>TRY Matrah</th><th>Not</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    '<div style="margin-top:16px;font-size:9px;color:#888">Bu belge OptionFlow tarafından bilgi amaçlı üretilmiştir. Vergi beyannamesi için mali müşavirinize danışın.</div>'+
-    '</body></html>';
+  var sectionLbl = ctx.section==='self' ? 'Kendi' : ctx.section==='cross' ? 'Diğer Hesaplar' : 'Toplam';
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>OptionFlow — '+yr+' Vergi Raporu</title>'
+    + '<style>'
+    + '@page{size:A4 landscape;margin:10mm}'
+    + 'body{font-family:Arial,Helvetica,sans-serif;font-size:10px;margin:16px;color:#111}'
+    + 'h1{font-size:15px;margin:0 0 3px}h2{font-size:12px;color:#444;margin:0 0 3px;font-weight:600}'
+    + 'table{width:100%;border-collapse:collapse;margin-top:10px}'
+    + 'th{background:#eee;border:1px solid #bbb;padding:5px 6px;text-align:left;font-size:9px;white-space:nowrap}'
+    + 'td{border:1px solid #ddd;padding:4px 6px;white-space:nowrap}'
+    + 'tr:nth-child(even) td{background:#fafafa}'
+    + '.r{text-align:right;font-family:"Courier New",monospace}'
+    + '.pos{color:#137333}.neg{color:#c5221f}.note{font-size:8px;color:#b06000}'
+    + 'tfoot td{border-top:2px solid #999;background:#f0f0f0;font-weight:700}'
+    + '.summary{background:#eef6ee;border:1px solid #4caf50;border-radius:6px;padding:10px;margin:10px 0;font-size:11px;line-height:1.7}'
+    + '.warn{color:#b06000}'
+    + '@media print{button{display:none!important}}'
+    + '</style></head><body>'
+    + '<h1>OptionFlow — Vergi Raporu</h1>'
+    + '<h2>'+yr+' Yılı · '+esc(ACTIVE_PROFILE)+' profili · '+esc(ctx.owner)+' · '+sectionLbl+'</h2>'
+    + '<p style="font-size:9px;color:#666;margin:0">Oluşturulma: '+new Date().toLocaleString('tr-TR')+'</p>'
+    + '<div class="summary">'
+    +   '<b>İşlem:</b> '+ctx.rows.length+' &nbsp;·&nbsp; '
+    +   '<b>Alınan prim:</b> '+usd(tAlinan)+' &nbsp;·&nbsp; '
+    +   '<b>Ödenen prim:</b> '+usd(tOdenen)+' &nbsp;·&nbsp; '
+    +   '<b>Komisyon:</b> '+usd(tKomA+tKomK)+'<br>'
+    +   '<b>USD P&amp;L:</b> '+((tUSD>=0?'+':'')+usd(tUSD).replace('$-','-$'))+' &nbsp;·&nbsp; '
+    +   '<b>TRY Matrah:</b> '+num(tMatrah)+' ₺'
+    +   (manuelAdet?' &nbsp;·&nbsp; <span class="warn">'+manuelAdet+' manuel</span>':'')
+    +   (yufeAdet?' &nbsp;·&nbsp; <span class="warn">'+yufeAdet+' YİÜFE endeksli</span>':'')
+    +   (eksikKur?' &nbsp;·&nbsp; <span class="warn">'+eksikKur+' işlemde kur eksik</span>':'')
+    + '</div>'
+    + '<button onclick="window.print()" style="background:#1a73e8;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;margin-bottom:8px">🖨️ Yazdır / PDF Kaydet</button>'
+    + '<table><thead><tr>'
+    +   '<th>Ticker</th><th>Tip</th><th>Açılış</th><th>Kapanış</th><th>Adet</th>'
+    +   '<th>Alınan Prim</th><th>Ödenen Prim</th><th>Açılış Kom.</th><th>Kapanış Kom.</th>'
+    +   '<th>Açılış Kuru</th><th>Kapanış Kuru</th><th>USD P&amp;L</th><th>TRY Matrah</th><th>Not</th>'
+    + '</tr></thead><tbody>'+rowsHtml+'</tbody>'
+    + '<tfoot><tr>'
+    +   '<td colspan="5">TOPLAM ('+ctx.rows.length+' işlem)</td>'
+    +   '<td class="r">'+usd(tAlinan)+'</td><td class="r">'+usd(tOdenen)+'</td>'
+    +   '<td class="r">'+usd(tKomA)+'</td><td class="r">'+usd(tKomK)+'</td>'
+    +   '<td class="r">—</td><td class="r">—</td>'
+    +   '<td class="r '+(tUSD>=0?'pos':'neg')+'">'+((tUSD>=0?'+':'')+usd(tUSD).replace('$-','-$'))+'</td>'
+    +   '<td class="r '+(tMatrah>=0?'pos':'neg')+'">'+num(tMatrah)+' ₺</td><td></td>'
+    + '</tr></tfoot></table>'
+    + '<div style="margin-top:14px;font-size:8px;color:#888">Bu belge OptionFlow tarafından bilgi amaçlı üretilmiştir. Vergi beyannamesi için mali müşavirinize danışın.</div>'
+    + '</body></html>';
+
+  var w = window.open('', '_blank');
+  if(!w){ alert('Pop-up engellendi — tarayıcı ayarlarından izin verin.'); return; }
   w.document.write(html); w.document.close();
 }
 
@@ -6256,6 +6376,7 @@ function renderVergi(){
 
 var VERGI_SUBOWNER = 'Mustafa';
 var VERGI_SUB_SECTION = 'total';
+var _VERGI_PDF_CTX = null;   // PDF raporu icin son hesaplanan tablo baglami
 function setVergiOwner(name) {
   VERGI_SUBOWNER = name;
   VERGI_SUB_SECTION = 'total';
@@ -6410,6 +6531,14 @@ function _renderVergiInner(){
     }
     rows.push({t:t, res:res});
   });
+
+  // PDF raporu ekrandaki tabloyla BIREBIR ayni veriyi kullansin diye
+  // hesaplanan satirlari ve secili baglami sakla. (Eskiden PDF kendi
+  // basina "gecen yil" varsayiyor, hesap sekmesini de yok sayiyordu.)
+  _VERGI_PDF_CTX = {
+    yil: vergiYil, owner: VERGI_SUBOWNER, section: VERGI_SUB_SECTION,
+    rows: rows, totalMatrah: totalMatrah, totalUSD: totalUSD, missingKur: missingKur
+  };
 
   // ── Sub text ──
   var sub = document.getElementById('vergiSub');
