@@ -1084,7 +1084,14 @@
     <div class="filter-pill" data-type-filter="PCS">PCS</div>
     <div class="filter-pill" data-type-filter="CC">CC</div>
     <div class="filter-pill" data-type-filter="PMCC">PMCC</div>
+    <div class="filter-pill" data-type-filter="BCS">BCS</div>
     <div class="filter-pill" data-type-filter="IC">IC</div>
+    <div class="filter-pill" data-type-filter="COLLAR PUT">COLLAR PUT</div>
+    <div class="filter-pill" data-type-filter="COLLAR CALL">COLLAR CALL</div>
+    <div class="filter-pill" data-type-filter="HEDGE">HEDGE</div>
+    <div class="filter-pill" data-type-filter="Long Call">Long Call</div>
+    <div class="filter-pill" data-type-filter="Long Put">Long Put</div>
+    <div class="filter-pill" data-type-filter="LEAPS">LEAPS</div>
   </div>
   <div class="filter-row" id="monthFilterRow">
     <div class="filter-pill active" data-month="all">All Months</div>
@@ -1492,12 +1499,12 @@ function showStatInfo(key){
     },
     "Ort. Elde Tutma": {
       title: "Average Hold Duration",
-      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. LEAPS and Long Call are excluded.",
+      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. Long positions (LEAPS, Long Call, Long Put) are excluded.",
       tip: "Theta decay is fastest in the last 21 days. Closing between 14–21 days is considered optimal. Very short (3–5 days) is aggressive; very long (45+ days) may forfeit the theta advantage."
     },
     "Avg Hold Days": {
       title: "Average Hold Duration",
-      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. LEAPS and Long Call are excluded.",
+      desc: "Average number of days between open and close dates for CSP, PCS, IC, CC, and PMCC positions. Long positions (LEAPS, Long Call, Long Put) are excluded.",
       tip: "Theta decay is fastest in the last 21 days. Closing between 14–21 days is considered optimal. Very short (3–5 days) is aggressive; very long (45+ days) may forfeit the theta advantage."
     }
   };
@@ -2306,7 +2313,7 @@ function updateHealthBanner(){
 
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
-function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; return'tag-other'; }
+function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; if(t==='COLLAR PUT'||t==='COLLAR CALL')return'tag-pcs'; return'tag-other'; }
 function tcol(ticker){ var c=['rgba(59,130,246,.15)','rgba(139,92,246,.15)','rgba(34,197,94,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)','rgba(16,185,129,.15)']; var tc=['var(--info)','var(--purple)','var(--profit)','var(--warn)','var(--loss)','#10b981']; var i=Math.abs((ticker.charCodeAt(0)||0)*3+(ticker.charCodeAt(1)||0))%c.length; return {bg:c[i],color:tc[i]}; }
 
 // ═══════════════════ NAVIGATION ═══════════════════
@@ -3019,7 +3026,7 @@ function renderTradeList(filter, month){
         var _cWarn=(_cs.getPropertyValue('--warn')||'#f59e0b').trim();
         var _cLoss=(_cs.getPropertyValue('--loss')||'#ef4444').trim();
         var _cPurple=(_cs.getPropertyValue('--purple')||'#8b5cf6').trim();
-        var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'LEAPS':_cProfit,'Long Call':_cLoss,'HEDGE':'#64748b'};
+        var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'LEAPS':_cProfit,'Long Call':_cLoss,'Long Put':_cLoss,'COLLAR PUT':_cPurple,'COLLAR CALL':_cPurple,'HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||(_cs.getPropertyValue('--text-3')||'#94a3b8').trim();
         return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
@@ -3044,11 +3051,9 @@ function renderTradeList(filter, month){
             // Only show pre/post during actual extended hours (not during regular market)
             var _extColorL='var(--text-3)';
             var _stk=parseFloat(String(t.strike).replace(',', '.'));
-            var _shortPuts=['CSP','PCS','COLLAR PUT'];
-            var _shortCalls=['CC','PMCC','BCS','HEDGE','COLLAR CALL'];
             var _isIC=t.type==='IC';
-            var _isShortPut=_shortPuts.indexOf(t.type)>=0;
-            var _isShortCall=_shortCalls.indexOf(t.type)>=0;
+            var _isShortPut=isShortPutType(t.type);
+            var _isShortCall=isShortCallType(t.type);
             var _dist=null; var _arrow='↓'; var _legLbl='';
             if(_sp&&_stk){
               if(_isIC){
@@ -3169,11 +3174,9 @@ function renderTradeList(filter, month){
   else if((_ms2==='PRE'||_ms2==='PREPRE')&&_sp){_showLbl='PRE';} // no dedicated premarket price — show regular with PRE badge
   var _showColor='var(--text-3)';
   var _stk=parseFloat(String(t.strike).replace(',', '.'));
-  var _sPuts=['CSP','PCS','COLLAR PUT'];
-  var _sCalls=['CC','PMCC','BCS','HEDGE','COLLAR CALL'];
   var _isIC = t.type==='IC';
-  var _isSP=_sPuts.indexOf(t.type)>=0;
-  var _isSC=_sCalls.indexOf(t.type)>=0;
+  var _isSP=isShortPutType(t.type);
+  var _isSC=isShortCallType(t.type);
   var _dist=null; var _arr='↓'; var _legLabel='';
   if(_showP&&_stk){
     if(_isIC){
@@ -3468,13 +3471,11 @@ function renderRisk(){
     if(!open.length){
       greekEl.innerHTML = '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Açık pozisyon yok</div>';
     } else {
-      var SHORT_TYPES = ['CSP','CC','PCS','CCS','IC','PMCC'];
       var netDelta = 0, estTheta = 0, hasDelta = false;
       open.forEach(function(t){
         var d = parseFloat(t.delta) || 0;
         var qty = t.q || 1;
-        var isShort = SHORT_TYPES.indexOf(t.type) >= 0;
-        var dSign = isShort ? -1 : 1;
+        var dSign = isShortType(t.type) ? -1 : 1;
         netDelta += dSign * d * qty;
         if(d > 0) hasDelta = true;
         // Estimated daily theta: premium collected ÷ DTE (short = positive theta decay)
@@ -3567,7 +3568,6 @@ function buildThetaCalendar(){
     el.innerHTML='<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Açık pozisyon yok</div>';
     return;
   }
-  var SHORT_TYPES = ['CSP','CC','PCS','CCS','IC','PMCC'];
   var today = new Date();
   // Build 4 weekly buckets: W1 (0–7d), W2 (8–14d), W3 (15–21d), W4 (22–28d)
   var weeks = [{label:'Hafta 1\n(0–7g)',days:7},{label:'Hafta 2\n(8–14g)',days:14},{label:'Hafta 3\n(15–21g)',days:21},{label:'Hafta 4\n(22–28g)',days:28}];
@@ -3659,13 +3659,12 @@ function updateBlackSwan(movePct) {
   }
   var move = movePct / 100;
   // Estimate per-position P&L impact
-  var SHORT_TYPES = ['CSP','CC','PCS','CCS','IC','PMCC'];
   var rows = [];
   var totalImpact = 0;
   open.forEach(function(t){
     var prem = parseFloat(t.openPremium) || parseFloat(t.premium) || 0;
     var coll = t.teminat || 0;
-    var isShort = SHORT_TYPES.indexOf(t.type) >= 0;
+    var isShort = isShortType(t.type);
     var impact = 0;
     if(t.type === 'CSP'){
       // Short put: loss if market falls. At -X% move, assume strike is touched proportionally
@@ -3729,7 +3728,7 @@ function buildStratCompChart(){
   var _CT = chartTheme();
   var el = document.getElementById('stratCompChart'); if(!el) return;
   var closed = getFilteredClosedTrades(getEffectiveStatMonth());
-  var STRATS = ['CSP','PCS','IC','CC','PMCC','Long Call'];
+  var STRATS = ALL_TRADE_TYPES;
   var data = STRATS.map(function(s){
     var t = closed.filter(function(x){ return x.type===s; });
     var wins = t.filter(function(x){ return x.pnl>0; }).length;
@@ -4088,8 +4087,7 @@ function showWhatIfCalc(trade){
 
   function calcPnlAtPrice(price){
     var t=trade;
-    var LONG=['Long Call','Long Put','LEAPS','HEDGE'];
-    var isLongPos=LONG.indexOf(t.type)>=0;
+    var isLongPos=isLong(t.type);
     if(t.type==='CSP'){
       if(price>=strike) return prem; // max profit
       return prem - (strike-price)*qty*100; // loss if ITM
@@ -4108,7 +4106,15 @@ function showWhatIfCalc(trade){
       if(price<=putStrike) return prem-(putStrike-price)*qty*100;
       return prem-(price-callStrike)*qty*100;
     }else if(isLongPos){
-      return -prem + Math.max(0,(price-strike))*qty*100;
+      // Long pozisyonun içsel değeri yöne bağlı: call'da (fiyat-strike),
+      // put'ta (strike-fiyat). Eskiden her long CALL gibi hesaplanıyordu,
+      // Long Put payoff eğrisi ters çıkıyordu.
+      var _intr = (tradeOptKind(t.type)==='put')
+        ? Math.max(0,(strike-price)) : Math.max(0,(price-strike));
+      // Prim long'da ÖDENİR. Eski kayıtlarda negatif (-850), formdan
+      // girilenlerde pozitif (850) saklanıyor — mutlak değerle normalize et,
+      // yoksa eski long kayıtlarda işaret ters dönüyordu.
+      return -Math.abs(prem) + _intr*qty*100;
     }
     return 0;
   }
@@ -5732,13 +5738,50 @@ function importData(){
   setTimeout(function(){ta.focus();},100);
 }
 // ═══════════════════ FAB / ADD TRADE ═══════════════════
-var SHORT_TYPES = ['CSP','CC','PCS','PMCC','IC','HEDGE','COLLAR CALL','COLLAR PUT'];
-function isShortType(type){ return SHORT_TYPES.indexOf((type||'').trim()) !== -1; }
+// ── İŞLEM TİPLERİ — TEK KAYNAK ────────────────────────────────────────
+// Tür bilgisi eskiden 10'dan fazla yerde ayrı ayrı listeleniyordu; listeler
+// birbirini tutmuyordu (ör. Risk ekranında var olmayan 'CCS' türü, dropdown'da
+// olmayan BCS/COLLAR). Yeni bir tür eklerken artık SADECE bu liste güncellenir.
+//
+//   dir : 'short' = prim TAHSİL edilir (kredi) | 'long' = prim ÖDENİR (borç)
+//         → vergi matrahının yönünü ve delta işaretini belirler
+//   opt : 'call' | 'put' | 'mixed'  → payoff eğrisi ve ITM mesafesi için
+var TRADE_TYPE_DEFS = [
+  { code:'CSP',         dir:'short', opt:'put'   },
+  { code:'PCS',         dir:'short', opt:'put'   },
+  { code:'CC',          dir:'short', opt:'call'  },
+  { code:'PMCC',        dir:'short', opt:'call'  },
+  { code:'BCS',         dir:'short', opt:'call'  },
+  { code:'IC',          dir:'short', opt:'mixed' },
+  { code:'COLLAR PUT',  dir:'short', opt:'put'   },
+  { code:'COLLAR CALL', dir:'short', opt:'call'  },
+  { code:'HEDGE',       dir:'short', opt:'call'  },
+  { code:'Long Call',   dir:'long',  opt:'call'  },
+  { code:'Long Put',    dir:'long',  opt:'put'   },
+  { code:'LEAPS',       dir:'long',  opt:'call'  }
+];
+var ALL_TRADE_TYPES = TRADE_TYPE_DEFS.map(function(d){ return d.code; });
+var SHORT_TYPES = TRADE_TYPE_DEFS.filter(function(d){ return d.dir==='short'; }).map(function(d){ return d.code; });
+var LONG_TYPES  = TRADE_TYPE_DEFS.filter(function(d){ return d.dir==='long';  }).map(function(d){ return d.code; });
+
+function _typeDef(type){
+  var k = (type||'').trim();
+  for(var i=0;i<TRADE_TYPE_DEFS.length;i++) if(TRADE_TYPE_DEFS[i].code===k) return TRADE_TYPE_DEFS[i];
+  return null;
+}
+function isShortType(type){ var d=_typeDef(type); return !!d && d.dir==='short'; }
+// Bilinmeyen tür 'short' sayılır — eski davranışla uyumlu kalsın.
+function isLong(type){ var d=_typeDef(type); return !!d && d.dir==='long'; }
+// 'call' | 'put' | 'mixed' | null
+function tradeOptKind(type){ var d=_typeDef(type); return d ? d.opt : null; }
+function isShortPutType(type){ var d=_typeDef(type); return !!d && d.dir==='short' && d.opt==='put'; }
+function isShortCallType(type){ var d=_typeDef(type); return !!d && d.dir==='short' && d.opt==='call'; }
 
 function _fldStyle(){ return 'background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:14px;outline:none;width:100%;-webkit-appearance:none'; }
 function _lblStyle(){ return 'font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px'; }
-function _fldWrap(labelTxt, inputHtml){
-  return '<div><div style="'+_lblStyle()+'">'+labelTxt+'</div>'+inputHtml+'</div>';
+function _fldWrap(labelTxt, inputHtml, labelId){
+  var idAttr = labelId ? ' id="'+labelId+'"' : '';
+  return '<div><div'+idAttr+' style="'+_lblStyle()+'">'+labelTxt+'</div>'+inputHtml+'</div>';
 }
 
 function showAddTrade(existingTrade){
@@ -5747,8 +5790,8 @@ function showAddTrade(existingTrade){
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
   var _moKeys = Object.keys(tradesData).length > 0 ? Object.keys(tradesData) : ['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
   var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
-  var longTypes=['LEAPS','Long Call'];
-  var ALL_TYPES=['CSP','PCS','CC','PMCC','IC','BCS','Long Call','LEAPS','HEDGE','COLLAR PUT','COLLAR CALL'];
+  var longTypes=LONG_TYPES;
+  var ALL_TYPES=ALL_TRADE_TYPES;
   var _initialType = isEdit ? existingTrade.type : 'CSP';
 
   var sheet=document.createElement('div');
@@ -5801,7 +5844,7 @@ function showAddTrade(existingTrade){
         _fldWrap('Expiry','<input id="nt_e" type="date" style="'+s+'"'+(isEdit&&existingTrade.expiry?' value="'+existingTrade.expiry+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap(openPremLabel,'<input id="nt_p" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.premium!==undefined?' value="'+Math.abs(existingTrade.openPremium||existingTrade.premium||0)+'"':'')+'>') +
+        _fldWrap(openPremLabel,'<input id="nt_p" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.premium!==undefined?' value="'+Math.abs(existingTrade.openPremium||existingTrade.premium||0)+'"':'')+'>','nt_p_lbl') +
         _fldWrap('Commission — Open ($)','<input id="nt_kom_a" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.openCommission?' value="'+existingTrade.openCommission+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
@@ -5829,7 +5872,7 @@ function showAddTrade(existingTrade){
         _fldWrap('P&L ($)','<input id="nt_pnl" type="number" step="0.01" placeholder="blank = open position" style="'+s+'"'+(isEdit&&existingTrade.pnl!=null?' value="'+existingTrade.pnl+'"':'')+'>') +
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap(closePremLabel,'<input id="nt_cp" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closePremium!=null?' value="'+Math.abs(existingTrade.closePremium)+'"':'')+'>') +
+        _fldWrap(closePremLabel,'<input id="nt_cp" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closePremium!=null?' value="'+Math.abs(existingTrade.closePremium)+'"':'')+'>','nt_cp_lbl') +
         _fldWrap('Commission — Close ($)','<input id="nt_kom_k" type="number" step="0.01" placeholder="0.00" style="'+s+'"'+(isEdit&&existingTrade.closeCommission?' value="'+existingTrade.closeCommission+'"':'')+'>') +
       '</div>'+
 
@@ -5929,18 +5972,16 @@ function showAddTrade(existingTrade){
             document.getElementById('nt_ty_label').textContent = t;
             dd.remove();
             // typeVal güncelle ve label'ları yenile
-            var _isLong2 = longTypes.indexOf(t) !== -1;
-            var _opLbl = sheet.querySelector('label[for="nt_p"]') || sheet.querySelector('[id="nt_p"]');
-            // Prim label'larını güncelle
-            var allLabels = sheet.querySelectorAll('label');
-            allLabels.forEach(function(lbl){
-              if(lbl.textContent.indexOf('Premium') !== -1 && lbl.textContent.indexOf('Open') !== -1){
-                lbl.textContent = _isLong2 ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
-              }
-              if(lbl.textContent.indexOf('Premium') !== -1 && lbl.textContent.indexOf('Close') !== -1){
-                lbl.textContent = _isLong2 ? 'Premium Received — Close ($)' : 'Premium Paid — Close ($)';
-              }
-            });
+            var _isLong2 = isLong(t);
+            // DIKKAT: burada sheet.querySelectorAll('label') aranıyordu ama form
+            // etiketleri <label> değil, _fldWrap'in ürettiği <div>'ler. Hiçbir
+            // eşleşme olmadığından long tür seçilince prim etiketleri
+            // "Premium Received" olarak kalıyor, kullanıcı ÖDEDİĞİ primi
+            // tahsil edilmiş gibi girmeye yönlendiriliyordu.
+            var _opLbl2 = sheet.querySelector('#nt_p_lbl');
+            var _cpLbl2 = sheet.querySelector('#nt_cp_lbl');
+            if(_opLbl2) _opLbl2.textContent = _isLong2 ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
+            if(_cpLbl2) _cpLbl2.textContent = _isLong2 ? 'Premium Received — Close ($)' : 'Premium Paid — Close ($)';
           };
           item.addEventListener('touchstart', function(ev){ item.style.background='rgba(255,255,255,0.08)'; }, {passive:true});
           item.addEventListener('touchend', function(ev){ item.style.background=t===typeVal?'rgba(59,130,246,0.1)':''; }, {passive:true});
@@ -5980,7 +6021,7 @@ function showAddTrade(existingTrade){
 
       var _existingPC = (isEdit && existingTrade.partialCloses) ? JSON.parse(JSON.stringify(existingTrade.partialCloses)) : [];
       var _tradeTypeVal = sheet.querySelector('#nt_ty').value;
-      var _isLongType = (_tradeTypeVal==='LEAPS'||_tradeTypeVal==='Long Call');
+      var _isLongType = isLong(_tradeTypeVal);
 
       // PnL hesaplama mantığı:
       // 1) Elle P&L girilmişse: direkt kullan
@@ -6072,8 +6113,7 @@ function showAddTrade(existingTrade){
 
 
 // ═══════════════════ VERGİ ═══════════════════
-var LONG_TYPES = ['LEAPS','Long Call'];
-function isLong(type){ return LONG_TYPES.indexOf((type||'').trim()) !== -1; }
+// LONG_TYPES / isLong artik TRADE_TYPE_DEFS'ten turetiliyor (tek kaynak).
 
 function fmtExpiry(dateStr){
   if(!dateStr) return '—';
@@ -7724,7 +7764,7 @@ function renderPlannedList(){
     el.innerHTML='<div style="text-align:center;padding:20px 0;color:var(--text-3);font-size:13px">No plans yet</div>';
     return;
   }
-  var TC2={CSP:'#22c55e',CC:'#3b82f6',PMCC:'#a78bfa',PCS:'#f59e0b',IC:'#8b5cf6',LEAPS:'#10b981','Long Call':'#ef4444',HEDGE:'#64748b'};
+  var TC2={CSP:'#22c55e',CC:'#3b82f6',PMCC:'#a78bfa',PCS:'#f59e0b',IC:'#8b5cf6',BCS:'#f59e0b',LEAPS:'#10b981','Long Call':'#ef4444','Long Put':'#ec4899','COLLAR PUT':'#a78bfa','COLLAR CALL':'#a78bfa',HEDGE:'#64748b'};
   el.innerHTML = plannedTrades.map(function(p,i){
     var c=TC2[p.type]||'#94a3b8';
     var fields=[];
@@ -7780,7 +7820,7 @@ function openAddPlan(){
    +'<input id="_pl_ticker" type="text" placeholder="SOFI" autocomplete="off" autocorrect="off" autocapitalize="characters" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:15px;font-family:monospace;outline:none;-webkit-appearance:none"></div>'
    +'<div style="grid-column:1/-1"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Trade Type</div>'
    +'<select id="_pl_type" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none">'
-   +'<option>CSP</option><option>CC</option><option>PCS</option><option>PMCC</option><option>IC</option><option>Long Call</option><option>LEAPS</option><option>HEDGE</option>'
+   +ALL_TRADE_TYPES.map(function(_t){return '<option>'+_t+'</option>';}).join('')
    +'</select></div>'
    +'<div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px">Expiry</div>'
    +'<input id="_pl_expiry" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;color:#f1f5f9;font-size:14px;outline:none;-webkit-appearance:none"></div>'
