@@ -857,66 +857,122 @@
   <div style="min-height:100%;display:flex;align-items:flex-start;justify-content:center;padding:20px 0 40px;">
     <div style="background:var(--bg2);border:1px solid var(--border-bright);border-radius:20px;width:100%;max-width:480px;margin:0 12px;overflow:hidden;">
       <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(245,158,11,0.08),transparent);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(245,158,11,0.10),rgba(168,85,247,0.06));">
         <div>
           <div style="font-size:20px;font-weight:700;font-family:var(--font-head);color:var(--text);">&#x1F46A; Aile Dashboard</div>
           <div id="aileUpdatedAt" style="font-size:11px;color:var(--text-3);margin-top:2px;"></div>
         </div>
-        <button onclick="document.getElementById('aile-modal').style.display='none'" style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.08);border:none;color:var(--text-2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&#x2715;</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="showAilePDF()" title="Renkli PDF rapor"
+            style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.35);border-radius:8px;padding:7px 12px;color:#C084FC;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">&#x1F5A8;&#xFE0F; PDF</button>
+          <button onclick="document.getElementById('aile-modal').style.display='none'" style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.08);border:none;color:var(--text-2);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+        </div>
       </div>
-      <!-- Hero stats row -->
+
+      <!-- Donem secici -->
+      <div style="padding:12px 20px 10px;border-bottom:1px solid var(--border);">
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Dönem</div>
+        <div id="aileYearRow" style="display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;"></div>
+        <div id="ailePeriodLabel" style="font-size:11px;color:var(--text-3);margin-top:7px;"></div>
+      </div>
+
+      <!-- Hero stats: 3 + 3 -->
       <div id="aileHeroRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-bottom:1px solid var(--border);">
-        <div style="background:var(--bg2);padding:14px 12px;text-align:center;">
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Toplam P&amp;L</div>
-          <div id="aileTotalPnl" style="font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--profit);">—</div>
+          <div id="aileTotalPnl" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:var(--profit);">&mdash;</div>
         </div>
-        <div style="background:var(--bg2);padding:14px 12px;text-align:center;">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Açık Poz</div>
-          <div id="aileTotalOpen" style="font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--info);">—</div>
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">A&ccedil;&#x131;k Poz</div>
+          <div id="aileTotalOpen" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:var(--info);">&mdash;</div>
         </div>
-        <div style="background:var(--bg2);padding:14px 12px;text-align:center;">
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Toplam Risk</div>
-          <div id="aileTotalRisk" style="font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--loss);">—</div>
+          <div id="aileTotalRisk" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:var(--loss);">&mdash;</div>
+        </div>
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Kapal&#x131; &#x130;&#x15F;lem</div>
+          <div id="aileTotalTrades" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:var(--text);">&mdash;</div>
+        </div>
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Win Rate</div>
+          <div id="aileTotalWR" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:#22C55E;">&mdash;</div>
+        </div>
+        <div style="background:var(--bg2);padding:14px 10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;">Tahsil Prim</div>
+          <div id="aileTotalPrem" style="font-size:21px;font-weight:700;font-family:var(--font-mono);color:#F59E0B;">&mdash;</div>
         </div>
       </div>
+
+      <!-- Lider tablosu -->
+      <div style="padding:16px 20px 0;">
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:10px;">&#x1F3C6; Lider Tablosu</div>
+        <div id="aileLeaderboard"></div>
+      </div>
+
       <!-- Profile breakdown bars -->
       <div style="padding:16px 20px 0;">
-        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:12px;">Profil Karşılaştırması</div>
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:12px;">Profil Kar&#x15F;&#x131;la&#x15F;t&#x131;rmas&#x131;</div>
         <div id="aileProfileBars"></div>
       </div>
+
       <!-- Comparison Chart -->
       <div style="padding:12px 20px 0;">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;">
-          <div style="font-size:12px;color:var(--text-2);font-weight:600;margin-bottom:10px;">Win Rate &amp; P&amp;L Karşılaştırması</div>
+          <div style="font-size:12px;color:var(--text-2);font-weight:600;margin-bottom:10px;">Win Rate &amp; P&amp;L Kar&#x15F;&#x131;la&#x15F;t&#x131;rmas&#x131;</div>
           <div style="height:150px;"><canvas id="aileCompChart"></canvas></div>
         </div>
       </div>
-      <!-- Nearest expiries -->
+
+      <!-- Aylik trend -->
       <div style="padding:12px 20px 0;">
-        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:10px;">En Yakın Expiry'ler</div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;">
+          <div style="font-size:12px;color:var(--text-2);font-weight:600;margin-bottom:10px;">Ayl&#x131;k Aile P&amp;L Trendi</div>
+          <div style="height:170px;"><canvas id="aileMonthlyChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Katki payi -->
+      <div style="padding:12px 20px 0;">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;">
+          <div style="font-size:12px;color:var(--text-2);font-weight:600;margin-bottom:10px;">Kâra Katk&#x131; Pay&#x131;</div>
+          <div style="height:180px;"><canvas id="aileShareChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Rekorlar -->
+      <div style="padding:16px 20px 0;">
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:10px;">&#x2728; Rekorlar</div>
+        <div id="aileRecords"></div>
+      </div>
+
+      <!-- Nearest expiries -->
+      <div style="padding:16px 20px 0;">
+        <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:10px;">En Yak&#x131;n Expiry'ler</div>
         <div id="aileExpiryList"></div>
       </div>
+
       <!-- Annual goal -->
       <div style="padding:12px 20px 20px;">
         <div style="background:linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.02));border:1px solid rgba(34,197,94,0.15);border-radius:12px;padding:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-            <div style="font-size:13px;font-weight:600;color:var(--text);">&#x1F3AF; Yıllık Gelir Hedefi</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">&#x1F3AF; Y&#x131;ll&#x131;k Gelir Hedefi</div>
             <div id="aileHedefYil" style="font-size:11px;color:var(--text-3);"></div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <div style="position:relative;flex:1;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-3);font-size:13px;font-weight:600;">$</span>
               <input id="aileHedefInput" type="number" min="0" step="1000" placeholder="50000"
-                style="width:100%;background:rgba(255,255,255,0.06);border:1.5px solid var(--border-bright);border-radius:8px;padding:9px 10px 9px 26px;color:var(--text);font-size:14px;font-weight:600;font-family:var(--font-mono);outline:none;box-sizing:border-box;">
+                style="width:100%;background:rgba(255,255,255,0.06);border:1.5px solid var(--border-bright);border-radius:8px;padding:9px 10px 9px 26px;color:var(--text);font-size:14px;font-family:var(--font-mono);outline:none;">
             </div>
-            <button onclick="saveAileHedef()" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:9px 16px;color:#22C55E;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;">Kaydet</button>
+            <button onclick="saveAileHedef()" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:9px 16px;color:#22C55E;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Kaydet</button>
           </div>
           <div id="aileHedefBar" style="background:rgba(255,255,255,0.08);border-radius:6px;height:10px;overflow:hidden;margin-bottom:8px;">
             <div id="aileHedefFill" style="height:100%;width:0%;background:linear-gradient(90deg,#22C55E,#86EFAC);border-radius:6px;transition:width .6s ease;"></div>
           </div>
           <div style="display:flex;justify-content:space-between;">
-            <div id="aileHedefPct" style="font-size:12px;font-weight:600;color:#22C55E;">—</div>
-            <div id="aileHedefSub" style="font-size:11px;color:var(--text-3);">—</div>
+            <div id="aileHedefPct" style="font-size:12px;font-weight:600;color:#22C55E;">&mdash;</div>
+            <div id="aileHedefSub" style="font-size:11px;color:var(--text-3);">&mdash;</div>
           </div>
         </div>
       </div>
@@ -8518,6 +8574,31 @@ function _aileReadProfileTrades(profileId) {
   } catch(e) { return []; }
 }
 
+// Aile Dashboard donemi: 'all' | '2026' | '2025' ...
+// Eskiden hicbir yil filtresi YOKTU ve ekranda da bu yazmiyordu; rakamlarin
+// hangi donemi kapsadigi belirsizdi. Artik secilebilir ve ekranda yaziyor.
+var AILE_YEAR = 'all';
+
+function _aileTradeYear(t){
+  var d = t.closed || t.opened || '';
+  return d ? String(d).substring(0,4) : '';
+}
+// Secili doneme gore filtrele. Acik pozisyonlar acilis yilina gore,
+// kapanmislar kapanis yilina gore degerlendirilir.
+function _aileFilterByYear(trades, yr){
+  if(!yr || yr === 'all') return trades;
+  return trades.filter(function(t){ return _aileTradeYear(t) === yr; });
+}
+function _aileAvailableYears(){
+  var ys = {};
+  Object.keys(PROFILES).forEach(function(pid){
+    _aileReadProfileTrades(pid).forEach(function(t){
+      var y = _aileTradeYear(t); if(y) ys[y] = 1;
+    });
+  });
+  return Object.keys(ys).sort().reverse();
+}
+
 /* Compute per-profile stats: totalPnl (closed), openCount, maxLoss */
 function _aileProfileStats(trades) {
   var closed = trades.filter(function(t){ return t.closed && t.pnl != null; });
@@ -8549,18 +8630,39 @@ function _aileProfileStats(trades) {
       nearest = { dte: dte, ticker: t.ticker, type: t.type };
     }
   });
+  // Tahsil edilen prim: yalnizca SHORT islemler (long'da prim odenir)
+  var premCollected = trades.reduce(function(s,t){
+    if(isLong(t.type)) return s;
+    return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0);
+  }, 0);
+  // En iyi / en kotu kapali islem
+  var best = null, worst = null;
+  closed.forEach(function(t){
+    if(best === null || (t.pnl||0) > (best.pnl||0)) best = t;
+    if(worst === null || (t.pnl||0) < (worst.pnl||0)) worst = t;
+  });
   return {
     totalPnl: totalPnl + partialPnl,
     closedCount: closed.length,
     openCount: open.length,
+    tradeCount: trades.length,
+    winCount: wins.length,
     winRate: closed.length ? Math.round(wins.length / closed.length * 100) : 0,
     maxLoss: maxLoss,
+    premCollected: premCollected,
+    best: best,
+    worst: worst,
     nearest: nearest,
-    openTrades: open
+    openTrades: open,
+    closedTrades: closed,
+    allTrades: trades
   };
 }
 
 var _aileCompChartInstance = null;
+var _aileMonthlyChartInstance = null;
+var _aileShareChartInstance = null;
+var _AILE_PDF_CTX = null;
 
 function showAileDashboard() {
   // Close profile screen first
@@ -8569,13 +8671,36 @@ function showAileDashboard() {
   _renderAileDashboard();
 }
 
+function setAileYear(y){ AILE_YEAR = y; _renderAileDashboard(); }
+
 function _renderAileDashboard() {
   var profileIds = Object.keys(PROFILES); // ['mustafa','ayse','sevi','ikbal']
   var profileStats = {};
   profileIds.forEach(function(pid){
-    var trades = _aileReadProfileTrades(pid);
+    var trades = _aileFilterByYear(_aileReadProfileTrades(pid), AILE_YEAR);
     profileStats[pid] = _aileProfileStats(trades);
   });
+
+  // ── Donem secici + etiket ──────────────────────────────────────
+  var yrRow = document.getElementById('aileYearRow');
+  if(yrRow){
+    var years = _aileAvailableYears();
+    var opts = [{k:'all', l:'Tüm Zamanlar'}].concat(years.map(function(y){ return {k:y, l:y}; }));
+    yrRow.innerHTML = opts.map(function(o){
+      var on = AILE_YEAR === o.k;
+      return '<div onclick="setAileYear(\''+o.k+'\')" style="flex-shrink:0;cursor:pointer;padding:6px 14px;border-radius:16px;font-size:12px;font-weight:600;transition:all .15s;'
+        + (on ? 'background:rgba(245,158,11,0.18);border:1.5px solid rgba(245,158,11,0.5);color:#F59E0B;'
+              : 'background:rgba(255,255,255,0.05);border:1.5px solid transparent;color:var(--text-3);')
+        + '">' + o.l + '</div>';
+    }).join('');
+  }
+  var perLbl = document.getElementById('ailePeriodLabel');
+  if(perLbl){
+    var ys = _aileAvailableYears();
+    perLbl.textContent = (AILE_YEAR === 'all')
+      ? 'Tüm kayıtlar' + (ys.length ? ' (' + ys[ys.length-1] + '–' + ys[0] + ')' : '') + ' · kapanmış işlemler kapanış yılına göre'
+      : AILE_YEAR + ' yılı · kapanmış işlemler kapanış, açık pozisyonlar açılış yılına göre';
+  }
 
   // ── Hero row ───────────────────────────────────────────────────
   var combinedPnl  = profileIds.reduce(function(s,p){ return s + profileStats[p].totalPnl; }, 0);
@@ -8594,6 +8719,83 @@ function _renderAileDashboard() {
 
   var updEl = document.getElementById('aileUpdatedAt');
   if(updEl) updEl.textContent = 'Son güncelleme: ' + new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit'});
+
+  // ── Ek hero metrikleri ─────────────────────────────────────────
+  var combClosed = profileIds.reduce(function(s,p){ return s + profileStats[p].closedCount; }, 0);
+  var combWins   = profileIds.reduce(function(s,p){ return s + profileStats[p].winCount; }, 0);
+  var combPrem   = profileIds.reduce(function(s,p){ return s + profileStats[p].premCollected; }, 0);
+  var combWR     = combClosed ? Math.round(combWins / combClosed * 100) : 0;
+  var _set = function(id, txt){ var e=document.getElementById(id); if(e) e.textContent = txt; };
+  _set('aileTotalTrades', combClosed);
+  _set('aileTotalWR', combWR + '%');
+  _set('aileTotalPrem', combPrem > 0 ? fmtA$(combPrem) : '—');
+
+  // ── Lider tablosu ──────────────────────────────────────────────
+  var MEDALS = ['🥇','🥈','🥉','4️⃣'];
+  var PCLR = { mustafa:'#3B82F6', ayse:'#EC4899', sevi:'#A855F7', ikbal:'#F59E0B' };
+  var lbEl = document.getElementById('aileLeaderboard');
+  if(lbEl){
+    var ranked = profileIds.slice().sort(function(a,b){ return profileStats[b].totalPnl - profileStats[a].totalPnl; });
+    var anyData = ranked.some(function(p){ return profileStats[p].tradeCount > 0; });
+    if(!anyData){
+      lbEl.innerHTML = '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:10px 0;">Bu dönemde işlem yok</div>';
+    } else {
+      lbEl.innerHTML = ranked.map(function(pid, i){
+        var st = profileStats[pid], pr = PROFILES[pid];
+        var clr = PCLR[pid] || '#8A9BB8';
+        var pnlClr = st.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 11px;margin-bottom:6px;background:var(--card);border:1px solid ' + (i===0?'rgba(245,158,11,0.35)':'var(--border)') + ';border-radius:10px;">'
+          + '<div style="font-size:17px;width:24px;text-align:center;">' + MEDALS[i] + '</div>'
+          + '<div style="width:3px;height:26px;background:' + clr + ';border-radius:2px;"></div>'
+          + '<div style="flex:1;min-width:0;">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--text);">' + pr.emoji + ' ' + pr.name + '</div>'
+            + '<div style="font-size:10px;color:var(--text-3);">' + st.closedCount + ' kapalı · ' + st.winRate + '% WR · ' + st.openCount + ' açık</div>'
+          + '</div>'
+          + '<div style="text-align:right;">'
+            + '<div style="font-size:14px;font-weight:700;font-family:var(--font-mono);color:' + pnlClr + ';">' + (st.totalPnl>=0?'+':'') + fmtA$(st.totalPnl) + '</div>'
+            + '<div style="font-size:10px;color:#F59E0B;font-family:var(--font-mono);">' + (st.premCollected>0?fmtA$(st.premCollected)+' prim':'') + '</div>'
+          + '</div>'
+        + '</div>';
+      }).join('');
+    }
+  }
+
+  // ── Rekorlar ───────────────────────────────────────────────────
+  var recEl = document.getElementById('aileRecords');
+  if(recEl){
+    var allClosed = [];
+    profileIds.forEach(function(pid){
+      profileStats[pid].closedTrades.forEach(function(t){ allClosed.push(Object.assign({}, t, {_pid:pid})); });
+    });
+    if(!allClosed.length){
+      recEl.innerHTML = '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:10px 0;">Bu dönemde kapanmış işlem yok</div>';
+    } else {
+      var bestT  = allClosed.reduce(function(a,b){ return (b.pnl||0) > (a.pnl||0) ? b : a; });
+      var worstT = allClosed.reduce(function(a,b){ return (b.pnl||0) < (a.pnl||0) ? b : a; });
+      // En cok islem yapilan ticker
+      var tickCount = {};
+      allClosed.forEach(function(t){ var k=(t.ticker||'?').split(' ')[0]; tickCount[k]=(tickCount[k]||0)+1; });
+      var topTicker = Object.keys(tickCount).sort(function(a,b){ return tickCount[b]-tickCount[a]; })[0];
+      // En karli ticker
+      var tickPnl = {};
+      allClosed.forEach(function(t){ var k=(t.ticker||'?').split(' ')[0]; tickPnl[k]=(tickPnl[k]||0)+(t.pnl||0); });
+      var bestTicker = Object.keys(tickPnl).sort(function(a,b){ return tickPnl[b]-tickPnl[a]; })[0];
+
+      var card = function(icon, label, main, sub, clr){
+        return '<div style="flex:1;min-width:calc(50% - 4px);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 11px;">'
+          + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:3px;">' + icon + ' ' + label + '</div>'
+          + '<div style="font-size:14px;font-weight:700;color:' + clr + ';font-family:var(--font-mono);">' + main + '</div>'
+          + '<div style="font-size:10px;color:var(--text-3);margin-top:1px;">' + sub + '</div>'
+        + '</div>';
+      };
+      recEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+        + card('🚀','En İyi İşlem', '+' + fmtA$(bestT.pnl||0), (bestT.ticker||'') + ' · ' + (PROFILES[bestT._pid]||{}).name, 'var(--profit)')
+        + card('💥','En Kötü İşlem', fmtA$(worstT.pnl||0), (worstT.ticker||'') + ' · ' + (PROFILES[worstT._pid]||{}).name, 'var(--loss)')
+        + card('🔁','En Çok İşlem', topTicker, tickCount[topTicker] + ' işlem', 'var(--info)')
+        + card('💎','En Kârlı Hisse', bestTicker, (tickPnl[bestTicker]>=0?'+':'') + fmtA$(tickPnl[bestTicker]), '#F59E0B')
+      + '</div>';
+    }
+  }
 
   // ── Profile breakdown bars ──────────────────────────────────────
   var barsEl = document.getElementById('aileProfileBars');
@@ -8730,30 +8932,119 @@ function _renderAileDashboard() {
   }
 
   // ── Annual goal ─────────────────────────────────────────────────
-  var curYear = new Date().getFullYear();
-  var hedefKey = 'optflow_aile_hedef_' + curYear;
+  // ── Aylik aile P&L trendi (profil bazli yigilmis) ──────────────
+  var mCanvas = document.getElementById('aileMonthlyChart');
+  if(mCanvas && typeof Chart !== 'undefined'){
+    if(_aileMonthlyChartInstance){ try { _aileMonthlyChartInstance.destroy(); } catch(e){} _aileMonthlyChartInstance = null; }
+    var byYM = {};
+    profileIds.forEach(function(pid){
+      profileStats[pid].closedTrades.forEach(function(t){
+        var d = t.closed; if(!d) return;
+        var ym = String(d).substring(0,7); if(ym.length !== 7) return;
+        (byYM[ym] = byYM[ym] || {})[pid] = (byYM[ym][pid] || 0) + (t.pnl || 0);
+      });
+    });
+    var ymKeys = Object.keys(byYM).sort();
+    if(ymKeys.length){
+      var SHORTM = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+      var multiY = ymKeys[0].substring(0,4) !== ymKeys[ymKeys.length-1].substring(0,4);
+      var mLabels = ymKeys.map(function(k){
+        var mi = parseInt(k.substring(5,7),10)-1;
+        return (SHORTM[mi]||k) + (multiY ? " '" + k.substring(2,4) : '');
+      });
+      var BARC = { mustafa:'#3B82F6', ayse:'#EC4899', sevi:'#A855F7', ikbal:'#F59E0B' };
+      var mSets = profileIds.map(function(pid){
+        return {
+          label: PROFILES[pid].name,
+          data: ymKeys.map(function(k){ return Math.round((byYM[k][pid]||0)); }),
+          backgroundColor: BARC[pid] || '#8A9BB8',
+          borderRadius: 3, stack: 'aile'
+        };
+      });
+      _aileMonthlyChartInstance = new Chart(mCanvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels: mLabels, datasets: mSets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { labels: { color: chartTheme().tick, font: { size: 9 }, boxWidth: 10 } } },
+          scales: {
+            x: { stacked: true, ticks: { color: chartTheme().tick, font: { size: 9 } }, grid: { display: false } },
+            y: { stacked: true, ticks: { color: chartTheme().tick, font: { size: 9 },
+                   callback: function(v){ return (v>=0?'+$':'-$') + Math.abs(v).toLocaleString(); } },
+                 grid: { color: chartTheme().gridSoft } }
+          }
+        }
+      });
+    }
+  }
+
+  // ── Kâra katkı payı (yalnızca kâr edenler) ─────────────────────
+  var sCanvas = document.getElementById('aileShareChart');
+  if(sCanvas && typeof Chart !== 'undefined'){
+    if(_aileShareChartInstance){ try { _aileShareChartInstance.destroy(); } catch(e){} _aileShareChartInstance = null; }
+    var posIds = profileIds.filter(function(p){ return profileStats[p].totalPnl > 0; });
+    var SHC = { mustafa:'#3B82F6', ayse:'#EC4899', sevi:'#A855F7', ikbal:'#F59E0B' };
+    if(posIds.length){
+      var totalPos = posIds.reduce(function(s,p){ return s + profileStats[p].totalPnl; }, 0);
+      _aileShareChartInstance = new Chart(sCanvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: posIds.map(function(p){ return PROFILES[p].name; }),
+          datasets: [{
+            data: posIds.map(function(p){ return Math.round(profileStats[p].totalPnl); }),
+            backgroundColor: posIds.map(function(p){ return SHC[p] || '#8A9BB8'; }),
+            borderColor: 'rgba(0,0,0,0.25)', borderWidth: 2, hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '58%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: chartTheme().tick, font: { size: 10 }, boxWidth: 10, padding: 8 } },
+            tooltip: chartTip({ callbacks: { label: function(c){
+              var pay = totalPos ? Math.round(c.raw / totalPos * 100) : 0;
+              return c.label + ': $' + Number(c.raw).toLocaleString() + ' (%' + pay + ')';
+            } } })
+          }
+        }
+      });
+    }
+  }
+
+  // ── Yıllık hedef ───────────────────────────────────────────────
+  // Hedef YILLIK. Eskiden TÜM ZAMANLARIN kârıyla karşılaştırılıyordu;
+  // 2026 hedefine 2025 kârı da sayılıyor, çubuk şişik görünüyordu.
+  // Artık hedef yılının kendi kârıyla karşılaştırılıyor.
+  var goalYear = (AILE_YEAR === 'all') ? String(new Date().getFullYear()) : AILE_YEAR;
+  var hedefKey = 'optflow_aile_hedef_' + goalYear;
   var hedef = parseFloat(localStorage.getItem(hedefKey)) || 0;
   var hedefInp = document.getElementById('aileHedefInput');
-  if(hedefInp && hedef > 0) hedefInp.value = hedef;
+  if(hedefInp) hedefInp.value = hedef > 0 ? hedef : '';
+
+  var goalPnl = profileIds.reduce(function(sum, pid){
+    return sum + _aileProfileStats(_aileFilterByYear(_aileReadProfileTrades(pid), goalYear)).totalPnl;
+  }, 0);
 
   var hedefYilEl = document.getElementById('aileHedefYil');
-  if(hedefYilEl) hedefYilEl.textContent = curYear + ' Hedefi';
+  if(hedefYilEl) hedefYilEl.textContent = goalYear + ' Hedefi';
 
-  _updateAileHedefBar(combinedPnl, hedef);
+  _updateAileHedefBar(goalPnl, hedef);
+
+  _AILE_PDF_CTX = { year: AILE_YEAR, goalYear: goalYear, goal: hedef, goalPnl: goalPnl,
+                    ids: profileIds, stats: profileStats,
+                    combinedPnl: combinedPnl, combinedOpen: combinedOpen, combinedRisk: combinedRisk,
+                    combClosed: combClosed, combWR: combWR, combPrem: combPrem };
 }
 
 function saveAileHedef() {
   var inp = document.getElementById('aileHedefInput');
   if(!inp) return;
   var val = parseFloat(inp.value) || 0;
-  var curYear = new Date().getFullYear();
-  localStorage.setItem('optflow_aile_hedef_' + curYear, val);
-  // Recalculate combined pnl for bar update
-  var profileIds = Object.keys(PROFILES);
-  var combinedPnl = profileIds.reduce(function(s,pid){
-    return s + _aileProfileStats(_aileReadProfileTrades(pid)).totalPnl;
-  }, 0);
-  _updateAileHedefBar(combinedPnl, val);
+  // Hedef, ekranda gösterilen hedef YILINA kaydedilir (seçili dönem 'all'
+  // ise içinde bulunulan yıl).
+  var goalYear = (AILE_YEAR === 'all') ? String(new Date().getFullYear()) : AILE_YEAR;
+  localStorage.setItem('optflow_aile_hedef_' + goalYear, val);
+  _renderAileDashboard();
 }
 
 function _updateAileHedefBar(pnl, hedef) {
@@ -8778,6 +9069,268 @@ function _updateAileHedefBar(pnl, hedef) {
   pctEl.style.color = pct >= 100 ? '#F59E0B' : '#22C55E';
   subEl.textContent = pct >= 100 ? '🎉 Hedef aşıldı!' : (remaining > 0 ? fmtA$(remaining) + ' kaldı' : '');
 }
+
+// ═══════════════════ AİLE DASHBOARD — RENKLİ PDF RAPORU ═══════════════════
+// Grafikler canlı canvas'tan kopyalanmıyor: ekrandakiler koyu tema ve küçük
+// boyutta, baskıda kötü duruyor. Bunun yerine beyaz zeminli, yüksek çözünürlüklü
+// kopyaları görünmez bir alanda çizilip PNG olarak gömülüyor.
+function _ailePdfChartImg(cfg, w, h){
+  if(typeof Chart === 'undefined') return '';
+  var host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:'+w+'px;height:'+h+'px;background:#fff;';
+  var cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  host.appendChild(cv);
+  document.body.appendChild(host);
+  var url = '';
+  try {
+    cfg.options = cfg.options || {};
+    cfg.options.responsive = false;
+    cfg.options.maintainAspectRatio = false;
+    cfg.options.animation = false;
+    cfg.options.devicePixelRatio = 2;
+    var ch = new Chart(cv.getContext('2d'), cfg);
+    ch.update('none');
+    url = cv.toDataURL('image/png');
+    ch.destroy();
+  } catch(e) { url = ''; }
+  try { document.body.removeChild(host); } catch(e) {}
+  return url;
+}
+
+function showAilePDF(){
+  // Ekrandaki dashboard neyse rapor da o: aynı dönem, aynı rakamlar.
+  try { _renderAileDashboard(); } catch(e) {}
+  var C = _AILE_PDF_CTX;
+  if(!C){ alert('Rapor verisi hazırlanamadı.'); return; }
+
+  var PC = { mustafa:'#2563EB', ayse:'#DB2777', sevi:'#9333EA', ikbal:'#D97706' };
+  var INK='#0F172A', MUT='#64748B', LINE='rgba(15,23,42,0.10)';
+  var GREEN='#15803D', RED='#B91C1C';
+  var TICK='#334155', GRID='rgba(15,23,42,0.08)';
+
+  var esc = function(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  var money = function(n){
+    var a = Math.abs(Math.round(n));
+    return (n<0?'-':'') + '$' + a.toLocaleString('en-US');
+  };
+  // DIKKAT: .replace('-','') negatif degerlerin isaretini siliyordu
+  // (-300 -> "$300"). Zarar kar gibi gorunuyordu.
+  var signed = function(n){ return (n>=0?'+':'') + money(n); };
+
+  var ids = C.ids, S = C.stats;
+  var donem = (C.year === 'all') ? 'Tüm Zamanlar' : C.year + ' Yılı';
+  var ranked = ids.slice().sort(function(a,b){ return S[b].totalPnl - S[a].totalPnl; });
+
+  // ── Grafik 1: profil bazlı P&L ────────────────────────────────
+  var img1 = _ailePdfChartImg({
+    type:'bar',
+    data:{ labels: ids.map(function(p){ return PROFILES[p].name; }),
+      datasets:[{ data: ids.map(function(p){ return Math.round(S[p].totalPnl); }),
+        backgroundColor: ids.map(function(p){ return PC[p]||'#64748B'; }), borderRadius:6 }] },
+    options:{ plugins:{ legend:{display:false} },
+      scales:{ x:{ ticks:{color:TICK,font:{size:12}}, grid:{display:false} },
+               y:{ ticks:{color:TICK,font:{size:11},callback:function(v){return (v>=0?'+$':'-$')+Math.abs(v).toLocaleString();}}, grid:{color:GRID} } } }
+  }, 760, 300);
+
+  // ── Grafik 2: aylık yığılmış trend ────────────────────────────
+  var byYM = {};
+  ids.forEach(function(pid){
+    S[pid].closedTrades.forEach(function(t){
+      var d=t.closed; if(!d) return;
+      var ym=String(d).substring(0,7); if(ym.length!==7) return;
+      (byYM[ym]=byYM[ym]||{})[pid]=(byYM[ym][pid]||0)+(t.pnl||0);
+    });
+  });
+  var ymK = Object.keys(byYM).sort();
+  var img2 = '';
+  if(ymK.length){
+    var SM=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+    var multi = ymK[0].substring(0,4)!==ymK[ymK.length-1].substring(0,4);
+    img2 = _ailePdfChartImg({
+      type:'bar',
+      data:{ labels: ymK.map(function(k){ var mi=parseInt(k.substring(5,7),10)-1; return (SM[mi]||k)+(multi?" '"+k.substring(2,4):''); }),
+        datasets: ids.map(function(pid){ return { label:PROFILES[pid].name,
+          data: ymK.map(function(k){ return Math.round(byYM[k][pid]||0); }),
+          backgroundColor: PC[pid]||'#64748B', borderRadius:3, stack:'a' }; }) },
+      options:{ plugins:{ legend:{labels:{color:TICK,font:{size:11},boxWidth:12}} },
+        scales:{ x:{stacked:true,ticks:{color:TICK,font:{size:11}},grid:{display:false}},
+                 y:{stacked:true,ticks:{color:TICK,font:{size:11},callback:function(v){return (v>=0?'+$':'-$')+Math.abs(v).toLocaleString();}},grid:{color:GRID}} } }
+    }, 760, 320);
+  }
+
+  // ── Grafik 3: katkı payı ──────────────────────────────────────
+  var posIds = ids.filter(function(p){ return S[p].totalPnl > 0; });
+  var img3 = '';
+  if(posIds.length){
+    img3 = _ailePdfChartImg({
+      type:'doughnut',
+      data:{ labels: posIds.map(function(p){ return PROFILES[p].name; }),
+        datasets:[{ data: posIds.map(function(p){ return Math.round(S[p].totalPnl); }),
+          backgroundColor: posIds.map(function(p){ return PC[p]||'#64748B'; }),
+          borderColor:'#fff', borderWidth:3 }] },
+      options:{ cutout:'55%', plugins:{ legend:{position:'right',labels:{color:TICK,font:{size:13},boxWidth:14,padding:12}} } }
+    }, 620, 260);
+  }
+
+  // ── KPI kartları ──────────────────────────────────────────────
+  var kpi = function(label, val, clr, sub){
+    return '<div class="kpi" style="border-top:3px solid '+clr+'">'
+      + '<div class="kpi-l">'+esc(label)+'</div>'
+      + '<div class="kpi-v" style="color:'+clr+'">'+val+'</div>'
+      + (sub?'<div class="kpi-s">'+esc(sub)+'</div>':'')
+      + '</div>';
+  };
+  var kpis = kpi('Toplam P&L', signed(C.combinedPnl), C.combinedPnl>=0?GREEN:RED, C.combClosed+' kapalı işlem')
+           + kpi('Win Rate', C.combWR+'%', '#0891B2', C.combClosed+' işlem üzerinden')
+           + kpi('Tahsil Edilen Prim', money(C.combPrem), '#D97706', 'short pozisyonlar')
+           + kpi('Açık Pozisyon', String(C.combinedOpen), '#2563EB', 'tüm profiller')
+           + kpi('Toplam Risk', C.combinedRisk>0?money(C.combinedRisk):'—', RED, 'teminat toplamı')
+           + kpi('Profil Sayısı', String(ids.length), '#9333EA', 'aile hesapları');
+
+  // ── Lider tablosu ─────────────────────────────────────────────
+  var MED=['🥇','🥈','🥉','4.'];
+  var maxAbs = ids.reduce(function(m,p){ return Math.max(m, Math.abs(S[p].totalPnl)); }, 1);
+  var lbRows = ranked.map(function(pid,i){
+    var st=S[pid], pr=PROFILES[pid], clr=PC[pid]||'#64748B';
+    var w = Math.round(Math.abs(st.totalPnl)/maxAbs*100);
+    return '<tr>'
+      + '<td class="med">'+MED[i]+'</td>'
+      + '<td><b style="color:'+clr+'">'+esc(pr.name)+'</b></td>'
+      + '<td class="r">'+st.closedCount+'</td>'
+      + '<td class="r">'+st.winRate+'%</td>'
+      + '<td class="r">'+st.openCount+'</td>'
+      + '<td class="r">'+(st.premCollected>0?money(st.premCollected):'—')+'</td>'
+      + '<td class="r"><b style="color:'+(st.totalPnl>=0?GREEN:RED)+'">'+signed(st.totalPnl)+'</b></td>'
+      + '<td style="width:130px"><div class="bar"><i style="width:'+w+'%;background:'+clr+'"></i></div></td>'
+      + '</tr>';
+  }).join('');
+
+  // ── Rekorlar ──────────────────────────────────────────────────
+  var allClosed=[];
+  ids.forEach(function(pid){ S[pid].closedTrades.forEach(function(t){ allClosed.push(Object.assign({},t,{_pid:pid})); }); });
+  var recHtml='';
+  if(allClosed.length){
+    var bestT=allClosed.reduce(function(a,b){return (b.pnl||0)>(a.pnl||0)?b:a;});
+    var worstT=allClosed.reduce(function(a,b){return (b.pnl||0)<(a.pnl||0)?b:a;});
+    var tc={},tp={};
+    allClosed.forEach(function(t){ var k=(t.ticker||'?').split(' ')[0]; tc[k]=(tc[k]||0)+1; tp[k]=(tp[k]||0)+(t.pnl||0); });
+    var topT=Object.keys(tc).sort(function(a,b){return tc[b]-tc[a];})[0];
+    var bestTk=Object.keys(tp).sort(function(a,b){return tp[b]-tp[a];})[0];
+    var rc=function(ic,l,m,s,c){ return '<div class="rec" style="border-left:4px solid '+c+'"><div class="rec-l">'+ic+' '+esc(l)+'</div><div class="rec-m" style="color:'+c+'">'+m+'</div><div class="rec-s">'+esc(s)+'</div></div>'; };
+    recHtml = '<div class="recs">'
+      + rc('🚀','En İyi İşlem', signed(bestT.pnl||0), (bestT.ticker||'')+' · '+(PROFILES[bestT._pid]||{}).name, GREEN)
+      + rc('💥','En Kötü İşlem', signed(worstT.pnl||0), (worstT.ticker||'')+' · '+(PROFILES[worstT._pid]||{}).name, RED)
+      + rc('🔁','En Çok İşlem Gören', esc(topT), tc[topT]+' işlem', '#2563EB')
+      + rc('💎','En Kârlı Hisse', esc(bestTk), signed(tp[bestTk]), '#D97706')
+      + '</div>';
+  }
+
+  // ── Yaklaşan expiry'ler ───────────────────────────────────────
+  var now=new Date(), exps=[];
+  ids.forEach(function(pid){
+    S[pid].openTrades.forEach(function(t){
+      if(!t.expiry) return;
+      var e=new Date(t.expiry); if(isNaN(e)) return;
+      var d=Math.round((e-now)/86400000);
+      if(d>=0) exps.push({d:d,tk:t.ticker||'?',ty:t.type||'',pid:pid,exp:t.expiry});
+    });
+  });
+  exps.sort(function(a,b){return a.d-b.d;});
+  var expHtml = exps.length ? ('<table class="tbl"><thead><tr><th>Ticker</th><th>Tip</th><th>Profil</th><th>Vade</th><th class="r">Kalan</th></tr></thead><tbody>'
+    + exps.slice(0,10).map(function(e){
+        var c = e.d<=7?RED:e.d<=21?'#D97706':GREEN;
+        return '<tr><td><b>'+esc(e.tk)+'</b></td><td>'+esc(e.ty)+'</td>'
+             + '<td style="color:'+(PC[e.pid]||MUT)+'"><b>'+esc((PROFILES[e.pid]||{}).name)+'</b></td>'
+             + '<td>'+esc(e.exp)+'</td><td class="r"><b style="color:'+c+'">'+e.d+' gün</b></td></tr>';
+      }).join('') + '</tbody></table>')
+    : '<div class="empty">Açık pozisyon yok</div>';
+
+  // ── Hedef ─────────────────────────────────────────────────────
+  var goalHtml='';
+  if(C.goal>0){
+    var gp = Math.max(0, Math.min(100, Math.round(C.goalPnl/C.goal*100)));
+    goalHtml = '<div class="goal">'
+      + '<div class="goal-h"><span>🎯 '+C.goalYear+' Yıllık Gelir Hedefi</span>'
+      + '<span class="goal-n">'+money(C.goalPnl)+' / '+money(C.goal)+'</span></div>'
+      + '<div class="goal-bar"><i style="width:'+gp+'%"></i></div>'
+      + '<div class="goal-f"><b>%'+gp+'</b> tamamlandı'
+      + (C.goalPnl<C.goal?(' · kalan '+money(C.goal-C.goalPnl)):' · hedef aşıldı 🎉')+'</div>'
+      + '</div>';
+  }
+
+  var css = 'html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + '@page{size:A4;margin:11mm}'
+    + '*{box-sizing:border-box}'
+    + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:'+INK+';margin:0;padding:22px;background:#fff;font-size:12px}'
+    + '.hero{background:linear-gradient(120deg,#4C1D95 0%,#7C3AED 45%,#D97706 100%);border-radius:16px;padding:24px 26px;color:#fff;margin-bottom:18px}'
+    + '.hero h1{margin:0;font-size:26px;letter-spacing:-.4px}'
+    + '.hero .sub{margin-top:6px;font-size:13px;opacity:.92}'
+    + '.hero .chips{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}'
+    + '.chip{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);border-radius:20px;padding:5px 13px;font-size:12px;font-weight:600}'
+    + '.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:18px}'
+    + '.kpi{background:#fff;border:1px solid '+LINE+';border-radius:12px;padding:13px 14px;box-shadow:0 1px 3px rgba(15,23,42,.06)}'
+    + '.kpi-l{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:'+MUT+';font-weight:700}'
+    + '.kpi-v{font-size:22px;font-weight:800;margin-top:5px;letter-spacing:-.5px}'
+    + '.kpi-s{font-size:10px;color:'+MUT+';margin-top:2px}'
+    + 'h2{font-size:14px;margin:22px 0 10px;padding-bottom:6px;border-bottom:2px solid '+LINE+';letter-spacing:-.2px}'
+    + '.tbl{width:100%;border-collapse:collapse;font-size:11.5px}'
+    + '.tbl th{background:#F1F5F9;border-bottom:2px solid '+LINE+';padding:8px 9px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:'+MUT+'}'
+    + '.tbl td{border-bottom:1px solid '+LINE+';padding:8px 9px}'
+    + '.tbl .r{text-align:right}.tbl .med{font-size:16px;width:34px;text-align:center}'
+    + '.bar{background:#E2E8F0;border-radius:5px;height:9px;overflow:hidden}'
+    + '.bar i{display:block;height:100%;border-radius:5px}'
+    + '.recs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}'
+    + '.rec{background:#F8FAFC;border-radius:10px;padding:11px 13px}'
+    + '.rec-l{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:'+MUT+';font-weight:700}'
+    + '.rec-m{font-size:17px;font-weight:800;margin-top:3px}'
+    + '.rec-s{font-size:10.5px;color:'+MUT+';margin-top:1px}'
+    + '.chart{background:#fff;border:1px solid '+LINE+';border-radius:12px;padding:12px;margin-bottom:12px;text-align:center}'
+    + '.chart img{max-width:100%;height:auto}'
+    + '.chart .ct{font-size:11px;font-weight:700;color:'+MUT+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;text-align:left}'
+    + '.goal{background:linear-gradient(135deg,#ECFDF5,#F0FDF4);border:1px solid #A7F3D0;border-radius:12px;padding:15px 16px;margin-bottom:6px}'
+    + '.goal-h{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:9px}'
+    + '.goal-n{font-family:ui-monospace,monospace;color:'+GREEN+'}'
+    + '.goal-bar{background:#D1FAE5;border-radius:6px;height:12px;overflow:hidden}'
+    + '.goal-bar i{display:block;height:100%;background:linear-gradient(90deg,#059669,#34D399);border-radius:6px}'
+    + '.goal-f{font-size:11px;color:'+MUT+';margin-top:7px}'
+    + '.empty{font-size:12px;color:'+MUT+';padding:12px;text-align:center;background:#F8FAFC;border-radius:10px}'
+    + '.foot{margin-top:26px;padding-top:12px;border-top:1px solid '+LINE+';font-size:9.5px;color:'+MUT+';text-align:center}'
+    + '.pbtn{background:#7C3AED;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:16px}'
+    + '@media print{.pbtn{display:none!important}h2{page-break-after:avoid}.chart,.rec,.goal{page-break-inside:avoid}}';
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>Aile Portföy Raporu — '+esc(donem)+'</title><style>'+css+'</style></head><body>'
+    + '<button class="pbtn" onclick="window.print()">🖨️ Yazdır / PDF Kaydet</button>'
+    + '<div class="hero">'
+    +   '<h1>👪 Aile Portföy Raporu</h1>'
+    +   '<div class="sub">'+esc(donem)+' · '+ids.length+' profil · '+C.combClosed+' kapanmış işlem</div>'
+    +   '<div class="chips">'
+    +     '<span class="chip">Toplam P&amp;L '+signed(C.combinedPnl)+'</span>'
+    +     '<span class="chip">Win Rate %'+C.combWR+'</span>'
+    +     '<span class="chip">'+C.combinedOpen+' açık pozisyon</span>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="kpis">'+kpis+'</div>'
+    + goalHtml
+    + '<h2>🏆 Lider Tablosu</h2>'
+    + '<table class="tbl"><thead><tr><th></th><th>Profil</th><th class="r">Kapalı</th><th class="r">WR</th>'
+    +   '<th class="r">Açık</th><th class="r">Prim</th><th class="r">P&amp;L</th><th>Dağılım</th></tr></thead>'
+    +   '<tbody>'+lbRows+'</tbody></table>'
+    + (img1?'<div class="chart"><div class="ct">Profil Bazlı Toplam P&amp;L</div><img src="'+img1+'"></div>':'')
+    + (img2?'<div class="chart"><div class="ct">Aylık Aile P&amp;L Trendi</div><img src="'+img2+'"></div>':'')
+    + (img3?'<div class="chart"><div class="ct">Kâra Katkı Payı</div><img src="'+img3+'" style="max-width:520px"></div>':'')
+    + (recHtml?'<h2>✨ Rekorlar</h2>'+recHtml:'')
+    + '<h2>⏳ Yaklaşan Expiry\'ler</h2>' + expHtml
+    + '<div class="foot">OptionFlow tarafından '+new Date().toLocaleString('tr-TR')+' tarihinde oluşturuldu.<br>'
+    +   'Bilgi amaçlıdır; yatırım tavsiyesi değildir.</div>'
+    + '</body></html>';
+
+  var w = window.open('', '_blank');
+  if(!w){ alert('Pop-up engellendi — tarayıcı ayarlarından izin verin.'); return; }
+  w.document.write(html); w.document.close();
+}
+
 
 // Sayfa açılışında profil seç
 (function initProfile() {
