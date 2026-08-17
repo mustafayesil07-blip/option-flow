@@ -2818,14 +2818,22 @@ function renderDashboard(){
   // Health banner
   updateHealthBanner();
 
-  // Açık pozisyon primleri
-  var openPremTotal = open.reduce(function(s,t){ return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
-  var openKomTotal  = open.reduce(function(s,t){ return s + (parseFloat(t.openCommission)||0); }, 0);
+  // Açık pozisyon primleri — YALNIZCA primi TAHSİL EDİLEN (short) pozisyonlar.
+  // Long pozisyonlarda (Long Put / Long Call / LEAPS) prim ÖDENİR; bunlar
+  // toplama katılırsa ödenen para tahsil edilmiş gibi görünüyordu.
+  var openShort = open.filter(function(t){ return !isLong(t.type); });
+  var openLong  = open.filter(function(t){ return  isLong(t.type); });
+  var openPremTotal = openShort.reduce(function(s,t){ return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
+  var openKomTotal  = openShort.reduce(function(s,t){ return s + (parseFloat(t.openCommission)||0); }, 0);
   var openPremNet   = openPremTotal - openKomTotal;
+  // Ödenen prim kaybolmasın — ayrı ve açıkça "ödenen" olarak gösteriliyor.
+  var openLongPaid  = openLong.reduce(function(s,t){ return s + Math.abs(parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
   el=document.getElementById('heroOpenPrem');
   if(el){ el.textContent=fmtA$(openPremTotal); el.style.color='var(--info)'; }
   el=document.getElementById('heroOpenPremSub');
-  if(el) el.innerHTML='<span class="hero-badge info">'+open.length+' pozisyon</span>'+(openKomTotal>0?'<span style="color:var(--text-3);font-size:11px;margin-left:6px;">Kom: '+fmtA$(openKomTotal)+'</span>':'');
+  if(el) el.innerHTML='<span class="hero-badge info">'+openShort.length+' pozisyon</span>'
+    +(openKomTotal>0?'<span style="color:var(--text-3);font-size:11px;margin-left:6px;">Kom: '+fmtA$(openKomTotal)+'</span>':'')
+    +(openLong.length?'<span style="color:var(--text-3);font-size:11px;margin-left:6px;">· '+openLong.length+' long: −'+fmtA$(openLongPaid)+' ödenen</span>':'');
   el=document.getElementById('heroOpenPremTotal');
   if(el){ el.textContent=fmtA$(openPremNet); el.style.color=openPremNet>=0?'var(--profit)':'var(--loss)'; }
   el=document.getElementById('heroCollateral'); if(el)el.textContent=fmtA$(coll);
