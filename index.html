@@ -5617,7 +5617,10 @@ function _srShowMarkdown(){
 // ── Rapor ekrani ─────────────────────────────────────────────────────────
 function _srPreset(kind){
   var now = new Date(), from, to;
-  if(kind === 'thisWeek'){
+  if(kind === 'last30'){                                // VARSAYILAN
+    to = now;
+    from = new Date(now); from.setDate(now.getDate() - 29);   // bugun dahil 30 gun
+  } else if(kind === 'thisWeek'){
     var dow = (now.getDay() + 6) % 7;                   // Pazartesi = 0
     from = new Date(now); from.setDate(now.getDate() - dow);
     to = new Date(from); to.setDate(from.getDate() + 6);
@@ -5694,11 +5697,10 @@ function _srRefresh(){
 
 function showSpreadReport(){
   if(!_spreadRepFrom || !_spreadRepTo){
+    // Varsayilan: SON 30 GUN (bugun dahil)
     var now = new Date();
-    var dow = (now.getDay() + 6) % 7;
-    var f = new Date(now); f.setDate(now.getDate() - dow);
-    var t = new Date(f); t.setDate(f.getDate() + 6);
-    _spreadRepFrom = _srIso(f); _spreadRepTo = _srIso(t);
+    var f = new Date(now); f.setDate(now.getDate() - 29);
+    _spreadRepFrom = _srIso(f); _spreadRepTo = _srIso(now);
   }
   var _oldSr = document.getElementById('sr-modal'); if(_oldSr) _oldSr.remove();
   var ov = document.createElement('div');
@@ -5723,6 +5725,7 @@ function showSpreadReport(){
     + '<div style="padding:14px 18px 0;">'
     + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Hızlı Seçim</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'
+    +   btn('', 'Son 30 Gün', "_srPreset('last30')", pillCss)
     +   btn('', 'Bu Hafta', "_srPreset('thisWeek')", pillCss)
     +   btn('', 'Geçen Hafta', "_srPreset('lastWeek')", pillCss)
     +   btn('', 'Bu Ay', "_srPreset('thisMonth')", pillCss)
@@ -5755,7 +5758,7 @@ function showSpreadReport(){
     +   btn('', '🖼️ PNG İndir', 'downloadSpreadPNG()', 'padding:13px;border-radius:11px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.14);color:#22C55E;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     +   btn('', '📤 Paylaş', 'shareSpreadPNG()', 'padding:13px;border-radius:11px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.14);color:#3B82F6;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     +   btn('', '🖨️ PDF', 'showSpreadPDF()', 'padding:13px;border-radius:11px;border:1px solid rgba(139,92,246,.35);background:rgba(139,92,246,.14);color:#A78BFA;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
-    +   btn('', '📋 Reddit MD', '_srShowMarkdown()', 'padding:13px;border-radius:11px;border:1px solid rgba(236,72,153,.35);background:rgba(236,72,153,.14);color:#EC4899;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', '📣 Reddit\'e Aktar', '_srShowMarkdown()', 'padding:13px;border-radius:11px;border:1px solid rgba(236,72,153,.35);background:rgba(236,72,153,.14);color:#EC4899;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     + '</div>';
 
   document.body.appendChild(ov);
