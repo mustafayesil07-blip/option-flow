@@ -1312,6 +1312,7 @@
     <button onclick="importData()" style="flex:1;min-width:140px;background:var(--info-dim);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:var(--info);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F4E5; Import JSON</button>
     <button onclick="exportCSV()" style="flex:1;min-width:140px;background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,.3);border-radius:12px;padding:14px;color:var(--profit);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F4CA; Export CSV</button>
     <button onclick="showIBKRImport()" style="flex:1;min-width:140px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px;color:var(--warn);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F916; IBKR Import</button>
+    <button onclick="showSpreadReport()" style="flex:1;min-width:140px;background:rgba(236,72,153,0.10);border:1px solid rgba(236,72,153,.3);border-radius:12px;padding:14px;color:#EC4899;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;">&#x1F4E3; Spread Raporu</button>
   </div>
   <div id="ibkrImportStatus" style="display:none;margin:0 20px 12px;padding:10px 14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;font-size:13px;color:var(--profit);"></div>
   <div class="filter-row year-row" id="reportYearRow" style="margin:0 0 4px;">
@@ -5115,6 +5116,478 @@ function showBeyannamePDF(){
   var w = window.open('', '_blank');
   if(!w){ alert('Pop-up engellendi — tarayıcı ayarlarından izin verin.'); return; }
   w.document.write(html); w.document.close();
+}
+
+
+// ═══════════════════ SPREAD RAPORU (Reddit paylaşımı) ═══════════════════
+// PCS / BCS kapanmış işlemler için tek bakışta okunan paylaşım kartı.
+// Rapor dili İNGİLİZCE — hedef mecra r/thetagang gibi topluluklar.
+// Açık pozisyonlar dahil edilmez: yalnızca hem açılmış hem kapanmış işlemler.
+
+var SPREAD_REPORT_TYPES = ['PCS','BCS','CCS'];   // CCS = BCS'in eski takma adı
+var _spreadRepFrom = null, _spreadRepTo = null, _spreadRepTypes = ['PCS','BCS'];
+
+function _srIso(d){
+  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+}
+function _srDaysBetween(a, b){
+  var d1 = new Date(String(a).substring(0,10) + 'T00:00:00');
+  var d2 = new Date(String(b).substring(0,10) + 'T00:00:00');
+  if(isNaN(d1) || isNaN(d2)) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+
+// Secili aralikta KAPANMIS PCS/BCS islemleri + ozet
+function _spreadReportData(fromISO, toISO, types){
+  var wanted = {};
+  (types||[]).forEach(function(t){
+    wanted[t] = 1;
+    if(t === 'BCS') wanted['CCS'] = 1;      // eski kayitlar CCS olarak girilmis olabilir
+  });
+  var rows = [];
+  getAllTrades().forEach(function(t){
+    if(!wanted[t.type]) return;
+    // Yalnizca acilmis VE kapanmis pozisyonlar
+    if(!t.opened || !t.closed || t.pnl == null) return;
+    var cd = String(t.closed).substring(0,10);
+    if(fromISO && cd < fromISO) return;
+    if(toISO   && cd > toISO)   return;
+
+    var credit = parseFloat(t.openPremium);
+    if(!isFinite(credit)) credit = parseFloat(t.premium);
+    if(!isFinite(credit)) credit = 0;
+    credit = Math.abs(credit);
+    var pnl  = parseFloat(t.pnl) || 0;
+    var risk = parseFloat(t.teminat) || 0;
+    rows.push({
+      ticker : String(t.ticker||'?').split(' ')[0].toUpperCase(),
+      type   : (t.type === 'CCS') ? 'BCS' : t.type,
+      strike : String(t.strike||'—'),
+      expiry : String(t.expiry||'').substring(0,10),
+      opened : String(t.opened).substring(0,10),
+      closed : cd,
+      days   : _srDaysBetween(t.opened, t.closed),
+      qty    : t.q || 1,
+      credit : credit,
+      pnl    : pnl,
+      risk   : risk,
+      pctMax : credit > 0 ? (pnl / credit) : null,   // max kârın yüzde kaçı alındı
+      ror    : risk   > 0 ? (pnl / risk)   : null    // riske göre getiri
+    });
+  });
+  rows.sort(function(a,b){ return a.closed < b.closed ? -1 : a.closed > b.closed ? 1 : 0; });
+
+  var wins = rows.filter(function(r){ return r.pnl > 0; }).length;
+  var totCredit = rows.reduce(function(s,r){ return s + r.credit; }, 0);
+  var totPnl    = rows.reduce(function(s,r){ return s + r.pnl; }, 0);
+  var totRisk   = rows.reduce(function(s,r){ return s + r.risk; }, 0);
+  var withPct   = rows.filter(function(r){ return r.pctMax !== null; });
+  var withDays  = rows.filter(function(r){ return r.days !== null; });
+  return {
+    rows: rows,
+    from: fromISO, to: toISO,
+    count: rows.length,
+    wins: wins,
+    winRate: rows.length ? Math.round(wins / rows.length * 100) : 0,
+    totCredit: totCredit,
+    totPnl: totPnl,
+    totRisk: totRisk,
+    avgPctMax: withPct.length ? withPct.reduce(function(s,r){ return s + r.pctMax; },0) / withPct.length : null,
+    avgDays: withDays.length ? Math.round(withDays.reduce(function(s,r){ return s + r.days; },0) / withDays.length) : null,
+    capture: totCredit > 0 ? totPnl / totCredit : null
+  };
+}
+
+// ── Canvas cizimi ────────────────────────────────────────────────────────
+// Harici kutuphane yok: PNG dogrudan Canvas 2D ile ciziliyor. Boylece
+// paylasilan gorsel her cihazda birebir ayni ve internet gerektirmiyor.
+function _srRoundRect(c, x, y, w, h, r){
+  c.beginPath();
+  c.moveTo(x+r, y); c.lineTo(x+w-r, y); c.quadraticCurveTo(x+w, y, x+w, y+r);
+  c.lineTo(x+w, y+h-r); c.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  c.lineTo(x+r, y+h); c.quadraticCurveTo(x, y+h, x, y+h-r);
+  c.lineTo(x, y+r); c.quadraticCurveTo(x, y, x+r, y); c.closePath();
+}
+function _srMoney(n){
+  var a = Math.abs(n);
+  var s = '$' + (a >= 1000 ? Math.round(a).toLocaleString('en-US') : a.toFixed(a < 100 ? 2 : 0));
+  return (n < 0 ? '-' : '') + s;
+}
+function _srSigned(n){ return (n >= 0 ? '+' : '') + _srMoney(n); }
+function _srPct(x){ return x === null ? '—' : (x >= 0 ? '+' : '') + Math.round(x * 100) + '%'; }
+
+function _drawSpreadCard(D, scale){
+  scale = scale || 2;
+  var W = 1200, PAD = 40;
+  var HEAD = 150, SUMH = 118, THEAD = 46, ROWH = 44, FOOT = 62;
+  var H = HEAD + SUMH + THEAD + Math.max(D.rows.length,1) * ROWH + FOOT;
+
+  var cv = document.createElement('canvas');
+  cv.width = W * scale; cv.height = H * scale;
+  var c = cv.getContext('2d');
+  c.scale(scale, scale);
+  var F = function(sz, w){ return (w||'400') + ' ' + sz + 'px -apple-system, "Segoe UI", Roboto, Arial, sans-serif'; };
+  var MONO = function(sz, w){ return (w||'400') + ' ' + sz + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; };
+
+  var BG='#0E1117', CARD='#161B22', LINE='#262C36', TXT='#E6EDF3', MUT='#8B949E';
+  var GRN='#3FB950', RED='#F85149', BLU='#58A6FF', AMB='#D29922', PNK='#DB61A2';
+
+  // Zemin
+  c.fillStyle = BG; c.fillRect(0, 0, W, H);
+
+  // ── Baslik bandi ──
+  var g = c.createLinearGradient(0, 0, W, HEAD);
+  g.addColorStop(0, '#1F6FEB'); g.addColorStop(0.55, '#8957E5'); g.addColorStop(1, '#DB61A2');
+  c.fillStyle = g; c.fillRect(0, 0, W, HEAD);
+  c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(0, 0, W, HEAD);
+
+  c.fillStyle = '#FFFFFF';
+  c.font = F(38, '800'); c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  c.fillText('CREDIT SPREAD RESULTS', PAD, 62);
+
+  var tipler = D.typesLabel || 'PCS + BCS';
+  c.font = F(17, '500'); c.fillStyle = 'rgba(255,255,255,0.88)';
+  c.fillText(tipler + '  ·  closed trades only', PAD, 90);
+
+  c.font = F(15, '400'); c.fillStyle = 'rgba(255,255,255,0.72)';
+  c.fillText((D.from || '…') + '  →  ' + (D.to || '…'), PAD, 116);
+
+  // Sag ust: toplam P&L rozeti
+  var badge = _srSigned(D.totPnl);
+  c.font = MONO(40, '700');
+  var bw = c.measureText(badge).width + 40;
+  c.fillStyle = 'rgba(255,255,255,0.14)';
+  _srRoundRect(c, W - PAD - bw, 34, bw, 58, 12); c.fill();
+  c.fillStyle = '#FFFFFF'; c.textAlign = 'center';
+  c.fillText(badge, W - PAD - bw/2, 74);
+  c.font = F(13, '600'); c.fillStyle = 'rgba(255,255,255,0.75)';
+  c.fillText('TOTAL P&L', W - PAD - bw/2, 110);
+
+  // ── Ozet kutulari ──
+  var tiles = [
+    { l:'TRADES',      v: String(D.count),                              col: TXT },
+    { l:'WIN RATE',    v: D.winRate + '%',                              col: D.winRate >= 50 ? GRN : RED },
+    { l:'CREDIT',      v: _srMoney(D.totCredit),                        col: AMB },
+    { l:'CAPTURED',    v: D.capture === null ? '—' : Math.round(D.capture*100) + '%', col: BLU },
+    { l:'MAX RISK',    v: D.totRisk > 0 ? _srMoney(D.totRisk) : '—',    col: PNK },
+    { l:'AVG HOLD',    v: D.avgDays === null ? '—' : D.avgDays + 'd',   col: MUT }
+  ];
+  var tw = (W - PAD*2 - 5*10) / 6, ty = HEAD + 18;
+  tiles.forEach(function(t, i){
+    var x = PAD + i * (tw + 10);
+    c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, 76, 10); c.fill();
+    c.strokeStyle = LINE; c.lineWidth = 1; c.stroke();
+    c.textAlign = 'left';
+    c.font = F(11, '700'); c.fillStyle = MUT;
+    c.fillText(t.l, x + 13, ty + 24);
+    c.font = MONO(24, '700'); c.fillStyle = t.col;
+    c.fillText(t.v, x + 13, ty + 56);
+  });
+
+  // ── Tablo ──
+  var COLS = [
+    { k:'ticker', l:'TICKER',  x: PAD,       a:'left'  },
+    { k:'type',   l:'TYPE',    x: PAD+118,   a:'left'  },
+    { k:'strike', l:'SHORT K', x: PAD+192,   a:'left'  },
+    { k:'expiry', l:'EXPIRY',  x: PAD+286,   a:'left'  },
+    // DIKKAT: span metni uzun oldugunda DAYS sutununun uzerine biniyordu.
+    // Tarihler AY-GUN'e kisaltildi (yil zaten baslikta yaziyor) ve
+    // sayisal sutunlar saga kaydirildi.
+    { k:'span',   l:'OPEN → CLOSE', x: PAD+430, a:'left' },
+    { k:'days',   l:'DAYS',    x: PAD+640,   a:'right' },
+    { k:'qty',    l:'QTY',     x: PAD+700,   a:'right' },
+    { k:'credit', l:'CREDIT',  x: PAD+820,   a:'right' },
+    { k:'pnl',    l:'P&L',     x: PAD+950,   a:'right' },
+    { k:'pctMax', l:'% MAX',   x: PAD+1050,  a:'right' },
+    { k:'ror',    l:'ROR',     x: PAD+1120,  a:'right' }
+  ];
+  var tyTop = ty + 76 + 20;
+  c.fillStyle = '#1C2128'; c.fillRect(0, tyTop, W, THEAD);
+  c.strokeStyle = LINE; c.beginPath();
+  c.moveTo(0, tyTop + THEAD); c.lineTo(W, tyTop + THEAD); c.stroke();
+  c.font = F(12, '700'); c.fillStyle = MUT;
+  COLS.forEach(function(col){
+    c.textAlign = col.a;
+    c.fillText(col.l, col.x, tyTop + 29);
+  });
+
+  // Satirlar
+  var y = tyTop + THEAD;
+  if(!D.rows.length){
+    c.textAlign = 'center'; c.font = F(17, '500'); c.fillStyle = MUT;
+    c.fillText('No closed spread trades in this range', W/2, y + 34);
+    y += ROWH;
+  }
+  D.rows.forEach(function(r, i){
+    if(i % 2 === 1){ c.fillStyle = '#12171E'; c.fillRect(0, y, W, ROWH); }
+    // Kazanc/kayip seridi
+    c.fillStyle = r.pnl >= 0 ? GRN : RED;
+    c.fillRect(0, y, 4, ROWH);
+
+    var mid = y + 28;
+    c.textAlign = 'left';
+    c.font = F(16, '700'); c.fillStyle = TXT;
+    c.fillText(r.ticker, COLS[0].x, mid);
+
+    // Tur rozeti
+    var tCol = r.type === 'PCS' ? GRN : BLU;
+    c.font = F(11, '700');
+    var tW = c.measureText(r.type).width + 16;
+    c.fillStyle = (r.type === 'PCS' ? 'rgba(63,185,80,0.16)' : 'rgba(88,166,255,0.16)');
+    _srRoundRect(c, COLS[1].x, y + 12, tW, 22, 5); c.fill();
+    c.fillStyle = tCol; c.textAlign = 'center';
+    c.fillText(r.type, COLS[1].x + tW/2, y + 27);
+
+    c.textAlign = 'left';
+    c.font = MONO(15, '600'); c.fillStyle = TXT;
+    c.fillText(r.strike, COLS[2].x, mid);
+    c.font = MONO(14, '400'); c.fillStyle = MUT;
+    c.fillText(r.expiry || '—', COLS[3].x, mid);
+    c.fillText(r.opened.substring(5) + '  →  ' + r.closed.substring(5), COLS[4].x, mid);
+
+    c.textAlign = 'right';
+    c.font = MONO(15, '500'); c.fillStyle = MUT;
+    c.fillText(r.days === null ? '—' : String(r.days), COLS[5].x, mid);
+    c.fillText(String(r.qty), COLS[6].x, mid);
+    c.fillStyle = AMB;
+    c.fillText(_srMoney(r.credit), COLS[7].x, mid);
+    c.font = MONO(16, '700'); c.fillStyle = r.pnl >= 0 ? GRN : RED;
+    c.fillText(_srSigned(r.pnl), COLS[8].x, mid);
+    c.font = MONO(15, '600'); c.fillStyle = r.pctMax === null ? MUT : (r.pctMax >= 0 ? GRN : RED);
+    c.fillText(_srPct(r.pctMax), COLS[9].x, mid);
+    c.fillStyle = r.ror === null ? MUT : (r.ror >= 0 ? GRN : RED);
+    c.fillText(_srPct(r.ror), COLS[10].x, mid);
+
+    c.strokeStyle = LINE; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(0, y + ROWH); c.lineTo(W, y + ROWH); c.stroke();
+    y += ROWH;
+  });
+
+  // ── Alt bilgi ──
+  c.fillStyle = '#12171E'; c.fillRect(0, y, W, FOOT);
+  c.textAlign = 'left'; c.font = F(13, '500'); c.fillStyle = MUT;
+  c.fillText('% MAX = P&L ÷ credit received   ·   ROR = P&L ÷ max risk   ·   open positions excluded', PAD, y + 27);
+  c.font = F(12, '400'); c.fillStyle = '#5A636D';
+  c.fillText('Generated with OptionFlow · ' + _srIso(new Date()), PAD, y + 47);
+
+  return cv;
+}
+
+// ── PNG indir / paylas ───────────────────────────────────────────────────
+function _srCurrentData(){
+  var d = _spreadReportData(_spreadRepFrom, _spreadRepTo, _spreadRepTypes);
+  d.typesLabel = _spreadRepTypes.join(' + ');
+  return d;
+}
+function _srFileName(ext){
+  return 'credit-spreads-' + (_spreadRepFrom||'') + '_' + (_spreadRepTo||'') + '.' + ext;
+}
+
+function downloadSpreadPNG(){
+  var D = _srCurrentData();
+  var cv = _drawSpreadCard(D, 2);
+  cv.toBlob(function(blob){
+    if(!blob){ alert('Görsel oluşturulamadı.'); return; }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = _srFileName('png');
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+    _backupToast('🖼️ PNG indirildi', true);
+  }, 'image/png');
+}
+
+function shareSpreadPNG(){
+  var D = _srCurrentData();
+  var cv = _drawSpreadCard(D, 2);
+  cv.toBlob(function(blob){
+    if(!blob){ alert('Görsel oluşturulamadı.'); return; }
+    // Dosya adi uzantisi ile MIME tipi UYUSMALI — aksi halde Chrome
+    // Android paylasimi NotAllowedError ile reddediyor.
+    try {
+      var f = new File([blob], _srFileName('png'), { type: 'image/png' });
+      if(navigator.share && navigator.canShare && navigator.canShare({ files: [f] })){
+        navigator.share({ files: [f], title: 'Credit Spread Results' })
+          .catch(function(err){
+            if(err && err.name === 'AbortError') return;
+            downloadSpreadPNG();
+          });
+        return;
+      }
+    } catch(e) {}
+    downloadSpreadPNG();
+  }, 'image/png');
+}
+
+// ── PDF (yazdirma penceresi) ─────────────────────────────────────────────
+function showSpreadPDF(){
+  var D = _srCurrentData();
+  var img = '';
+  try { img = _drawSpreadCard(D, 2).toDataURL('image/png'); } catch(e) {}
+  if(!img){ alert('Rapor oluşturulamadı.'); return; }
+  var w = window.open('', '_blank');
+  if(!w){ alert('Pop-up engellendi — tarayıcı ayarlarından izin verin.'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>Credit Spread Results ' + (D.from||'') + ' – ' + (D.to||'') + '</title>'
+    + '<style>@page{size:A4 landscape;margin:8mm}'
+    + 'html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + 'body{margin:0;background:#0E1117;display:flex;flex-direction:column;align-items:center;padding:16px;'
+    + 'font-family:-apple-system,"Segoe UI",Arial,sans-serif}'
+    + 'img{max-width:100%;height:auto;border-radius:12px}'
+    + 'button{background:#8957E5;color:#fff;border:none;padding:10px 20px;border-radius:8px;'
+    + 'cursor:pointer;font-size:13px;font-weight:700;margin-bottom:14px}'
+    + '@media print{button{display:none!important}body{background:#fff;padding:0}}'
+    + '</style></head><body>'
+    + '<button onclick="window.print()">🖨️ Yazdır / PDF Kaydet</button>'
+    + '<img src="' + img + '">'
+    + '</body></html>');
+  w.document.close();
+}
+
+// ── Rapor ekrani ─────────────────────────────────────────────────────────
+function _srPreset(kind){
+  var now = new Date(), from, to;
+  if(kind === 'thisWeek'){
+    var dow = (now.getDay() + 6) % 7;                   // Pazartesi = 0
+    from = new Date(now); from.setDate(now.getDate() - dow);
+    to = new Date(from); to.setDate(from.getDate() + 6);
+  } else if(kind === 'lastWeek'){
+    var dow2 = (now.getDay() + 6) % 7;
+    to = new Date(now); to.setDate(now.getDate() - dow2 - 1);
+    from = new Date(to); from.setDate(to.getDate() - 6);
+  } else if(kind === 'thisMonth'){
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  } else if(kind === 'lastMonth'){
+    from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    to   = new Date(now.getFullYear(), now.getMonth(), 0);
+  } else { // yearToDate
+    from = new Date(now.getFullYear(), 0, 1);
+    to   = now;
+  }
+  _spreadRepFrom = _srIso(from); _spreadRepTo = _srIso(to);
+  var fi = document.getElementById('sr_from'), ti = document.getElementById('sr_to');
+  if(fi) fi.value = _spreadRepFrom;
+  if(ti) ti.value = _spreadRepTo;
+  _srRefresh();
+}
+
+function _srToggleType(t){
+  var i = _spreadRepTypes.indexOf(t);
+  if(i >= 0){ if(_spreadRepTypes.length > 1) _spreadRepTypes.splice(i,1); }
+  else _spreadRepTypes.push(t);
+  _srRefresh();
+}
+
+function _srRefresh(){
+  var fi = document.getElementById('sr_from'), ti = document.getElementById('sr_to');
+  if(fi) _spreadRepFrom = fi.value || null;
+  if(ti) _spreadRepTo   = ti.value || null;
+
+  // Tur butonlari
+  ['PCS','BCS'].forEach(function(t){
+    var b = document.getElementById('sr_ty_' + t);
+    if(!b) return;
+    var on = _spreadRepTypes.indexOf(t) >= 0;
+    b.style.background = on ? (t==='PCS'?'rgba(34,197,94,0.18)':'rgba(59,130,246,0.18)') : 'rgba(255,255,255,0.05)';
+    b.style.borderColor = on ? (t==='PCS'?'rgba(34,197,94,0.5)':'rgba(59,130,246,0.5)') : 'transparent';
+    b.style.color = on ? (t==='PCS'?'#22C55E':'#3B82F6') : 'var(--text-3)';
+  });
+
+  var D = _srCurrentData();
+  var sum = document.getElementById('sr_summary');
+  if(sum){
+    sum.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">'
+      + '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;">İşlem</div>'
+        + '<div style="font-size:19px;font-weight:700;font-family:var(--font-mono);color:var(--text);">' + D.count + '</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;">Win Rate</div>'
+        + '<div style="font-size:19px;font-weight:700;font-family:var(--font-mono);color:' + (D.winRate>=50?'var(--profit)':'var(--loss)') + ';">' + D.winRate + '%</div></div>'
+      + '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;">Toplam P&L</div>'
+        + '<div style="font-size:19px;font-weight:700;font-family:var(--font-mono);color:' + (D.totPnl>=0?'var(--profit)':'var(--loss)') + ';">' + _srSigned(D.totPnl) + '</div></div>'
+      + '</div>';
+  }
+  // Onizleme
+  var prev = document.getElementById('sr_preview');
+  if(prev){
+    prev.innerHTML = '';
+    try {
+      var cv = _drawSpreadCard(D, 2);
+      var im = document.createElement('img');
+      im.src = cv.toDataURL('image/png');
+      im.style.cssText = 'width:100%;height:auto;border-radius:8px;display:block;';
+      prev.appendChild(im);
+    } catch(e) {
+      prev.innerHTML = '<div style="color:var(--loss);font-size:12px;">Önizleme oluşturulamadı: ' + e.message + '</div>';
+    }
+  }
+}
+
+function showSpreadReport(){
+  if(!_spreadRepFrom || !_spreadRepTo){
+    var now = new Date();
+    var dow = (now.getDay() + 6) % 7;
+    var f = new Date(now); f.setDate(now.getDate() - dow);
+    var t = new Date(f); t.setDate(f.getDate() + 6);
+    _spreadRepFrom = _srIso(f); _spreadRepTo = _srIso(t);
+  }
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);overflow-y:auto;';
+  var box = document.createElement('div');
+  box.style.cssText = 'max-width:560px;margin:24px auto 40px;background:var(--bg2);border:1px solid var(--border-bright);border-radius:18px;overflow:hidden;';
+  ov.appendChild(box);
+
+  var btn = function(id, label, onclick, extra){
+    return '<button id="' + (id||'') + '" onclick="' + onclick + '" style="' + (extra||'') + '">' + label + '</button>';
+  };
+  var pillCss = 'flex:1;min-width:76px;padding:8px 6px;border-radius:9px;border:1.5px solid transparent;background:rgba(255,255,255,0.05);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;';
+
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(236,72,153,0.12),rgba(139,92,246,0.08));">'
+    + '<div><div style="font-size:17px;font-weight:700;font-family:var(--font-head);color:var(--text);">📣 Spread Raporu</div>'
+    + '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">Reddit paylaşımı için · yalnızca kapanmış işlemler</div></div>'
+    + '<button onclick="this.closest(\'div[style*=&quot;z-index:99999&quot;]\').remove()" style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.08);border:none;color:var(--text-2);font-size:17px;cursor:pointer;">&times;</button>'
+    + '</div>'
+
+    + '<div style="padding:14px 18px 0;">'
+    + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Hızlı Seçim</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'
+    +   btn('', 'Bu Hafta', "_srPreset('thisWeek')", pillCss)
+    +   btn('', 'Geçen Hafta', "_srPreset('lastWeek')", pillCss)
+    +   btn('', 'Bu Ay', "_srPreset('thisMonth')", pillCss)
+    +   btn('', 'Geçen Ay', "_srPreset('lastMonth')", pillCss)
+    +   btn('', 'Yıl Başı', "_srPreset('ytd')", pillCss)
+    + '</div>'
+
+    + '<div style="display:flex;gap:8px;margin-bottom:12px;">'
+    + '<div style="flex:1;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px;">Başlangıç</div>'
+    +   '<input id="sr_from" type="date" value="' + _spreadRepFrom + '" onchange="_srRefresh()" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--border-bright);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;outline:none;font-family:inherit;"></div>'
+    + '<div style="flex:1;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px;">Bitiş</div>'
+    +   '<input id="sr_to" type="date" value="' + _spreadRepTo + '" onchange="_srRefresh()" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--border-bright);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;outline:none;font-family:inherit;"></div>'
+    + '</div>'
+
+    + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Strateji</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
+    +   btn('sr_ty_PCS', 'PCS · Put Credit Spread', "_srToggleType('PCS')", pillCss)
+    +   btn('sr_ty_BCS', 'BCS · Call Credit Spread', "_srToggleType('BCS')", pillCss)
+    + '</div>'
+
+    + '<div id="sr_summary" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
+    + '</div>'
+
+    + '<div style="padding:0 18px 14px;">'
+    + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Önizleme</div>'
+    + '<div id="sr_preview" style="background:#0E1117;border:1px solid var(--border);border-radius:10px;overflow:hidden;"></div>'
+    + '</div>'
+
+    + '<div style="display:flex;gap:8px;padding:0 18px 18px;">'
+    +   btn('', '🖼️ PNG İndir', 'downloadSpreadPNG()', 'flex:1;padding:13px;border-radius:11px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.14);color:#22C55E;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', '📤 Paylaş', 'shareSpreadPNG()', 'flex:1;padding:13px;border-radius:11px;border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.14);color:#3B82F6;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', '🖨️ PDF', 'showSpreadPDF()', 'flex:1;padding:13px;border-radius:11px;border:1px solid rgba(139,92,246,.35);background:rgba(139,92,246,.14);color:#A78BFA;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    + '</div>';
+
+  document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  _srRefresh();
 }
 
 // ═══════════════════ IBKR FLEX QUERY IMPORT ═══════════════════
