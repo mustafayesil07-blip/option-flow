@@ -5130,6 +5130,42 @@ var _spreadRepFrom = null, _spreadRepTo = null, _spreadRepTypes = ['PCS','BCS'];
 function _srIso(d){
   return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
 }
+// Sayiyi kisa yaz: tamsa ondalik gosterme, degilse en fazla 2 hane
+function _srNum(n){
+  if(!isFinite(n)) return '—';
+  var r = Math.round(n * 100) / 100;
+  return (r % 1 === 0) ? String(r) : String(r).replace(/0+$/,'').replace(/\.$/,'');
+}
+
+// Spread bacaklari: kullanici LONG bacagi girmiyor; collateral ve kontrat
+// sayisindan cikariliyor.
+//   genislik = collateral / (kontrat * 100)     (ör. 10.000 / (5*100) = 20)
+//   PCS  → long put  SHORT'un ALTINDA  (short - genislik)
+//   BCS  → long call SHORT'un USTUNDE  (short + genislik)
+// Kullanici strike alanina zaten "165/161" gibi iki bacak girdiyse dokunulmaz.
+function _srSpreadStrikes(t){
+  var raw = String(t.strike == null ? '' : t.strike).trim();
+  if(raw.indexOf('/') >= 0) return { text: raw, derived: false, width: null };
+  var shortK = parseFloat(raw.replace(',', '.'));
+  if(!isFinite(shortK)) return { text: raw || '—', derived: false, width: null };
+
+  var qty  = parseFloat(t.q) || 0;
+  var coll = parseFloat(t.teminat) || 0;
+  if(qty <= 0 || coll <= 0) return { text: _srNum(shortK), derived: false, width: null };
+
+  var width = coll / (qty * 100);
+  if(!isFinite(width) || width <= 0) return { text: _srNum(shortK), derived: false, width: null };
+
+  var isPut = (t.type === 'PCS');
+  var longK = isPut ? (shortK - width) : (shortK + width);
+  if(longK <= 0) return { text: _srNum(shortK), derived: false, width: null };
+
+  return {
+    text: _srNum(shortK) + '/' + _srNum(longK) + (isPut ? 'P' : 'C'),
+    derived: true, width: width, shortK: shortK, longK: longK
+  };
+}
+
 function _srDaysBetween(a, b){
   var d1 = new Date(String(a).substring(0,10) + 'T00:00:00');
   var d2 = new Date(String(b).substring(0,10) + 'T00:00:00');
@@ -5159,10 +5195,13 @@ function _spreadReportData(fromISO, toISO, types){
     credit = Math.abs(credit);
     var pnl  = parseFloat(t.pnl) || 0;
     var risk = parseFloat(t.teminat) || 0;
+    var legs = _srSpreadStrikes(Object.assign({}, t, { type: (t.type === 'CCS') ? 'BCS' : t.type }));
     rows.push({
       ticker : String(t.ticker||'?').split(' ')[0].toUpperCase(),
       type   : (t.type === 'CCS') ? 'BCS' : t.type,
-      strike : String(t.strike||'—'),
+      strike : legs.text,
+      width  : legs.width,
+      derived: legs.derived,
       expiry : String(t.expiry||'').substring(0,10),
       opened : String(t.opened).substring(0,10),
       closed : cd,
@@ -5269,7 +5308,7 @@ function _drawSpreadCard(D, scale){
     { l:'WIN RATE',    v: D.winRate + '%',                              col: D.winRate >= 50 ? GRN : RED },
     { l:'CREDIT',      v: _srMoney(D.totCredit),                        col: AMB },
     { l:'CAPTURED',    v: D.capture === null ? '—' : Math.round(D.capture*100) + '%', col: BLU },
-    { l:'MAX RISK',    v: D.totRisk > 0 ? _srMoney(D.totRisk) : '—',    col: PNK },
+    { l:'COLLATERAL',  v: D.totRisk > 0 ? _srMoney(D.totRisk) : '—',    col: PNK },
     { l:'AVG HOLD',    v: D.avgDays === null ? '—' : D.avgDays + 'd',   col: MUT }
   ];
   var tw = (W - PAD*2 - 5*10) / 6, ty = HEAD + 18;
@@ -5288,18 +5327,18 @@ function _drawSpreadCard(D, scale){
   var COLS = [
     { k:'ticker', l:'TICKER',  x: PAD,       a:'left'  },
     { k:'type',   l:'TYPE',    x: PAD+118,   a:'left'  },
-    { k:'strike', l:'SHORT K', x: PAD+192,   a:'left'  },
-    { k:'expiry', l:'EXPIRY',  x: PAD+286,   a:'left'  },
+    { k:'strike', l:'STRIKES', x: PAD+192,   a:'left'  },
+    { k:'expiry', l:'EXPIRY',  x: PAD+320,   a:'left'  },
     // DIKKAT: span metni uzun oldugunda DAYS sutununun uzerine biniyordu.
     // Tarihler AY-GUN'e kisaltildi (yil zaten baslikta yaziyor) ve
     // sayisal sutunlar saga kaydirildi.
-    { k:'span',   l:'OPEN → CLOSE', x: PAD+430, a:'left' },
-    { k:'days',   l:'DAYS',    x: PAD+640,   a:'right' },
-    { k:'qty',    l:'QTY',     x: PAD+700,   a:'right' },
-    { k:'credit', l:'CREDIT',  x: PAD+820,   a:'right' },
+    { k:'span',   l:'OPEN → CLOSE', x: PAD+450, a:'left' },
+    { k:'days',   l:'DAYS',    x: PAD+660,   a:'right' },
+    { k:'qty',    l:'QTY',     x: PAD+715,   a:'right' },
+    { k:'credit', l:'CREDIT',  x: PAD+830,   a:'right' },
     { k:'pnl',    l:'P&L',     x: PAD+950,   a:'right' },
     { k:'pctMax', l:'% MAX',   x: PAD+1050,  a:'right' },
-    { k:'ror',    l:'ROR',     x: PAD+1120,  a:'right' }
+    { k:'ror',    l:'ROC',     x: PAD+1120,  a:'right' }
   ];
   var tyTop = ty + 76 + 20;
   c.fillStyle = '#1C2128'; c.fillRect(0, tyTop, W, THEAD);
@@ -5366,7 +5405,7 @@ function _drawSpreadCard(D, scale){
   // ── Alt bilgi ──
   c.fillStyle = '#12171E'; c.fillRect(0, y, W, FOOT);
   c.textAlign = 'left'; c.font = F(13, '500'); c.fillStyle = MUT;
-  c.fillText('% MAX = P&L ÷ credit received   ·   ROR = P&L ÷ max risk   ·   open positions excluded', PAD, y + 27);
+  c.fillText('STRIKES = short/long  ·  % MAX = P&L ÷ credit  ·  ROC = P&L ÷ collateral  ·  open positions excluded', PAD, y + 27);
   c.font = F(12, '400'); c.fillStyle = '#5A636D';
   c.fillText('Generated with OptionFlow · ' + _srIso(new Date()), PAD, y + 47);
 
