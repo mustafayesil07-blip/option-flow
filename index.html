@@ -23,6 +23,11 @@
     --card-hover: rgba(255,210,150,0.16);
     --border: rgba(255,185,110,0.20);
     --border-bright: rgba(255,185,110,0.38);
+    /* Trades tablosu zebra efekti. Sticky ticker sutunu bu katmani opak bir
+       --bg zemin uzerine ayni sekilde uygular (bkz. renderTradeList), boylece
+       satirin geri kalaniyla birebir ayni ton olusur. */
+    --row-alt: rgba(255,210,150,0.055);
+    --sticky-shadow: rgba(0,0,0,0.22);
     --profit: #22C55E;
     --profit-dim: rgba(34,197,94,0.14);
     --loss: #EF4444;
@@ -156,6 +161,8 @@
     --bg: #D4C4A8; --bg2: #CAB898; --bg3: #C0AC88;
     --card: rgba(60,40,20,0.09); --card-hover: rgba(60,40,20,0.16);
     --border: rgba(60,40,20,0.18); --border-bright: rgba(60,40,20,0.34);
+    --row-alt: rgba(60,40,20,0.055);
+    --sticky-shadow: rgba(60,40,20,0.13);
     --text: #1C0E05; --text-2: #3E2812; --text-3: #7A5020;
     /* semantic colors — darkened for contrast on warm tan bg */
     --profit: #166534; --profit-dim: rgba(22,101,52,0.14);
@@ -2306,6 +2313,9 @@ function toggleTheme(){
   try { applyChartDefaults(); } catch(e){}
   try {
     if(currentScreen==='dashboard' && typeof renderDashboard==='function') renderDashboard();
+    // Trades tablosu da yeniden cizilmeli: tur rozeti renkleri render aninda
+    // getComputedStyle ile okunuyor, tema degisince bayat kaliyordu.
+    else if(currentScreen==='trades' && typeof renderTradeList==='function') renderTradeList(currentFilter);
     else if(currentScreen==='statistics' && typeof renderStats==='function') renderStats();
     else if(currentScreen==='reports' && typeof renderReports==='function') renderReports();
     else if(currentScreen==='risk' && typeof renderRisk==='function') renderRisk();
@@ -2371,6 +2381,28 @@ function updateHealthBanner(){
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
 function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; if(t==='COLLAR PUT'||t==='COLLAR CALL')return'tag-pcs'; return'tag-other'; }
+
+// Tablo gorunumunde tur rozetleri icin kisa kod. "COLLAR CALL" gibi uzun
+// adlar sutunu 113px'e sisiriyordu; kisa kod + title ile hem yer kazaniliyor
+// hem tam ad uzerine gelince/dokununca gorulebiliyor.
+var _TYPE_SHORT = {
+  'Long Put':'LP', 'Long Call':'LC',
+  'COLLAR PUT':'COL P', 'COLLAR CALL':'COL C',
+  'LEAPS':'LEAP', 'HEDGE':'HDG'
+};
+function typeShort(type){ return _TYPE_SHORT[type] || type || '—'; }
+
+// Kompakt vade: yil yalnizca icinde bulunulan yildan FARKLIYSA yazilir.
+// "AUG 15 '26" -> "AUG 15" (ayni yil) / "AUG 15 '27" (farkli yil)
+function fmtExpiryCompact(dateStr){
+  if(!dateStr) return '—';
+  var d = new Date(String(dateStr).substring(0,10) + 'T00:00:00');
+  if(isNaN(d)) return String(dateStr);
+  var M = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  var s = M[d.getMonth()] + ' ' + d.getDate();
+  if(d.getFullYear() !== new Date().getFullYear()) s += " '" + String(d.getFullYear()).slice(2);
+  return s;
+}
 function tcol(ticker){ var c=['rgba(59,130,246,.15)','rgba(139,92,246,.15)','rgba(34,197,94,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)','rgba(16,185,129,.15)']; var tc=['var(--info)','var(--purple)','var(--profit)','var(--warn)','var(--loss)','#10b981']; var i=Math.abs((ticker.charCodeAt(0)||0)*3+(ticker.charCodeAt(1)||0))%c.length; return {bg:c[i],color:tc[i]}; }
 
 // ═══════════════════ NAVIGATION ═══════════════════
@@ -3048,19 +3080,27 @@ function renderTradeList(filter, month){
   // ── Liste view ──
   if(currentTradeView === 'list'){
     listEl.style.overflowX = '';
+    listEl.style.overflowX = '';
+    // Sutun genislikleri: eskiden 9 sutun 743px yer kapliyordu, 390px'lik
+    // ekranda yalnizca 3 tanesi gorunuyordu. Daralttiklarimiz:
+    //   · Status sutunu KALDIRILDI (tek emoji icin 65px) -> ticker hucresine tasindi
+    //   · Type kisa koda dondu (COLLAR CALL -> COL C)
+    //   · Ticker'daki 24px renkli kare -> 3px sol serit
+    //   · Hucre dolgusu 9px/8px -> 7px/5px, Strike yazisi 16px -> 13px
+    var _thBase = 'padding:6px 5px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.3px;font-size:11px;white-space:nowrap;position:sticky;top:0;z-index:2;background:var(--bg3);';
     listEl.innerHTML = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 16px 8px;position:relative;">' +
-      '<table style="width:100%;min-width:520px;border-collapse:collapse;font-size:12px;">' +
-      '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">' +
-        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap;position:sticky;left:0;z-index:3;background:var(--bg3);">Ticker</th>' +
-        '<th style="text-align:left;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Type</th>' +
-        '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Strike</th>' +
-        '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Expiry</th>' +
-        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Qty</th>'+'<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Premium</th>' +
-        '<th style="text-align:right;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">P&L</th>' +
-        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">DTE</th>' +
-        '<th style="text-align:center;padding:7px 8px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;font-size:12px;white-space:nowrap">Status</th>' +
+      '<table style="width:100%;min-width:480px;border-collapse:collapse;font-size:12px;">' +
+      '<thead><tr style="border-bottom:1px solid var(--border);">' +
+        '<th style="text-align:left;' + _thBase + 'left:0;z-index:4;">Ticker</th>' +
+        '<th style="text-align:left;'  + _thBase + '">Type</th>' +
+        '<th style="text-align:right;' + _thBase + '">Strike</th>' +
+        '<th style="text-align:right;' + _thBase + '">Expiry</th>' +
+        '<th style="text-align:center;'+ _thBase + '">Qty</th>' +
+        '<th style="text-align:right;' + _thBase + '">Premium</th>' +
+        '<th style="text-align:right;' + _thBase + '">P&L</th>' +
+        '<th style="text-align:center;'+ _thBase + '">DTE</th>' +
       '</tr></thead><tbody>' +
-      f.map(function(t){
+      f.map(function(t, _rowIdx){
         var isOpen=!t.closed;
         var dte=getDTE(t.expiry);
         var dteColor=dte===null?'var(--text-3)':dte<=7?'var(--loss)':dte<=14?'var(--warn)':'var(--info)';
@@ -3080,7 +3120,17 @@ function renderTradeList(filter, month){
         var isAlert=isOpen&&((t.delta&&t.delta>35)||(dte!==null&&dte<=7));
         var statusTxt=isAlert?'⚠️':(!isOpen?'●':(_partlyOpen?'◑':'●'));
         var statusColor=isOpen?(_partlyOpen?'var(--warn)':(isAlert?'var(--loss)':'var(--profit)')):'var(--text-3)';
-        var rowBg=isAlert?'var(--loss-dim)':'';
+        // Zebra: tek satirlar hafif tonlu. Uyari satiri zebradan ONCELIKLI.
+        var _zebra=(_rowIdx%2===1);
+        var rowBg=isAlert?'var(--loss-dim)':(_zebra?'var(--row-alt)':'');
+        // Sticky hucre OPAK olmali (saydam olursa altindan kayan icerik gorunur)
+        // ama satirin geri kalaniyla BIREBIR ayni tonu vermeli. Onceden
+        // hesaplanmis hex kullanmak yerine ayni katmanlama kuruluyor:
+        // opak --bg zemin + satirin kullandigi yari saydam katman. Boylece
+        // tema renkleri degisse bile ton kaymasi (dikey dikis) olusmuyor.
+        var _stickyBg='background-color:var(--bg);'+
+          (isAlert?'background-image:linear-gradient(var(--loss-dim),var(--loss-dim));'
+                 :(_zebra?'background-image:linear-gradient(var(--row-alt),var(--row-alt));':''));
         // DTE border: colours deliberately offset from badge colours to avoid conflicts
         var _dteBorderClr=isOpen&&dte!==null?(dte<=7?'#FF4444':dte<=21?'#FB923C':dte<=45?'#38BDF8':'#4ADE80'):'transparent';
         var tc=tcol(t.ticker.split(' ')[0]);
@@ -3093,18 +3143,23 @@ function renderTradeList(filter, month){
         var _cPurple=(_cs.getPropertyValue('--purple')||'#8b5cf6').trim();
         var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'LEAPS':_cProfit,'Long Call':_cLoss,'Long Put':_cLoss,'COLLAR PUT':_cPurple,'COLLAR CALL':_cPurple,'HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||(_cs.getPropertyValue('--text-3')||'#94a3b8').trim();
-        return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
+        return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid var(--border);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           'onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)">' +
-          '<td style="padding:9px 8px;position:sticky;left:0;z-index:2;background:var(--bg2);box-shadow:4px 0 8px rgba(0,0,0,0.3);">' +
-            '<div style="display:flex;align-items:center;gap:6px;">' +
-              '<div style="width:24px;height:24px;border-radius:6px;background:'+tc.bg+';color:'+tc.color+';font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
-              '<div style="display:flex;flex-direction:column;gap:1px;">'+
-                '<span style="font-weight:600;color:var(--text);font-size:12px;white-space:nowrap;">'+t.ticker.split(' ')[0]+'</span>'+
-                (t.notePhoto?'<span style="font-size:10px;" title="Fotoğraf var">&#x1F4F7;</span>':'')+
-                (t.note?'<span style="font-size:9px;color:var(--text-3);white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;">'+t.note+'</span>':'')+
+          '<td style="padding:7px 5px;position:sticky;left:0;z-index:1;'+_stickyBg+'box-shadow:2px 0 4px var(--sticky-shadow);">' +
+            '<div style="display:flex;align-items:center;gap:5px;">' +
+              // Eski 24px renkli kare ~30px yer kapliyordu; 3px serit ayni
+              // ayirt ediciligi cok daha az yerle sagliyor.
+              '<div style="width:3px;height:22px;border-radius:2px;background:'+tc.color+';flex-shrink:0"></div>'+
+              '<div style="display:flex;flex-direction:column;gap:1px;min-width:0;">'+
+                '<span style="font-weight:700;color:var(--text);font-size:12px;white-space:nowrap;">'+
+                  '<span style="color:'+statusColor+';font-size:9px;">'+statusTxt+'</span> '+
+                  t.ticker.split(' ')[0]+
+                  (t.notePhoto?' <span style="font-size:9px;" title="Fotoğraf var">&#x1F4F7;</span>':'')+
+                '</span>'+
+                (t.note?'<span style="font-size:9px;color:var(--text-3);white-space:nowrap;max-width:62px;overflow:hidden;text-overflow:ellipsis;" title="'+String(t.note).replace(/"/g,'&quot;')+'">'+t.note+'</span>':'')+
               '</div>'+
             '</div></td>'+
-          '<td style="padding:9px 8px;white-space:nowrap;"><span style="background:'+typeColor+'22;color:'+typeColor+';border-radius:4px;padding:2px 6px;font-size:12px;font-weight:700">'+t.type+'</span></td>'+
+          '<td style="padding:7px 5px;white-space:nowrap;"><span title="'+t.type+'" style="background:'+typeColor+'22;color:'+typeColor+';border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700">'+typeShort(t.type)+'</span></td>'+
           (function(){
             var _tk=t.ticker.split(' ')[0].toUpperCase();
             var _sp=stockPrices[_tk];
@@ -3138,19 +3193,18 @@ function renderTradeList(filter, month){
             }
             var _itm=_dist!==null&&_dist<0;
             var _dc=_dist===null?'var(--text-2)':_itm?'var(--loss)':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
-            return '<td style="padding:9px 8px;text-align:right;white-space:nowrap;">'+
-              '<div style="font-family:var(--font-mono);color:var(--text);font-size:16px;font-weight:700;letter-spacing:-0.3px;">$'+t.strike+'</div>'+
-              (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:13px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
-               _sp?'<div style="font-family:var(--font-mono);font-size:13px;color:var(--text-3);">$'+_sp+'</div>':'')+
-              (_extPL?'<div style="font-family:var(--font-mono);font-size:12px;color:var(--warn);">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+' </div>':'')+
+            return '<td style="padding:7px 5px;text-align:right;white-space:nowrap;">'+
+              '<div style="font-family:var(--font-mono);color:var(--text);font-size:13px;font-weight:700;letter-spacing:-0.2px;">$'+t.strike+'</div>'+
+              (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:11px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
+               _sp?'<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);">$'+_sp+'</div>':'')+
+              (_extPL?'<div style="font-family:var(--font-mono);font-size:10px;color:var(--warn);">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+'</div>':'')+
               '</td>';
           })()+
-          '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiry(t.expiry)+'</td>'+
-          '<td style="padding:9px 8px;text-align:center;font-family:var(--font-mono);color:var(--text-2);white-space:nowrap">'+(_partlyOpen?(_remainingQty+'/'+t.q):t.q)+'</td>'+
-          '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);color:var(--text);white-space:nowrap">'+fmtA$(parseFloat(t.openPremium)||parseFloat(t.premium)||0)+'</td>'+
-          '<td style="padding:9px 8px;text-align:right;font-family:var(--font-mono);font-weight:700;color:'+pnlColor+';white-space:nowrap">'+(shownPnl!=null?(shownPnl>=0?'+':'')+shownPnl.toFixed(2):'—')+'</td>'+
-          '<td style="padding:9px 8px;text-align:center;font-family:var(--font-mono);color:'+dteColor+';white-space:nowrap">'+(dte!==null?dte:'—')+'</td>'+
-          '<td style="padding:9px 8px;text-align:center;color:'+statusColor+';white-space:nowrap">'+statusTxt+'</td>'+
+          '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiryCompact(t.expiry)+'</td>'+
+          '<td style="padding:7px 5px;text-align:center;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+(_partlyOpen?(_remainingQty+'/'+t.q):t.q)+'</td>'+
+          '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);color:var(--text);font-size:11px;white-space:nowrap">'+fmtA$(parseFloat(t.openPremium)||parseFloat(t.premium)||0)+'</td>'+
+          '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);font-weight:700;font-size:12px;color:'+pnlColor+';white-space:nowrap">'+(shownPnl!=null?(shownPnl>=0?'+':'')+Math.round(shownPnl):'—')+'</td>'+
+          '<td style="padding:7px 5px;text-align:center;font-family:var(--font-mono);font-size:11px;color:'+dteColor+';white-space:nowrap">'+(dte!==null?dte:'—')+'</td>'+
         '</tr>';
       }).join('') +
       '</tbody></table></div>';
