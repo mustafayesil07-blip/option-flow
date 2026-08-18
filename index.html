@@ -840,11 +840,11 @@
       <button onclick="showAileDashboard()" style="width:100%;background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.10));border:1px solid rgba(245,158,11,0.35);border-radius:12px;padding:13px;color:#F59E0B;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px;">
         &#x1F46A; Aile Dashboard
       </button>
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center;">Pull data saved on another device</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center;">Pulls ALL profiles saved on another device</div>
       <button id="cloudSyncBtn" onclick="syncFromCloud()" style="width:100%;background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:12px;padding:13px;color:#3B82F6;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
         &#x2193; Pull from Cloud
       </button>
-      <div style="font-size:11px;color:var(--text-3);margin:12px 0 8px;text-align:center;">Push data from this device to cloud</div>
+      <div style="font-size:11px;color:var(--text-3);margin:12px 0 8px;text-align:center;">Pushes ALL profiles from this device to cloud</div>
       <button id="cloudPushBtn" onclick="pushToCloud()" style="width:100%;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:12px;padding:13px;color:#22C55E;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">
         &#x2191; Push to Cloud
       </button>
@@ -6164,6 +6164,80 @@ function reloadSharedStores() {
   });
 }
 
+// ═══════════════════ CLOUD SYNC — TÜM PROFİLLER ═══════════════════
+// ESKİDEN Push/Pull to Cloud yalnızca o an seçili profili kapsıyordu
+// (Firestore'a 'backup_<profile>' olarak yazılıyordu); diğer üç profilin
+// verisi hiç buluta çıkmıyor, cihaz değiştirince kayboluyordu. Bu iki
+// fonksiyon TÜM profilleri + paylaşılan depoları (kurlar, YİÜFE, aylık
+// notlar) kapsayan düz bir veri nesnesi kurar/uygular — Firebase'e
+// bağımlı değildir, modül script'i yalnızca bunu setDoc/getDoc ile taşır.
+//
+// dataStores() (yukarıda) o an AKTİF profilin bellek değişkenlerini
+// kullandığı için buraya uymuyor — burada dört profilin de ham
+// localStorage anahtarları doğrudan okunup yazılıyor. Yeni bir profile
+// özel veri türü eklenince CLOUD_PROFILE_KEY_BASES'e, paylaşılan bir tür
+// eklenince CLOUD_SHARED_KEYS'e satır eklemek yeterli.
+var CLOUD_PROFILE_IDS = ['mustafa', 'ayse', 'sevi', 'ikbal'];
+var CLOUD_PROFILE_KEY_BASES = {
+  trades:        'opt_v22',
+  leaps:         'leaps_v1',
+  tax:           'tax_v1',
+  vergiOverride: 'optflow_vergi_override_v1',
+  planned:       'planned_v1',
+  deletedIds:    'deleted_ids_v1',
+  portSize:      'temH',
+  nlv:           'nlv_start'
+};
+var CLOUD_SHARED_KEYS = {
+  kurlar:     'kurlar_v2',
+  yufe:       'optflow_yufe_v1',
+  monthNotes: 'optflow_month_notes_v1'
+};
+function _cloudProfileKey(profileId, base) {
+  return (profileId === 'mustafa') ? base : profileId + '_' + base;
+}
+
+// localStorage → Firestore'a yazılacak düz nesne. Dört profilin TAMAMI +
+// paylaşılan depolar tek belgede.
+function buildCloudBackupPayload() {
+  var profiles = {};
+  CLOUD_PROFILE_IDS.forEach(function(pid) {
+    var rec = {};
+    Object.keys(CLOUD_PROFILE_KEY_BASES).forEach(function(name) {
+      rec[name] = localStorage.getItem(_cloudProfileKey(pid, CLOUD_PROFILE_KEY_BASES[name]));
+    });
+    profiles[pid] = rec;
+  });
+  var shared = {};
+  Object.keys(CLOUD_SHARED_KEYS).forEach(function(name) {
+    shared[name] = localStorage.getItem(CLOUD_SHARED_KEYS[name]);
+  });
+  return { profiles: profiles, shared: shared, savedAt: new Date().toISOString(),
+           savedFrom: (typeof ACTIVE_PROFILE !== 'undefined' ? ACTIVE_PROFILE : null) };
+}
+
+// Firestore'dan gelen tam yedeği TÜM profiller için localStorage'a yazar
+// (yalnızca o an seçili profili değil). En az bir alan yazıldıysa true döner.
+function applyCloudBackupPayload(d) {
+  if (!d) return false;
+  var wrote = false;
+  CLOUD_PROFILE_IDS.forEach(function(pid) {
+    var rec = d.profiles && d.profiles[pid];
+    if (!rec) return;
+    Object.keys(CLOUD_PROFILE_KEY_BASES).forEach(function(name) {
+      var v = rec[name];
+      if (v != null) { localStorage.setItem(_cloudProfileKey(pid, CLOUD_PROFILE_KEY_BASES[name]), v); wrote = true; }
+    });
+  });
+  if (d.shared) {
+    Object.keys(CLOUD_SHARED_KEYS).forEach(function(name) {
+      var v = d.shared[name];
+      if (v != null) { localStorage.setItem(CLOUD_SHARED_KEYS[name], v); wrote = true; }
+    });
+  }
+  return wrote;
+}
+
 // Tüm uygulama verilerini tek JSON'a toplar
 function fullBackupJSON() {
   // Önce belleği diske indir — yedeğin eksiksiz olmasının garantisi bu.
@@ -8860,38 +8934,36 @@ function showUpdateBanner() {
   const db        = getFirestore(app);
   const VAPID_KEY = "BDcNMAd0E107KD5mOEBPKV1pMAvGZJv0AK1x7_u2Gq1-ylhCjmxLrgjaMueAILZSDRr6EGJTLduKm9BtgTtQTJw";
 
-  // ── Pozisyonları + tam profil yedeğini Firestore'a yaz ─────────────────
+  // ── Aktif profilin açık pozisyonları + TÜM profillerin tam yedeği ──────
   async function syncPositionsToFirestore(token) {
     try {
       const profile  = window.ACTIVE_PROFILE || 'mustafa';
       const lsKey    = window.LS       || 'opt_v22';
       const leapsKey = window.LEAPS_LS || 'leaps_v1';
-      const pfx      = (profile === 'mustafa') ? '' : profile + '_';
 
-      const tradesRaw  = localStorage.getItem(lsKey);
-      const leapsRaw   = localStorage.getItem(leapsKey);
-      const tradesData = tradesRaw ? JSON.parse(tradesRaw) : {};
-      const leapsData  = leapsRaw  ? JSON.parse(leapsRaw)  : [];
-
-      // Açık pozisyonları topla (check.js için)
-      const openTrades = [];
-      Object.values(tradesData).forEach(month => {
-        month.forEach(t => {
-          if (!t.closed) openTrades.push({
-            id: t.id, ticker: t.ticker, type: t.type,
-            strike: t.strike, expiry: t.expiry, closed: null
+      // Bildirim belgesi (check.js): FCM token cihaza bağlı olduğu için
+      // yalnızca aktif profilin açık pozisyonlarını kapsar. Aşağıdaki TAM
+      // YEDEKTEN bağımsız, ayrı bir belge — dokunmadım.
+      if (token) {
+        const tradesRaw  = localStorage.getItem(lsKey);
+        const leapsRaw   = localStorage.getItem(leapsKey);
+        const tradesData = tradesRaw ? JSON.parse(tradesRaw) : {};
+        const leapsData  = leapsRaw  ? JSON.parse(leapsRaw)  : [];
+        const openTrades = [];
+        Object.values(tradesData).forEach(month => {
+          month.forEach(t => {
+            if (!t.closed) openTrades.push({
+              id: t.id, ticker: t.ticker, type: t.type,
+              strike: t.strike, expiry: t.expiry, closed: null
+            });
           });
         });
-      });
-      leapsData.forEach(l => {
-        if (!l.closed) openTrades.push({
-          id: 'L' + l.id, ticker: l.ticker, type: 'LEAPS',
-          strike: l.strike, expiry: l.expiry, closed: null
+        leapsData.forEach(l => {
+          if (!l.closed) openTrades.push({
+            id: 'L' + l.id, ticker: l.ticker, type: 'LEAPS',
+            strike: l.strike, expiry: l.expiry, closed: null
+          });
         });
-      });
-
-      // Ana doc — check.js bunu okur (sadece FCM token varsa)
-      if (token) {
         await setDoc(doc(db, 'optionflow', 'main'), {
           positions: openTrades,
           token:     token,
@@ -8899,40 +8971,47 @@ function showUpdateBanner() {
         });
       }
 
-      // Profil başına tam yedek — token olmasa da her zaman yaz
-      await setDoc(doc(db, 'optionflow', 'backup_' + profile), {
-        trades:   localStorage.getItem(lsKey)              || null,
-        leaps:    localStorage.getItem(leapsKey)            || null,
-        kurlar:   localStorage.getItem('kurlar_v2')         || null,
-        tax:      localStorage.getItem(pfx + 'tax_v1')      || null,
-        planned:  localStorage.getItem(pfx + 'planned_v1')  || null,
-        nlv:      localStorage.getItem(pfx + 'nlv_start')   || null,
-        portSize: localStorage.getItem(pfx + 'temH')        || null,
-        savedAt:  new Date().toISOString()
-      });
+      // TAM YEDEK: dört profilin TAMAMI + paylaşılan depolar (kurlar,
+      // YİÜFE, aylık notlar) tek belgede. ESKİDEN yalnızca o an seçili
+      // profil yedekleniyordu — diğer üç profilin verisi hiç buluta
+      // çıkmıyordu. buildCloudBackupPayload() ana script'te tanımlı,
+      // Firebase'e bağımlı değil.
+      const payload = window.buildCloudBackupPayload();
+      await setDoc(doc(db, 'optionflow', 'backup_all'), payload);
 
-      console.info('[Sync] Firestore yedeklendi — profil:', profile, '| açık pozisyon:', openTrades.length);
+      console.info('[Sync] Firestore yedeklendi — tüm profiller:', Object.keys(payload.profiles).join(', '));
     } catch (err) {
       console.warn('[Sync] Firestore hata:', err.message);
       throw err;
     }
   }
 
-  // ── Firestore yedeğinden localStorage'a geri yükle ─────────────────────
+  // ── Firestore'daki tam yedekten TÜM profilleri geri yükle ──────────────
   async function restoreFromFirestore(profile) {
     try {
-      const snap = await getDoc(doc(db, 'optionflow', 'backup_' + profile));
-      if (!snap.exists()) return false;
-      const d   = snap.data();
+      const snap = await getDoc(doc(db, 'optionflow', 'backup_all'));
+      if (snap.exists()) {
+        const d  = snap.data();
+        const ok = window.applyCloudBackupPayload(d);
+        console.info('[Sync] Firestore geri yüklendi — tüm profiller | tarih:', d.savedAt);
+        return ok;
+      }
+
+      // ESKİ FORMAT (tek profil, 'backup_<profile>') — bu güncellemeden
+      // önce alınmış bir yedek varsa kaybolmasın diye tek seferlik
+      // geriye dönük uyumluluk yolu.
+      const legacy = await getDoc(doc(db, 'optionflow', 'backup_' + profile));
+      if (!legacy.exists()) return false;
+      const ld  = legacy.data();
       const pfx = (profile === 'mustafa') ? '' : profile + '_';
-      if (d.trades)   localStorage.setItem(pfx + 'opt_v22',    d.trades);
-      if (d.leaps)    localStorage.setItem(pfx + 'leaps_v1',   d.leaps);
-      if (d.kurlar)   localStorage.setItem('kurlar_v2',          d.kurlar);
-      if (d.tax)      localStorage.setItem(pfx + 'tax_v1',      d.tax);
-      if (d.planned)  localStorage.setItem(pfx + 'planned_v1',  d.planned);
-      if (d.nlv)      localStorage.setItem(pfx + 'nlv_start',   d.nlv);
-      if (d.portSize) localStorage.setItem(pfx + 'temH',        d.portSize);
-      console.info('[Sync] Firestore geri yuklendi — profil:', profile, '| tarih:', d.savedAt);
+      if (ld.trades)   localStorage.setItem(pfx + 'opt_v22',    ld.trades);
+      if (ld.leaps)    localStorage.setItem(pfx + 'leaps_v1',   ld.leaps);
+      if (ld.kurlar)   localStorage.setItem('kurlar_v2',          ld.kurlar);
+      if (ld.tax)      localStorage.setItem(pfx + 'tax_v1',      ld.tax);
+      if (ld.planned)  localStorage.setItem(pfx + 'planned_v1',  ld.planned);
+      if (ld.nlv)      localStorage.setItem(pfx + 'nlv_start',   ld.nlv);
+      if (ld.portSize) localStorage.setItem(pfx + 'temH',        ld.portSize);
+      console.info('[Sync] Firestore geri yüklendi (eski format) — profil:', profile);
       return true;
     } catch (err) {
       console.warn('[Sync] Restore hata:', err.message);
@@ -8955,6 +9034,7 @@ function showUpdateBanner() {
       const ok = await restoreFromFirestore(profile);
       if (ok && typeof window.reloadProfileData === 'function') {
         window.reloadProfileData();
+        try { if (typeof window.reloadSharedStores === 'function') window.reloadSharedStores(); } catch(e){}
       }
     }
   })();
@@ -9193,6 +9273,12 @@ function syncFromCloud() {
       if(btn){ btn.textContent = 'Loaded!'; }
       document.getElementById('profile-screen').style.display = 'none';
       reloadProfileData();
+      // Restore artık TÜM profilleri kapsıyor; kurlar/YİÜFE/notlar gibi
+      // profil bağımsız depolar reloadProfileData() tarafından
+      // okunmuyor (yalnızca kurlar okunuyor) — ekranda eski veri
+      // kalmasın diye ayrıca tazeleniyor.
+      try { if(typeof reloadSharedStores==='function') reloadSharedStores(); } catch(e){}
+      try { if(typeof renderReports==='function') renderReports(); } catch(e){}
     } else {
       if(btn){ btn.disabled = false; btn.textContent = 'Load from Cloud'; }
       alert('No cloud backup found for this profile.');
