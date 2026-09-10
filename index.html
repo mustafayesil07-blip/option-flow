@@ -6051,6 +6051,20 @@ function parseScreenshotLegs(rawText){
     return out;
   }
 
+  // Komisyon ISARETLIDIR. IBKR'da eksi komisyon = IADE (likidite rebate'i):
+  // maliyeti artirmaz, azaltir. Isaret yutulursa iade masraf gibi islenir.
+  // "-$0.08", "$-0.08" ve "($0.08)" bicimlerinin hepsi eksi sayilir.
+  function signedComm(str){
+    var re = /(-|\()?\s*\$\s?(-)?\s?(\d[\d.,]*)\)?/g;
+    var out = [], m;
+    while((m = re.exec(str)) !== null){
+      var v = _ocrNum(m[3]);
+      if(!isFinite(v) || v === 0) continue;
+      out.push((m[1] || m[2]) ? -v : v);
+    }
+    return out;
+  }
+
   var anchors = [];
   lines.forEach(function(l, i){ if(CONTRACT.test(l)) anchors.push(i); });
   if(!anchors.length) return { legs: [], warnings: ['Ekran görüntüsünde kontrat satırı bulunamadı (ör. "OCT 16 \'26 790 Call").'] };
@@ -6119,7 +6133,7 @@ function parseScreenshotLegs(rawText){
       return v !== strike && v !== _ocrNum(cm[2]) && v !== _ocrNum('20'+cm[3]) && v !== _ocrNum(cm[3]);
     });
     var backNums = tokens(back, false);
-    var commNums = (sideLineIdx >= 0) ? tokens(fwdLines[sideLineIdx], true) : [];
+    var commNums = (sideLineIdx >= 0) ? signedComm(fwdLines[sideLineIdx]) : [];
 
     var price = null, amount = null, comm = null;
     if(qty){
@@ -6139,8 +6153,16 @@ function parseScreenshotLegs(rawText){
       var mx = Math.max.apply(null, anchorNums);
       if(isFinite(mx)){ amount = mx; price = mx / (qty * 100); }
     }
-    var commCands = commNums.filter(function(v){ return v !== qty && v > 0 && v < 100; });
-    if(commCands.length) comm = Math.min.apply(null, commCands);
+    // Aday secimi MUTLAK degere gore yapilir; secilen degerin isareti korunur.
+    var commCands = commNums.filter(function(v){
+      var a = Math.abs(v);
+      return a !== qty && a > 0 && a < 100;
+    });
+    if(commCands.length){
+      comm = commCands.reduce(function(best, v){
+        return Math.abs(v) < Math.abs(best) ? v : best;
+      });
+    }
 
     var leg = {
       ticker: ticker, expiry: expiry, strike: strike, optType: optType,
@@ -6553,6 +6575,9 @@ function _shotRenderReview(warnings){
         +   '<div><div style="' + lbl + '">Komisyon $</div><input id="sh_ck_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + cm.closeCommission + '" style="' + inp + '"></div>'
         +   '<div><div style="' + lbl + '">Kapanış Tarihi</div><input id="sh_cd_' + i + '" type="date" value="' + (cm.date || '') + '" style="' + inp + '"></div>'
         + '</div>'
+        + (cm.closeCommission < 0
+            ? '<div style="margin-top:6px;font-size:10px;color:var(--info);line-height:1.5;">↩︎ Komisyon eksi: bu bir <b>iade</b> (IBKR likidite rebate\'i). Maliyeti artırmaz, P&amp;L\'e ekler.</div>'
+            : '')
         + '<div style="margin-top:9px;font-size:10px;color:var(--text-3);font-family:var(--font-mono);line-height:1.65;">'
         +   t.legs.map(function(l){
               return (l.side === 'SELL' ? '<span style="color:var(--profit)">SAT</span>' : '<span style="color:var(--loss)">AL</span>')
