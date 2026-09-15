@@ -6859,7 +6859,13 @@ function _shotCommit(){
         strike: v('sh_st_' + i),
         expiry: v('sh_ex_' + i),
         opened: opened, closed: null, pnl: null,
-        openPremium: pPrem, premium: part.n ? (pPrem / (part.n * 100)) : pPrem,
+        // Uygulamada `premium` TOPLAM primdir (Log New Trade formu da
+        // premium = openPremium yazar); kontrat basina fiyat `price`
+        // alaninda durur. Burada premium'a birim fiyat yaziliyordu:
+        // kart "$1.8" gosteriyor, ayrica pnl/premium ile hesaplanan
+        // yuzde getiri 2000 kat sapiyordu.
+        openPremium: pPrem, premium: pPrem,
+        price: part.n ? (pPrem / (part.n * 100)) : pPrem,
         q: part.n,
         teminat: pTem,
         openCommission: pCm,
@@ -11123,6 +11129,42 @@ function showAilePDF(){
 
 // Sayfa açılışında profil seç
 (function initProfile() {
+  // ── Onarim: ekran goruntusunden eklenen islemlerde `premium` alanina
+  // kontrat basina fiyat yazilmisti (DE BCS icin $1.8 gibi). Uygulamanin
+  // her yerinde `premium` TOPLAM primdir: kart onu gosteriyor ve kapanista
+  // yuzde getiri pnl/premium ile hesaplaniyor. Duzeltme tum profillerde,
+  // yalnizca importer'in isaretledigi kayitlarda yapilir ve tekrar
+  // calisirsa hicbir sey degistirmez.
+  (function _fixShotPremium(){
+    var FLAG = 'optflow_fix_shot_premium_v1';
+    try { if(localStorage.getItem(FLAG)) return; } catch(e){ return; }
+    var fixed = 0;
+    ['mustafa','ayse','sevi','ikbal'].forEach(function(pid){
+      var key = (pid === 'mustafa') ? 'opt_v22' : pid + '_opt_v22';
+      var data = null;
+      try { var raw = localStorage.getItem(key); if(raw) data = JSON.parse(raw); } catch(e){ return; }
+      if(!data || typeof data !== 'object') return;
+      var touched = false;
+      Object.keys(data).forEach(function(m){
+        (data[m] || []).forEach(function(t){
+          if(!t || String(t.note || '').indexOf('[Ekran görüntüsü]') === -1) return;
+          var op = parseFloat(t.openPremium);
+          if(!isFinite(op) || op === 0) return;
+          if(parseFloat(t.premium) === op) return;          // zaten dogru
+          t.premium = op;
+          var q = parseInt(t.q, 10) || 0;
+          t.price = q ? (op / (q * 100)) : op;
+          // Kapanmissa yuzde getiri de bozuk hesaplanmisti
+          if(t.closed && t.pnl != null) t.pct = op ? (t.pnl / Math.abs(op)) : null;
+          touched = true; fixed++;
+        });
+      });
+      if(touched){ try { localStorage.setItem(key, JSON.stringify(data)); } catch(e){} }
+    });
+    try { localStorage.setItem(FLAG, String(Date.now())); } catch(e){}
+    if(fixed) console.info('[OptionFlow] ' + fixed + ' ekran goruntusu islemi icin premium duzeltildi.');
+  })();
+
   var saved = localStorage.getItem('optflow_active_profile');
   if(saved && PROFILES[saved]) {
     // Kısa gecikme ile yükle (DOM hazır olsun)
