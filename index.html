@@ -5440,6 +5440,12 @@ function _srMoney(n){
 }
 function _srSigned(n){ return (n >= 0 ? '+' : '') + _srMoney(n); }
 function _srPct(x){ return x === null ? '—' : (x >= 0 ? '+' : '') + Math.round(x * 100) + '%'; }
+// Portfoye oran gibi kucuk yuzdeler icin: %1 altinda 2, ustunde 1 ondalik.
+function _srPctFine(x){
+  if(x === null || !isFinite(x)) return '—';
+  var v = x * 100;
+  return (x >= 0 ? '+' : '') + v.toFixed(Math.abs(v) < 1 ? 2 : 1) + '%';
+}
 
 function _drawSpreadCard(D, scale){
   scale = scale || 2;
@@ -6010,11 +6016,60 @@ function showSpreadReport(){
 // girmez. Riske gore getiri yalnizca YUZDE (ROC) olarak gosterilir.
 // Islem bazli kredi ve P&L dolar rakamlari serbesttir.
 var _xrFrom = null, _xrTo = null, _xrStatus = 'closed', _xrTypes = null;  // null = tum turler
+var _xrShowCapital = true;   // teminat/portfoy satiri kartta gorunsun mu
 
 function _xrData(){ return _spreadReportData(_xrFrom, _xrTo, _xrTypes, _xrStatus); }
 
 function _xrStatusLabel(st){
   return st === 'open' ? 'OPEN POSITIONS' : st === 'all' ? 'ALL TRADES' : 'CLOSED TRADES';
+}
+
+// Teminat / sermaye kullanim metrikleri.
+// DIKKAT — GIZLILIK: bu blok teminati DOLAR olarak ve portfoye oranla
+// gosterir. Ikisi bir arada portfoy buyuklugunu aciga cikarir
+// (teminat $ ÷ kullanim % = portfoy). Kullanici bunu bilerek istedi;
+// _xrShowCapital ile tek dokunusta kapatilabiliyor. Reddit/spread
+// raporu bu bilgiyi ICERMEZ, orada kural degismedi.
+function _xrCapital(D){
+  var port = (typeof PORT_SIZE === 'number' && PORT_SIZE > 0) ? PORT_SIZE : 0;
+  var nowColl = 0;
+  try {
+    nowColl = getOpenTrades().reduce(function(s, t){ return s + (parseFloat(t.teminat) || 0); }, 0);
+  } catch(e){}
+
+  // Rapor araligindaki GUNLUK ortalama teminat. O gun acik olan TUM
+  // pozisyonlardan hesaplanir — rapor filtresi (tur/durum) burada
+  // uygulanmaz, cunku sermaye kullanimini hepsi birlikte belirler.
+  var all = [];
+  try { all = getAllTrades(); } catch(e){}
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var from = D.from ? new Date(D.from + 'T00:00:00') : null;
+  var to   = D.to   ? new Date(D.to   + 'T00:00:00') : null;
+  var end  = (to && to < today) ? to : today;
+  var sum = 0, days = 0;
+  if(from && end >= from){
+    var d = new Date(from);
+    while(d <= end){
+      var dayColl = 0;
+      all.forEach(function(t){
+        var col = parseFloat(t.teminat) || 0;
+        if(col <= 0 || !t.opened) return;
+        var o  = new Date(String(t.opened).substring(0,10) + 'T00:00:00');
+        var cl = t.closed ? new Date(String(t.closed).substring(0,10) + 'T00:00:00') : null;
+        if(d >= o && (!cl || d <= cl)) dayColl += col;
+      });
+      sum += dayColl; days++;
+      d.setDate(d.getDate() + 1);
+    }
+  }
+  var avgColl = days ? sum / days : 0;
+  return {
+    port: port, nowColl: nowColl, avgColl: avgColl, days: days,
+    utilNow: port > 0 ? nowColl / port : null,
+    utilAvg: port > 0 ? avgColl / port : null,
+    roc: (D.closedRisk > 0 && D.closedCount) ? (D.totPnl / D.closedRisk) : null,
+    rop: (port > 0 && D.closedCount) ? (D.totPnl / port) : null
+  };
 }
 
 function _drawXCard(D, scale){
@@ -6023,10 +6078,12 @@ function _drawXCard(D, scale){
   var W = 1400, PAD = 48;
   var HEAD = 158, TILEH = 118, THEAD = 52, ROWH = 56, FOOT = 74;
   var MAXROWS = 12;
+  var CAP = _xrShowCapital ? _xrCapital(D) : null;
+  var TILEROWS = CAP ? 2 : 1;
   var shown = D.rows.slice(0, MAXROWS);
   var extra = D.rows.length - shown.length;
   var bodyH = Math.max(shown.length, 1) * ROWH + (extra > 0 ? 40 : 0);
-  var H = HEAD + TILEH + 26 + THEAD + bodyH + FOOT;
+  var H = HEAD + TILEH * TILEROWS + 26 + THEAD + bodyH + FOOT;
 
   var cv = document.createElement('canvas');
   cv.width = W * scale; cv.height = H * scale;
@@ -6073,44 +6130,60 @@ function _drawXCard(D, scale){
   // ROC yalnizca kapanmislarin teminatina bolunur; teminatin DOLAR
   // tutari paylasim ciktisinda hicbir yerde gosterilmez.
   var avgRoc = (D.closedRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.closedRisk) : '—';
-  var tiles = [
+  var pctOf = function(x){ return x === null ? '—' : (Math.round(x * 1000) / 10).toFixed(1) + '%'; };
+  var rows1 = [
     { l:'TRADES',   v: String(D.count),
       s: D.closedCount + ' closed · ' + D.openCount + ' open', col: TXT },
     { l:'WIN RATE', v: D.closedCount ? D.winRate + '%' : '—',
       wl: D.closedCount ? { w: D.wins, l: D.losses } : null,
       s: D.closedCount ? ('of ' + D.closedCount + ' closed') : 'no closed trades',
       col: D.winRate >= 50 ? GRN : RED },
-    { l:'AVG ROC',  v: avgRoc, s: 'return on collateral', col: BLU },
     { l:'CREDIT',   v: _srMoney(D.totCredit), s: 'collected', col: AMB },
-    { l:'AVG HOLD', v: D.avgDays === null ? '—' : D.avgDays + 'd', s: 'per closed trade', col: MUT }
+    { l:'AVG HOLD', v: D.avgDays === null ? '—' : D.avgDays + 'd', s: 'per closed trade', col: MUT },
+    { l:'RETURN ON COLLATERAL', v: avgRoc, s: 'realized ÷ collateral', col: BLU }
   ];
-  var tw = (W - PAD*2 - 4*14) / 5, ty = HEAD + 22;
-  tiles.forEach(function(t, i){
-    var x = PAD + i * (tw + 14);
-    c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, TILEH - 22, 12); c.fill();
-    c.strokeStyle = LINE; c.lineWidth = 1; c.stroke();
-    c.textAlign = 'left';
-    c.font = F(13, '700'); c.fillStyle = MUT;
-    c.fillText(t.l, x + 16, ty + 27);
-    c.font = MONO(31, '800'); c.fillStyle = t.col;
-    c.fillText(fit(t.v, tw - 32), x + 16, ty + 65);
-    // Kazanc/kayip sayisi degerin YANINA, ayni satira. Kutunun sagindaki
-    // genis bosluk bos duruyordu ve alt satirdaki kucuk punto okunmuyordu.
-    if(t.wl){
-      var gx = x + 16 + c.measureText(t.v).width + 16;
-      c.font = MONO(22, '800');
-      var wTxt = t.wl.w + 'W', sep = ' · ', lTxt = t.wl.l + 'L';
-      if(gx + c.measureText(wTxt + sep + lTxt).width <= x + tw - 12){
-        c.fillStyle = GRN; c.fillText(wTxt, gx, ty + 65);
-        gx += c.measureText(wTxt).width;
-        c.fillStyle = MUT; c.fillText(sep, gx, ty + 65);
-        gx += c.measureText(sep).width;
-        c.fillStyle = RED; c.fillText(lTxt, gx, ty + 65);
+  var rows2 = CAP ? [
+    { l:'COLLATERAL NOW', v: _srMoney(CAP.nowColl), s: 'open positions', col: PNK },
+    { l:'AVG DAILY COLLATERAL', v: _srMoney(CAP.avgColl),
+      s: CAP.days + '-day average', col: PNK },
+    { l:'UTILIZATION NOW', v: pctOf(CAP.utilNow), s: 'of portfolio', col: CAP.utilNow > 0.6 ? RED : CAP.utilNow > 0.4 ? AMB : GRN },
+    { l:'AVG UTILIZATION', v: pctOf(CAP.utilAvg), s: 'of portfolio', col: CAP.utilAvg > 0.6 ? RED : CAP.utilAvg > 0.4 ? AMB : GRN },
+    { l:'RETURN ON PORTFOLIO', v: CAP.rop === null ? '—' : _srPctFine(CAP.rop),
+      s: 'realized ÷ portfolio', col: (CAP.rop || 0) >= 0 ? GRN : RED }
+  ] : [];
+
+  var tw = (W - PAD*2 - 4*14) / 5, ty0 = HEAD + 22;
+  [rows1, rows2].forEach(function(tiles, rowIdx){
+    if(!tiles.length) return;
+    var ty = ty0 + rowIdx * TILEH;
+    tiles.forEach(function(t, i){
+      var x = PAD + i * (tw + 14);
+      c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, TILEH - 22, 12); c.fill();
+      c.strokeStyle = LINE; c.lineWidth = 1; c.stroke();
+      c.textAlign = 'left';
+      c.font = F(13, '700'); c.fillStyle = MUT;
+      c.fillText(fit(t.l, tw - 32), x + 16, ty + 27);
+      c.font = MONO(31, '800'); c.fillStyle = t.col;
+      c.fillText(fit(t.v, tw - 32), x + 16, ty + 65);
+      // Kazanc/kayip sayisi degerin YANINA, ayni satira. Kutunun sagindaki
+      // genis bosluk bos duruyordu ve alt satirdaki kucuk punto okunmuyordu.
+      if(t.wl){
+        var gx = x + 16 + c.measureText(t.v).width + 16;
+        c.font = MONO(22, '800');
+        var wTxt = t.wl.w + 'W', sep = ' · ', lTxt = t.wl.l + 'L';
+        if(gx + c.measureText(wTxt + sep + lTxt).width <= x + tw - 12){
+          c.fillStyle = GRN; c.fillText(wTxt, gx, ty + 65);
+          gx += c.measureText(wTxt).width;
+          c.fillStyle = MUT; c.fillText(sep, gx, ty + 65);
+          gx += c.measureText(sep).width;
+          c.fillStyle = RED; c.fillText(lTxt, gx, ty + 65);
+        }
       }
-    }
-    c.font = F(13, '600'); c.fillStyle = MUT;
-    c.fillText(fit(t.s, tw - 32), x + 16, ty + 86);
+      c.font = F(13, '600'); c.fillStyle = MUT;
+      c.fillText(fit(t.s, tw - 32), x + 16, ty + 86);
+    });
   });
+  var ty = ty0 + (TILEROWS - 1) * TILEH;
 
   // ── Tablo ──
   // Tarih/sure ayri sutunlara bolundu: eskiden "2026-09-01 → open"
@@ -6215,6 +6288,11 @@ function buildXTweet(D){
   if(D.closedCount){
     L.push('Realized: ' + _srSigned(D.totPnl));
     if(D.closedRisk > 0) L.push('ROC: ' + _srPct(D.totPnl / D.closedRisk));
+    if(_xrShowCapital){
+      var cp = _xrCapital(D);
+      if(cp.rop !== null)     L.push('On portfolio: ' + _srPctFine(cp.rop));
+      if(cp.utilAvg !== null) L.push('Avg collateral use: ' + (Math.round(cp.utilAvg*1000)/10).toFixed(1) + '%');
+    }
   } else if(D.totCredit > 0){
     L.push('Credit collected: ' + _srMoney(D.totCredit));
   }
@@ -6264,6 +6342,13 @@ function _xrPreset(kind){
 }
 
 function _xrSetStatus(v){ _xrStatus = v; _xrRefresh(); }
+
+function _xrToggleCapital(on){
+  _xrShowCapital = !!on;
+  var w = document.getElementById('xr_cap_warn');
+  if(w) w.style.display = _xrShowCapital ? 'block' : 'none';
+  _xrRefresh();
+}
 
 function _xrToggleType(t){
   if(t === null){ _xrTypes = null; _xrRefresh(); return; }
@@ -6440,6 +6525,16 @@ function showXReport(){
 
     + '<div style="' + lblCss + '">İşlem Türü</div>'
     + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">' + typePills + '</div>'
+
+    + '<div style="' + lblCss + '">Teminat &amp; Portföy</div>'
+    + '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 11px;margin-bottom:6px;background:var(--row-alt);border-radius:9px;cursor:pointer;">'
+    +   '<input type="checkbox" id="xr_cap"' + (_xrShowCapital ? ' checked' : '') + ' onchange="_xrToggleCapital(this.checked)" style="width:16px;height:16px;accent-color:#1D9BF0;margin-top:1px;">'
+    +   '<span style="font-size:11px;color:var(--text-2);line-height:1.5;">Teminat ve portföy metriklerini göster'
+    +     '<span style="display:block;color:var(--text-3);margin-top:2px;">Anlık teminat, günlük ortalama teminat, kullanım oranı ve P&amp;L\'in portföye oranı.</span></span>'
+    + '</label>'
+    + '<div id="xr_cap_warn" style="font-size:10px;color:var(--warn);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.28);border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.5;display:' + (_xrShowCapital ? 'block' : 'none') + ';">'
+    +   '⚠️ Teminat hem dolar hem yüzde gösterildiği için <b>portföy büyüklüğün hesaplanabilir</b> (teminat $ ÷ kullanım % = portföy). Paylaşmak istemezsen bu kutuyu kapat.'
+    + '</div>'
 
     + '<div id="xr_summary" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
     + '</div>'
