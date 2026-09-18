@@ -6730,6 +6730,8 @@ var _OCR_NOT_TICKER = {
   TRADE:1, TRADES:1, ORDERS:1, FILL:1, PRICE:1, AMT:1, COMM:1, RECURRING:1,
   AI:1, INSTRUCTIONS:1, BATS:1, CBOE:1, CBOE2:1, ISLAND:1, ARCA:1, NASDAQ:1,
   SMART:1, EDGX:1, BOX:1, MIAX:1, PHLX:1, NYSE:1, AMEX:1, HOME:1, PORTFOLIO:1,
+  GTC:1, GTD:1, OPG:1, IOC:1, FOK:1, PSE:1, PSX:1, SAPPHIRE:1, EMERALD:1, MEMX:1,
+  TRADES:1, RECURRING:1, RATE:1, RATES:1, RECENT:1, FILTER:1, RATIO:1,
   WATCHLISTS:1, MARKETS:1, PL:1, USD:1
 };
 Object.keys(_OCR_MONTHS).forEach(function(m){ _OCR_NOT_TICKER[m] = 1; });
@@ -6751,7 +6753,7 @@ function parseScreenshotLegs(rawText){
   var CONTRACT = /\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{1,2})\s*[''`]?\s*(\d{2})\s+([\d.,]+)\s*(Call|Put)\b/i;
   var DATEHDR  = /^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})\b/;
   var SIDEQTY  = /\b(Sold|Bought|Sat[iı]ld[iı]|Al[iı]nd[iı])\s+(\d+)/i;
-  var BORSA    = /\b(BATS|CBOE|ARCA|EDGX|ISLAND|NASDAQ|SMART|MIAX|PHLX|BOX|NYSE|AMEX|IEX|PEARL|GEMINI)\s*\+?\s*\d*\b/gi;
+  var BORSA    = /\b(BATS|CBOE|ARCA|EDGX|ISLAND|NASDAQ|SMART|MIAX|PHLX|BOX|NYSE|AMEX|IEX|PEARL|GEMINI|PSE|PSX|SAPPHIRE|EMERALD|MEMX|NASDAQBX)\s*\+?\s*\d*\b/gi;
 
   // Saat damgalari ve borsa kodlari sayi olarak sizmasin ("BATS+1" -> 1)
   function clean(l){
@@ -6829,6 +6831,10 @@ function parseScreenshotLegs(rawText){
     var ticker = null;
     var tkLines = backLines.slice().reverse().concat([fwd]);
     for(var li = 0; li < tkLines.length && !ticker; li++){
+      // Rakam icermeyen satirlar ticker kaynagi olamaz: gercek IBKR ticker
+      // satirinda her zaman dolum fiyati vardir. Bu kural olmadan alt
+      // menu gurultusu ("P, A. =") tek harfli ticker uretiyordu.
+      if(!/\d/.test(tkLines[li])) continue;
       var toks = tkLines[li].match(/\b[A-Z][A-Z0-9.]{0,5}\b/g) || [];
       for(var i = 0; i < toks.length; i++){
         var tk = toks[i].replace(/\.$/, '');
@@ -6879,6 +6885,26 @@ function parseScreenshotLegs(rawText){
       if(isFinite(mx)){ amount = mx; price = mx / (qty * 100); }
     }
     // Aday secimi MUTLAK degere gore yapilir; secilen degerin isareti korunur.
+    // OCR bazen "Bought 5  $3.93" satirini komple atliyor; o zaman adet
+    // bulunamadigi icin tutar ve fiyat da bos kaliyordu ve bacak yarim
+    // kaliyordu. Oysa tutar = fiyat x adet x 100 esitligi adeti TEK BASINA
+    // belirliyor: capа satirindaki tutar ile ust satirdaki fiyatin orani
+    // tam sayi cikan tek kombinasyon dogru olandir.
+    if(!qty && amount === null){
+      var rec = null;
+      anchorNums.forEach(function(a){
+        backNums.forEach(function(b){
+          if(b <= 0) return;
+          var q  = a / (b * 100);
+          var qr = Math.round(q);
+          if(qr < 1 || qr > 1000) return;
+          var err = Math.abs(q - qr) / qr;
+          if(err < 0.01 && (rec === null || err < rec.err)) rec = { amount:a, price:b, qty:qr, err:err };
+        });
+      });
+      if(rec){ amount = rec.amount; price = rec.price; qty = rec.qty; }
+    }
+
     var commCands = commNums.filter(function(v){
       var a = Math.abs(v);
       return a !== qty && a > 0 && a < 100;
@@ -7195,6 +7221,19 @@ function _shotFindCloseMatch(g){
   });
   if(!hits.length) return null;
 
+  // Yonu okunamayan bacagin yonu, KAPATILAN pozisyonun yapisindan cikar:
+  // acilista SATILAN bacak kapanista ALINIR, ALINAN bacak SATILIR. Bu bir
+  // tahmin degil — kullanicinin kendi kayitli pozisyonundan turetiliyor.
+  legs.forEach(function(l){
+    if(l.side) return;
+    for(var hi = 0; hi < hits.length; hi++){
+      var t = hits[hi].trade, pl = _posLegStrikes(t);
+      var lng = (typeof isLong === 'function') && isLong(t.type);
+      if(pl.short.indexOf(l.strike) >= 0){ l.side = lng ? 'SELL' : 'BUY';  l.sideGuessed = true; return; }
+      if(pl.long.indexOf(l.strike)  >= 0){ l.side = lng ? 'BUY'  : 'SELL'; l.sideGuessed = true; return; }
+    }
+  });
+
   // Kapanista odenen/alinan net tutar. Short pozisyonda geri alim borctur.
   var sum = function(side){
     return legs.filter(function(l){ return l.side === side; })
@@ -7206,13 +7245,73 @@ function _shotFindCloseMatch(g){
   var qty = legs.reduce(function(m, l){ return Math.min(m, l.qty || 0); }, Infinity);
   if(!isFinite(qty)) qty = 0;
 
+  // Bir bacak eksikse net tutar SESSIZCE yanlis cikar (o bacak toplama
+  // hic girmez). Bunu isaretleyip yazmayi engelliyoruz — bu rakam vergi
+  // hesabina giriyor.
+  var eksik = [];
+  // Pozisyonun kac bacagi var? Gruptaki bacak sayisi bundan azsa, eksik
+  // bacagin tutari toplama HIC girmez ve kapanis primi sessizce dusuk
+  // cikar. (Ornek: bir bacagin ticker'i yanlis okunup ayri gruba dusmesi.)
+  var beklenen = 0;
+  hits.forEach(function(h){
+    var pl = _posLegStrikes(h.trade);
+    beklenen = Math.max(beklenen, pl.short.length + pl.long.length);
+  });
+  if(beklenen > 0 && legs.length < beklenen){
+    eksik.push('Pozisyon ' + beklenen + ' bacaklı ama ekran görüntüsünde '
+             + legs.length + ' bacak okundu');
+  }
+  legs.forEach(function(l){
+    var ad = (l.strike != null ? l.strike : '?') + (l.optType === 'C' ? 'C' : 'P');
+    if(!l.side)          eksik.push(ad + ': alım/satım yönü okunamadı');
+    else if(l.amount == null) eksik.push(ad + ': tutar okunamadı');
+    else if(!l.qty)      eksik.push(ad + ': adet okunamadı');
+  });
+
   return {
     positions: hits,
     closePremium: Math.round(Math.abs(closePrem) * 100) / 100,
     closeCommission: Math.round(closeComm * 100) / 100,
     qty: qty,
+    incomplete: eksik,
     date: g.opened || null
   };
+}
+
+// Bir pozisyonun short ve long bacak strike'lari.
+// t.strikes varsa (ekran goruntusunden gelen gercek bacaklar) oradan,
+// yoksa teminattan geri hesaplanir — fmtStrikes ile ayni mantik.
+function _posLegStrikes(t){
+  var out = { short: [], long: [] };
+  if(!t) return out;
+  var type = String(t.type || '').toUpperCase();
+  var lng  = (typeof isLong === 'function') && isLong(t.type);
+  if(t.strikes){
+    ['p','c'].forEach(function(k){
+      var a = t.strikes[k];
+      if(!a || !a.length) return;
+      if(lng){ out.long.push(a[0]); if(a.length > 1) out.short.push(a[1]); }
+      else   { out.short.push(a[0]); if(a.length > 1) out.long.push(a[1]); }
+    });
+    if(out.short.length || out.long.length) return out;
+  }
+  var num = function(x){ var v = parseFloat(String(x).replace(',', '.')); return isFinite(v) ? v : null; };
+  var qty = parseFloat(t.q) || 0, coll = parseFloat(t.teminat) || 0;
+  var width = (qty > 0 && coll > 0) ? (coll / (qty * 100)) : 0;
+  if(type === 'IC'){
+    var seg = String(t.strike || '').split('/');
+    var sp = num(seg[0]), sc = num(seg[1]);
+    if(sp !== null){ out.short.push(sp); if(width > 0) out.long.push(sp - width); }
+    if(sc !== null){ out.short.push(sc); if(width > 0) out.long.push(sc + width); }
+    return out;
+  }
+  var k = num(String(t.strike || '').split('/')[0]);
+  if(k === null) return out;
+  (lng ? out.long : out.short).push(k);
+  if((type === 'PCS' || type === 'BCS' || type === 'CCS') && width > 0){
+    out.long.push(type === 'PCS' ? (k - width) : (k + width));
+  }
+  return out;
 }
 
 // Bir islemi (hangi profilde olursa olsun) kapat
@@ -7307,13 +7406,26 @@ function _shotRenderReview(warnings){
         +   '<div><div style="' + lbl + '">Komisyon $</div><input id="sh_ck_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + cm.closeCommission + '" style="' + inp + '"></div>'
         +   '<div><div style="' + lbl + '">Kapanış Tarihi</div><input id="sh_cd_' + i + '" type="date" value="' + (cm.date || '') + '" style="' + inp + '"></div>'
         + '</div>'
+        + (cm.incomplete && cm.incomplete.length
+            ? '<div style="margin-top:9px;font-size:10px;color:var(--loss);background:var(--loss-dim);border:1px solid rgba(239,68,68,.35);border-radius:8px;padding:8px 10px;line-height:1.55;">'
+              + '<b>⚠️ Bacak eksik okundu — kapanış primi güvenilir değil.</b><br>'
+              + cm.incomplete.map(function(x){ return '• ' + x; }).join('<br>')
+              + '<br>Ekran görüntüsündeki rakamlarla karşılaştırıp <b>Kapanış Primi</b> ve <b>Komisyon</b> alanlarını elle düzelt, sonra aşağıdaki kutuyu işaretle.'
+              + '<label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;color:var(--text-2);">'
+              + '<input type="checkbox" id="sh_ok_' + i + '" onchange="_shotCloseSum(' + i + ')" style="width:15px;height:15px;accent-color:#22C55E;">'
+              + 'Rakamları kontrol ettim, doğru</label>'
+            + '</div>'
+            : '')
         + (cm.closeCommission < 0
             ? '<div style="margin-top:6px;font-size:10px;color:var(--info);line-height:1.5;">↩︎ Komisyon eksi: bu bir <b>iade</b> (IBKR likidite rebate\'i). Maliyeti artırmaz, P&amp;L\'e ekler.</div>'
             : '')
         + '<div style="margin-top:9px;font-size:10px;color:var(--text-3);font-family:var(--font-mono);line-height:1.65;">'
         +   t.legs.map(function(l){
-              return (l.side === 'SELL' ? '<span style="color:var(--profit)">SAT</span>' : '<span style="color:var(--loss)">AL</span>')
-                   + ' ' + l.qty + '× ' + l.strike + (l.optType === 'C' ? 'C' : 'P')
+              var yon = !l.side ? '<span style="color:var(--warn)">?</span>'
+                      : (l.side === 'SELL' ? '<span style="color:var(--profit)">SAT</span>'
+                                           : '<span style="color:var(--loss)">AL</span>')
+                        + (l.sideGuessed ? '<span style="color:var(--info)" title="Kapatılan pozisyondan türetildi">*</span>' : '');
+              return yon + ' ' + (l.qty || '?') + '× ' + l.strike + (l.optType === 'C' ? 'C' : 'P')
                    + ' @ ' + (l.price != null ? l.price : '?') + ' = $' + (l.amount != null ? l.amount : '?');
             }).join('<br>')
         + '</div></div>';
@@ -7364,8 +7476,10 @@ function _shotRenderReview(warnings){
       + '</div>'
       + '<div style="margin-top:9px;font-size:10px;color:var(--text-3);font-family:var(--font-mono);line-height:1.65;">'
       +   t.legs.map(function(l){
-            return (l.side === 'SELL' ? '<span style="color:var(--profit)">SAT</span>' : '<span style="color:var(--loss)">AL</span>')
-                 + ' ' + l.qty + '× ' + l.strike + (l.optType === 'C' ? 'C' : 'P')
+            var yon = !l.side ? '<span style="color:var(--warn)">?</span>'
+                    : (l.side === 'SELL' ? '<span style="color:var(--profit)">SAT</span>'
+                                         : '<span style="color:var(--loss)">AL</span>');
+            return yon + ' ' + (l.qty || '?') + '× ' + l.strike + (l.optType === 'C' ? 'C' : 'P')
                  + ' @ ' + (l.price != null ? l.price : '?') + ' = $' + (l.amount != null ? l.amount : '?');
           }).join('<br>')
       + '</div></div>';
@@ -7521,8 +7635,11 @@ function _shotCommit(){
     if(t.closeMatch){
       var ca = _shotCloseAlloc(i);
       var ctk = t.ticker || '?';
+      var okBox = document.getElementById('sh_ok_' + i);
       if(!ca || !ca.sel.length) problems.push(ctk + ': kapatılacak pozisyon seçilmedi.');
       else if(!v('sh_cd_' + i))  problems.push(ctk + ': kapanış tarihi boş.');
+      else if(t.closeMatch.incomplete && t.closeMatch.incomplete.length && !(okBox && okBox.checked))
+        problems.push(ctk + ': bir bacak eksik okundu — kapanış primini kontrol edip onay kutusunu işaretle.');
       else closing.push({ i: i, alloc: ca, ticker: ctk });
       return;
     }
