@@ -5335,6 +5335,12 @@ function _spreadReportData(fromISO, toISO, types, status){
     totCredit: totCredit,
     totPnl: totPnl,
     totRisk: totRisk,
+    // ROC yalnizca KAPANMIS islemlerin teminatina bolunmeli. Aksi halde
+    // "Tumu" gorunumunde acik pozisyonlarin teminati da paydaya girip
+    // gerceklesmis getiriyi oldugundan kucuk gosteriyordu.
+    closedRisk: done.reduce(function(s,r){ return s + r.risk; }, 0),
+    closedCredit: doneCredit,
+    losses: done.length - wins,
     avgPctMax: withPct.length ? withPct.reduce(function(s,r){ return s + r.pctMax; },0) / withPct.length : null,
     avgDays: withDays.length ? Math.round(withDays.reduce(function(s,r){ return s + r.days; },0) / withDays.length) : null,
     capture: doneCredit > 0 ? totPnl / doneCredit : null
@@ -5410,13 +5416,13 @@ function _drawSpreadCard(D, scale){
   // ── Ozet kutulari ──
   var tiles = [
     { l:'TRADES',      v: String(D.count),                              col: TXT },
-    { l:'WIN RATE',    v: D.winRate + '%',                              col: D.winRate >= 50 ? GRN : RED },
+    { l:'WIN RATE',    v: D.closedCount ? (D.winRate + '% (' + D.wins + 'W/' + D.losses + 'L)') : '—', col: D.winRate >= 50 ? GRN : RED },
     { l:'CREDIT',      v: _srMoney(D.totCredit),                        col: AMB },
     { l:'CAPTURED',    v: D.capture === null ? '—' : Math.round(D.capture*100) + '%', col: BLU },
     // GIZLILIK: teminatin DOLAR tutari paylasim ciktisinda gosterilmez
     // (Reddit aktarimi icin konulan kural). Yerine riske gore getiri
     // YUZDE olarak veriliyor — bilgi korunuyor, portfoy buyuklugu sizmiyor.
-    { l:'AVG ROC',     v: (D.totRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.totRisk) : '—', col: PNK },
+    { l:'AVG ROC',     v: (D.closedRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.closedRisk) : '—', col: PNK },
     { l:'AVG HOLD',    v: D.avgDays === null ? '—' : D.avgDays + 'd',   col: MUT }
   ];
   var tw = (W - PAD*2 - 5*10) / 6, ty = HEAD + 18;
@@ -5923,13 +5929,14 @@ function _xrStatusLabel(st){
 
 function _drawXCard(D, scale){
   scale = scale || 2;
-  var W = 1200, PAD = 44;
-  var HEAD = 132, TILE = 104, THEAD = 42, ROWH = 46, FOOT = 58;
+  // Sosyal medyada okunabilirlik icin genis tuval + iri punto.
+  var W = 1400, PAD = 48;
+  var HEAD = 158, TILEH = 118, THEAD = 52, ROWH = 56, FOOT = 74;
   var MAXROWS = 12;
   var shown = D.rows.slice(0, MAXROWS);
   var extra = D.rows.length - shown.length;
-  var bodyH = Math.max(shown.length, 1) * ROWH + (extra > 0 ? 34 : 0);
-  var H = HEAD + TILE + 22 + THEAD + bodyH + FOOT;
+  var bodyH = Math.max(shown.length, 1) * ROWH + (extra > 0 ? 40 : 0);
+  var H = HEAD + TILEH + 26 + THEAD + bodyH + FOOT;
 
   var cv = document.createElement('canvas');
   cv.width = W * scale; cv.height = H * scale;
@@ -5940,6 +5947,13 @@ function _drawXCard(D, scale){
   var GRN='#3FB950', RED='#F85149', BLU='#58A6FF', AMB='#D29922', PNK='#DB61A2';
   var F    = function(px, w){ return (w||'600') + ' ' + px + 'px Inter, "Segoe UI", system-ui, sans-serif'; };
   var MONO = function(px, w){ return (w||'500') + ' ' + px + 'px "JetBrains Mono", ui-monospace, Menlo, monospace'; };
+  // Sutun tasmasina karsi guvenlik: metni verilen genislige sigdir
+  var fit = function(txt, maxW){
+    txt = String(txt);
+    if(c.measureText(txt).width <= maxW) return txt;
+    while(txt.length > 1 && c.measureText(txt + '…').width > maxW) txt = txt.slice(0, -1);
+    return txt + '…';
+  };
 
   c.fillStyle = BG; c.fillRect(0, 0, W, H);
 
@@ -5950,115 +5964,134 @@ function _drawXCard(D, scale){
   c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, HEAD); c.lineTo(W, HEAD); c.stroke();
 
   c.textAlign = 'left';
-  c.font = F(34, '800'); c.fillStyle = TXT;
-  c.fillText(_srMonthLabel(D.from, D.to), PAD, 58);
-  c.font = F(14, '700'); c.fillStyle = PNK;
-  c.fillText(_xrStatusLabel(D.status) + '  ·  OPENED IN PERIOD', PAD, 88);
-  c.font = F(13, '500'); c.fillStyle = MUT;
-  c.fillText(D.count + (D.count === 1 ? ' position' : ' positions'), PAD, 112);
+  c.font = F(42, '800'); c.fillStyle = TXT;
+  c.fillText(_srMonthLabel(D.from, D.to), PAD, 66);
+  c.font = F(16, '700'); c.fillStyle = PNK;
+  c.fillText(_xrStatusLabel(D.status) + '  ·  OPENED IN PERIOD', PAD, 100);
+  c.font = F(15, '500'); c.fillStyle = MUT;
+  c.fillText(D.count + (D.count === 1 ? ' position' : ' positions'), PAD, 128);
 
-  // Sag ust: gerceklesmis P&L (yalnizca kapanmislar)
   if(D.closedCount){
     c.textAlign = 'right';
-    c.font = MONO(40, '800'); c.fillStyle = D.totPnl >= 0 ? GRN : RED;
-    c.fillText(_srSigned(D.totPnl), W - PAD, 66);
-    c.font = F(12, '700'); c.fillStyle = MUT;
-    c.fillText('REALIZED P&L', W - PAD, 92);
+    c.font = MONO(48, '800'); c.fillStyle = D.totPnl >= 0 ? GRN : RED;
+    c.fillText(_srSigned(D.totPnl), W - PAD, 76);
+    c.font = F(14, '700'); c.fillStyle = MUT;
+    c.fillText('REALIZED P&L  ·  ' + D.closedCount + ' closed', W - PAD, 106);
   }
 
-  // ── Ozet kutulari — teminatin DOLAR tutari YOK, yalnizca yuzde ──
+  // ── Ozet kutulari (alt satirli) ──
+  // ROC yalnizca kapanmislarin teminatina bolunur; teminatin DOLAR
+  // tutari paylasim ciktisinda hicbir yerde gosterilmez.
+  var avgRoc = (D.closedRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.closedRisk) : '—';
   var tiles = [
-    { l:'TRADES',   v: String(D.count),                                                     col: TXT },
-    { l:'WIN RATE', v: D.closedCount ? D.winRate + '%' : '—',                               col: D.winRate >= 50 ? GRN : RED },
-    { l:'AVG ROC',  v: (D.totRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.totRisk) : '—', col: BLU },
-    { l:'CREDIT',   v: _srMoney(D.totCredit),                                               col: AMB },
-    { l:'AVG HOLD', v: D.avgDays === null ? '—' : D.avgDays + 'd',                          col: MUT }
+    { l:'TRADES',   v: String(D.count),
+      s: D.closedCount + ' closed · ' + D.openCount + ' open', col: TXT },
+    { l:'WIN RATE', v: D.closedCount ? D.winRate + '%' : '—',
+      s: D.closedCount ? ('(' + D.wins + 'W / ' + D.losses + 'L)') : 'no closed trades',
+      col: D.winRate >= 50 ? GRN : RED },
+    { l:'AVG ROC',  v: avgRoc, s: 'return on collateral', col: BLU },
+    { l:'CREDIT',   v: _srMoney(D.totCredit), s: 'collected', col: AMB },
+    { l:'AVG HOLD', v: D.avgDays === null ? '—' : D.avgDays + 'd', s: 'per closed trade', col: MUT }
   ];
-  var tw = (W - PAD*2 - 4*12) / 5, ty = HEAD + 20;
+  var tw = (W - PAD*2 - 4*14) / 5, ty = HEAD + 22;
   tiles.forEach(function(t, i){
-    var x = PAD + i * (tw + 12);
-    c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, TILE - 20, 12); c.fill();
+    var x = PAD + i * (tw + 14);
+    c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, TILEH - 22, 12); c.fill();
     c.strokeStyle = LINE; c.lineWidth = 1; c.stroke();
     c.textAlign = 'left';
-    c.font = F(11, '700'); c.fillStyle = MUT;
-    c.fillText(t.l, x + 15, ty + 26);
-    c.font = MONO(27, '800'); c.fillStyle = t.col;
-    c.fillText(t.v, x + 15, ty + 62);
+    c.font = F(13, '700'); c.fillStyle = MUT;
+    c.fillText(t.l, x + 16, ty + 27);
+    c.font = MONO(31, '800'); c.fillStyle = t.col;
+    c.fillText(fit(t.v, tw - 32), x + 16, ty + 65);
+    c.font = F(13, '600'); c.fillStyle = MUT;
+    c.fillText(fit(t.s, tw - 32), x + 16, ty + 86);
   });
 
   // ── Tablo ──
+  // Tarih/sure ayri sutunlara bolundu: eskiden "2026-09-01 → open"
+  // tek hucrede yazilip saga hizali HELD sutununun uzerine biniyordu.
+  // Saga hizali sutunlarin ARALARINDA en genis olasi metin kadar bosluk
+  // birakildi (orn. P&L "-$9,100", CREDIT "$12,691"), yoksa P&L ile ROC
+  // "+$366+7%" seklinde bitisik cikiyordu.
   var COLS = [
-    { l:'TICKER', x: PAD,        a:'left'  },
-    { l:'TYPE',   x: PAD+130,    a:'left'  },
-    { l:'STRIKE', x: PAD+232,    a:'left'  },
-    { l:'OPENED', x: PAD+400,    a:'left'  },
-    { l:'HELD',   x: PAD+580,    a:'right' },
-    { l:'QTY',    x: PAD+650,    a:'right' },
-    { l:'CREDIT', x: PAD+800,    a:'right' },
-    { l:'P&L',    x: PAD+960,    a:'right' },
-    { l:'ROC',    x: PAD+1112,   a:'right' }
+    { l:'TICKER', x: PAD,       a:'left',  w: 140 },
+    { l:'TYPE',   x: PAD+152,   a:'left',  w: 110 },
+    { l:'STRIKE', x: PAD+282,   a:'left',  w: 180 },
+    { l:'OPENED', x: PAD+472,   a:'left',  w: 110 },
+    { l:'CLOSED', x: PAD+592,   a:'left',  w: 110 },
+    { l:'HELD',   x: PAD+782,   a:'right', w: 120 },
+    { l:'QTY',    x: PAD+852,   a:'right', w: 60  },
+    { l:'CREDIT', x: PAD+1012,  a:'right', w: 140 },
+    { l:'P&L',    x: PAD+1182,  a:'right', w: 150 },
+    { l:'ROC',    x: PAD+1304,  a:'right', w: 100 }
   ];
-  var tt = ty + (TILE - 20) + 22;
+  var tt = ty + (TILEH - 22) + 26;
   c.fillStyle = '#1C2128'; c.fillRect(0, tt, W, THEAD);
   c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, tt + THEAD); c.lineTo(W, tt + THEAD); c.stroke();
-  c.font = F(12, '700'); c.fillStyle = MUT;
-  COLS.forEach(function(col){ c.textAlign = col.a; c.fillText(col.l, col.x, tt + 27); });
+  c.font = F(14, '700'); c.fillStyle = MUT;
+  COLS.forEach(function(col){ c.textAlign = col.a; c.fillText(col.l, col.x, tt + 33); });
 
   var y = tt + THEAD;
   if(!shown.length){
-    c.textAlign = 'center'; c.font = F(17, '500'); c.fillStyle = MUT;
-    c.fillText('No positions opened in this range', W/2, y + 32);
+    c.textAlign = 'center'; c.font = F(19, '500'); c.fillStyle = MUT;
+    c.fillText('No positions opened in this range', W/2, y + 38);
     y += ROWH;
   }
   shown.forEach(function(r, i){
     if(i % 2 === 1){ c.fillStyle = '#12171E'; c.fillRect(0, y, W, ROWH); }
     c.fillStyle = r.isOpen ? AMB : (r.pnl >= 0 ? GRN : RED);
-    c.fillRect(0, y, 4, ROWH);
-    var mid = y + 30;
+    c.fillRect(0, y, 5, ROWH);
+    var mid = y + 36;
 
-    c.textAlign = 'left'; c.font = F(18, '800'); c.fillStyle = TXT;
-    c.fillText('$' + r.ticker, COLS[0].x, mid);
+    c.textAlign = 'left'; c.font = F(23, '800'); c.fillStyle = TXT;
+    c.fillText(fit('$' + r.ticker, COLS[0].w), COLS[0].x, mid);
 
     var tCol = r.type === 'PCS' ? GRN : r.type === 'BCS' ? BLU : r.type === 'IC' ? PNK : AMB;
-    c.font = F(11, '700');
-    var bw = c.measureText(r.type).width + 18;
-    c.fillStyle = 'rgba(255,255,255,0.06)';
-    _srRoundRect(c, COLS[1].x, y + 13, bw, 22, 5); c.fill();
+    c.font = F(13, '700');
+    var bw = Math.min(c.measureText(r.type).width + 22, COLS[1].w);
+    c.fillStyle = 'rgba(255,255,255,0.07)';
+    _srRoundRect(c, COLS[1].x, y + 16, bw, 26, 6); c.fill();
     c.fillStyle = tCol; c.textAlign = 'center';
-    c.fillText(r.type, COLS[1].x + bw/2, y + 28);
+    c.fillText(r.type, COLS[1].x + bw/2, y + 34);
 
-    c.textAlign = 'left'; c.font = MONO(15, '600'); c.fillStyle = TXT;
-    c.fillText(r.strike || '—', COLS[2].x, mid);
-    c.font = MONO(14, '400'); c.fillStyle = MUT;
-    c.fillText(r.opened + (r.isOpen ? '  → open' : '  → ' + r.closed.substring(5)), COLS[3].x, mid);
+    c.textAlign = 'left';
+    c.font = MONO(20, '700'); c.fillStyle = TXT;
+    c.fillText(fit(r.strike || '—', COLS[2].w), COLS[2].x, mid);
 
-    c.textAlign = 'right'; c.font = MONO(15, '500'); c.fillStyle = MUT;
-    c.fillText(r.isOpen ? (r.dte === null ? '—' : r.dte + 'd left') : (r.days === null ? '—' : r.days + 'd'), COLS[4].x, mid);
-    c.fillText(String(r.qty), COLS[5].x, mid);
-    c.fillStyle = AMB; c.fillText(_srMoney(r.credit), COLS[6].x, mid);
-    c.font = MONO(17, '800');
-    if(r.isOpen){ c.fillStyle = MUT; c.fillText('open', COLS[7].x, mid); }
-    else { c.fillStyle = r.pnl >= 0 ? GRN : RED; c.fillText(_srSigned(r.pnl), COLS[7].x, mid); }
-    c.font = MONO(15, '700'); c.fillStyle = r.ror === null ? MUT : (r.ror >= 0 ? GRN : RED);
-    c.fillText(_srPct(r.ror), COLS[8].x, mid);
+    c.font = MONO(17, '400'); c.fillStyle = MUT;
+    c.fillText(r.opened.substring(5), COLS[3].x, mid);
+    if(r.isOpen){ c.fillStyle = AMB; c.fillText('open', COLS[4].x, mid); }
+    else { c.fillStyle = MUT; c.fillText(r.closed.substring(5), COLS[4].x, mid); }
+
+    c.textAlign = 'right'; c.font = MONO(17, '500'); c.fillStyle = MUT;
+    c.fillText(r.isOpen ? (r.dte === null ? '—' : r.dte + ' DTE') : (r.days === null ? '—' : r.days + 'd'), COLS[5].x, mid);
+    c.font = MONO(18, '500');
+    c.fillText(String(r.qty), COLS[6].x, mid);
+    c.font = MONO(19, '600'); c.fillStyle = AMB;
+    c.fillText(_srMoney(r.credit), COLS[7].x, mid);
+    c.font = MONO(21, '800');
+    if(r.isOpen){ c.fillStyle = MUT; c.fillText('open', COLS[8].x, mid); }
+    else { c.fillStyle = r.pnl >= 0 ? GRN : RED; c.fillText(_srSigned(r.pnl), COLS[8].x, mid); }
+    c.font = MONO(19, '700'); c.fillStyle = r.ror === null ? MUT : (r.ror >= 0 ? GRN : RED);
+    c.fillText(_srPct(r.ror), COLS[9].x, mid);
 
     c.strokeStyle = LINE; c.lineWidth = 1;
     c.beginPath(); c.moveTo(0, y + ROWH); c.lineTo(W, y + ROWH); c.stroke();
     y += ROWH;
   });
   if(extra > 0){
-    c.textAlign = 'center'; c.font = F(13, '600'); c.fillStyle = MUT;
-    c.fillText('+ ' + extra + ' more position' + (extra === 1 ? '' : 's'), W/2, y + 22);
-    y += 34;
+    c.textAlign = 'center'; c.font = F(15, '600'); c.fillStyle = MUT;
+    c.fillText('+ ' + extra + ' more position' + (extra === 1 ? '' : 's'), W/2, y + 26);
+    y += 40;
   }
 
   // ── Alt bilgi ──
   c.fillStyle = CARD; c.fillRect(0, y, W, FOOT);
   c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke();
-  c.textAlign = 'left'; c.font = F(13, '600'); c.fillStyle = MUT;
-  c.fillText('Positions opened in period · personal log, not financial advice', PAD, y + 36);
-  c.textAlign = 'right'; c.font = F(13, '700'); c.fillStyle = PNK;
-  c.fillText('OptionFlow', W - PAD, y + 36);
+  c.textAlign = 'left'; c.font = F(15, '600'); c.fillStyle = MUT;
+  c.fillText('Positions opened in period  ·  ROC = return on collateral  ·  personal log, not financial advice', PAD, y + 44);
+  c.textAlign = 'right'; c.font = F(16, '700'); c.fillStyle = PNK;
+  c.fillText('OptionFlow', W - PAD, y + 44);
   return cv;
 }
 
@@ -6072,11 +6105,11 @@ function buildXTweet(D){
                                  : '📊 ' + period + ' · closed trades';
   L.push(head);
   var line2 = D.count + ' position' + (D.count === 1 ? '' : 's') + ' opened';
-  if(D.closedCount) line2 += ' · ' + D.winRate + '% win rate';
+  if(D.closedCount) line2 += ' · ' + D.winRate + '% win (' + D.wins + 'W/' + D.losses + 'L)';
   L.push(line2);
   if(D.closedCount){
     L.push('Realized: ' + _srSigned(D.totPnl));
-    if(D.totRisk > 0) L.push('ROC: ' + _srPct(D.totPnl / D.totRisk));
+    if(D.closedRisk > 0) L.push('ROC: ' + _srPct(D.totPnl / D.closedRisk));
   } else if(D.totCredit > 0){
     L.push('Credit collected: ' + _srMoney(D.totCredit));
   }
