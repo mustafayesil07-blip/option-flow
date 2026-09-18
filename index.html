@@ -3210,7 +3210,7 @@ function renderTradeList(filter, month){
             var _itm=_dist!==null&&_dist<0;
             var _dc=_dist===null?'var(--text-2)':_itm?'var(--loss)':_dist<3?'var(--loss)':_dist<6?'var(--warn)':'var(--profit)';
             return '<td style="padding:7px 5px;text-align:right;white-space:nowrap;">'+
-              '<div style="font-family:var(--font-mono);color:var(--text);font-size:13px;font-weight:700;letter-spacing:-0.2px;">$'+t.strike+'</div>'+
+              '<div style="font-family:var(--font-mono);color:var(--text);font-size:13px;font-weight:700;letter-spacing:-0.2px;">$'+fmtStrikes(t)+'</div>'+
               (_sp&&_dist!==null?'<div style="font-family:var(--font-mono);font-size:11px;color:'+_dc+';">$'+_sp+' '+(_itm?'ITM':_arrow+Math.abs(_dist).toFixed(1)+'%')+_legLbl+'</div>':
                _sp?'<div style="font-family:var(--font-mono);font-size:11px;color:var(--text-3);">$'+_sp+'</div>':'')+
               (_extPL?'<div style="font-family:var(--font-mono);font-size:10px;color:var(--warn);">'+_extLblL+' $'+_extPL.toFixed(2)+(_extPctL!=null?' ('+((_extPctL>=0?'+':'')+_extPctL.toFixed(2)+'%)'):'')+'</div>':'')+
@@ -3337,7 +3337,7 @@ function renderTradeList(filter, month){
   else if(_showLbl==='POST') _badge='<span style="display:inline-block;margin-left:5px;padding:1px 5px;border-radius:999px;background:rgba(59,130,246,.15);color:var(--info);font-size:11px;font-weight:700;vertical-align:middle;">POST</span>';
   return '<div><div class="trade-metric-lbl">Strike / Fiyat</div>'+
     '<div class="trade-metric-val" style="font-size:14px;">'+
-    '<span>$'+t.strike+'</span>'+
+    '<span>$'+fmtStrikes(t)+'</span>'+
     (_showP&&_dist!==null?'<span style="color:'+_dc+';margin-left:6px;font-size:13px;">$'+Number(_showP).toFixed(2)+_badge+
     ' <span style="font-size:11px;">'+(_itm?'ITM':_arr+Math.abs(_dist).toFixed(1)+'%')+(_legLabel?' '+_legLabel:'')+'</span></span>':
      _showP?'<span style="color:var(--text-3);margin-left:6px;font-size:13px;">$'+Number(_showP).toFixed(2)+_badge+'</span>':'')+
@@ -5214,6 +5214,79 @@ function _srNum(n){
 //   PCS  → long put  SHORT'un ALTINDA  (short - genislik)
 //   BCS  → long call SHORT'un USTUNDE  (short + genislik)
 // Kullanici strike alanina zaten "165/161" gibi iki bacak girdiyse dokunulmaz.
+// ── STRIKE GOSTERIMI ────────────────────────────────────────────────────
+// Depolanan `t.strike` DEGISMEZ: dikeylerde short strike, IC'de
+// "putShort/callShort". Payoff, mesafe ve vergi hesaplari bu bicime
+// bagli (IC'de split('/') tam 2 parca bekleniyor), bu yuzden ayrintiyi
+// ayri bir alanda tutup yalnizca GOSTERIMDE birlestiriyoruz.
+//
+//   t.strikes = { p:[shortPut, longPut], c:[shortCall, longCall] }
+//
+// Ekran goruntusu ice aktarmasi bu alani gercek bacaklardan doldurur.
+// Alan yoksa (eski kayitlar) long bacak teminattan geri hesaplanir:
+// dikey spread'de teminat = genislik x 100 x kontrat oldugundan sonuc
+// TAMDIR. IC'de teminat yalnizca GENIS kanadi verir; kanatlar esitse
+// dogru, degilse dar kanat oldugundan genis gorunur.
+function _stkNum(n){
+  if(!isFinite(n)) return '';
+  return (Math.round(n * 100) / 100).toString();
+}
+
+function fmtStrikes(t){
+  if(!t) return '—';
+  var type = String(t.type || '').toUpperCase();
+  var side = function(arr, letter){
+    if(!arr || !arr.length) return '';
+    var a = arr.filter(function(x){ return isFinite(x); });
+    if(!a.length) return '';
+    return (a.length > 1 ? _stkNum(a[0]) + '/' + _stkNum(a[1]) : _stkNum(a[0])) + letter;
+  };
+
+  // 1) Ice aktarmadan gelen GERCEK bacaklar
+  if(t.strikes && (t.strikes.p || t.strikes.c)){
+    var parts = [];
+    var ps = side(t.strikes.p, 'P'), cs = side(t.strikes.c, 'C');
+    if(ps) parts.push(ps);
+    if(cs) parts.push(cs);
+    if(parts.length) return parts.join(' · ');
+  }
+
+  var raw = String(t.strike == null ? '' : t.strike).trim();
+  if(!raw) return '—';
+  // Zaten P/C harfi varsa oldugu gibi birak (ice aktarilmis metin)
+  if(/[PC]\s*$/i.test(raw) && raw.indexOf('·') === -1 && !/^\d/.test(raw.slice(-1))) return raw;
+
+  var qty  = parseFloat(t.q) || 0;
+  var coll = parseFloat(t.teminat) || 0;
+  var width = (qty > 0 && coll > 0) ? (coll / (qty * 100)) : 0;
+  var num = function(x){ var v = parseFloat(String(x).replace(',', '.')); return isFinite(v) ? v : null; };
+
+  if(type === 'IC'){
+    var seg = raw.split('/');
+    var sp = num(seg[0]), sc = num(seg[1]);
+    if(sp === null || sc === null) return raw;
+    if(width > 0){
+      var lp = sp - width, lc = sc + width;
+      if(lp > 0) return _stkNum(sp) + '/' + _stkNum(lp) + 'P · ' + _stkNum(sc) + '/' + _stkNum(lc) + 'C';
+    }
+    return _stkNum(sp) + 'P · ' + _stkNum(sc) + 'C';
+  }
+
+  var k = num(raw.split('/')[0]);
+  if(k === null) return raw;
+  var isPut  = (type === 'PCS' || type === 'CSP' || type === 'LONG PUT' || type === 'COLLAR PUT');
+  var isCall = (type === 'BCS' || type === 'CCS' || type === 'CC' || type === 'PMCC' ||
+                type === 'LONG CALL' || type === 'COLLAR CALL' || type === 'LEAPS');
+  var letter = isPut ? 'P' : isCall ? 'C' : '';
+
+  // Dikey spread: long bacak teminattan tam olarak cikar
+  if((type === 'PCS' || type === 'BCS' || type === 'CCS') && width > 0){
+    var lng = (type === 'PCS') ? (k - width) : (k + width);
+    if(lng > 0) return _stkNum(k) + '/' + _stkNum(lng) + letter;
+  }
+  return _stkNum(k) + letter;
+}
+
 function _srSpreadStrikes(t){
   var raw = String(t.strike == null ? '' : t.strike).trim();
   if(raw.indexOf('/') >= 0) return { text: raw, derived: false, width: null };
@@ -5293,6 +5366,9 @@ function _spreadReportData(fromISO, toISO, types, status){
     var legs = isVertical
       ? _srSpreadStrikes(Object.assign({}, t, { type: (t.type === 'CCS') ? 'BCS' : t.type }))
       : { text: String(t.strike == null ? '' : t.strike).trim() || '—', derived: false, width: null };
+    // Gosterim metni ortak yardimciya devredildi: IC'de dort bacak,
+    // dikeylerde short/long, hepsinde P/C harfi.
+    legs.text = fmtStrikes(t);
     rows.push({
       ticker : String(t.ticker||'?').split(' ')[0].toUpperCase(),
       type   : (t.type === 'CCS') ? 'BCS' : t.type,
@@ -5670,8 +5746,9 @@ function buildSpreadMarkdown(){
     L.push('| — | — | — | — | — | — | — | — |');
   } else {
     rows.forEach(function(r){
-      // "550/540 PCS" — long bacak collateral'dan turetilmisti
-      var yapi = String(r.strike).replace(/([PC])$/, '') + ' ' + r.type;
+      // "230/225P PCS" — bacaklar ice aktarimdan ya da teminattan gelir.
+      // Sondaki P/C harfi KIRPILMAZ: IC'de "… 790/800C" bozuluyordu.
+      var yapi = String(r.strike) + ' ' + r.type;
       L.push('| ' + r.ticker
         + ' | ' + yapi
         + ' | ' + r.opened
@@ -6042,15 +6119,15 @@ function _drawXCard(D, scale){
   // birakildi (orn. P&L "-$9,100", CREDIT "$12,691"), yoksa P&L ile ROC
   // "+$366+7%" seklinde bitisik cikiyordu.
   var COLS = [
-    { l:'TICKER', x: PAD,       a:'left',  w: 140 },
-    { l:'TYPE',   x: PAD+152,   a:'left',  w: 110 },
-    { l:'STRIKE', x: PAD+282,   a:'left',  w: 180 },
-    { l:'OPENED', x: PAD+472,   a:'left',  w: 110 },
-    { l:'CLOSED', x: PAD+592,   a:'left',  w: 110 },
-    { l:'HELD',   x: PAD+782,   a:'right', w: 120 },
-    { l:'QTY',    x: PAD+852,   a:'right', w: 60  },
-    { l:'CREDIT', x: PAD+1012,  a:'right', w: 140 },
-    { l:'P&L',    x: PAD+1182,  a:'right', w: 150 },
+    { l:'TICKER', x: PAD,       a:'left',  w: 130 },
+    { l:'TYPE',   x: PAD+144,   a:'left',  w: 100 },
+    { l:'STRIKE', x: PAD+252,   a:'left',  w: 280 },   // IC: "725/715P · 790/800C"
+    { l:'OPENED', x: PAD+552,   a:'left',  w: 80  },
+    { l:'CLOSED', x: PAD+647,   a:'left',  w: 80  },
+    { l:'HELD',   x: PAD+812,   a:'right', w: 110 },
+    { l:'QTY',    x: PAD+872,   a:'right', w: 50  },
+    { l:'CREDIT', x: PAD+1017,  a:'right', w: 140 },
+    { l:'P&L',    x: PAD+1177,  a:'right', w: 150 },
     { l:'ROC',    x: PAD+1304,  a:'right', w: 100 }
   ];
   var tt = ty + (TILEH - 22) + 26;
@@ -6768,23 +6845,29 @@ function groupLegsIntoTrades(legs){
     var comm = g.reduce(function(s,l){ return s + (l.comm || 0); }, 0);
 
     var type = null, strike = null, collateral = 0, note = '';
+    // Gercek bacaklar — gosterimde short/long + P/C olarak kullanilir.
+    // `strike` alani DEGISMEZ (payoff/mesafe hesaplari ona bagli).
+    var strikes = null;
 
     if(g.length === 1){
       var one = g[0];
       type = one.side === 'SELL' ? (one.optType === 'P' ? 'CSP' : 'CC')
                                  : (one.optType === 'P' ? 'Long Put' : 'Long Call');
       strike = String(one.strike);
+      strikes = (one.optType === 'P') ? { p: [one.strike] } : { c: [one.strike] };
       collateral = (one.side === 'SELL') ? one.strike * 100 * qty : 0;
     } else if(g.length === 2 && puts.length === 2 && sells.length === 1 && buys.length === 1){
       // Put dikey: satilan strike ALTTAKI'nden yuksekse kredi spread'i (PCS)
       if(sells[0].strike > buys[0].strike){
         type = 'PCS'; strike = String(sells[0].strike);
+        strikes = { p: [sells[0].strike, buys[0].strike] };
         collateral = Math.abs(sells[0].strike - buys[0].strike) * 100 * qty;
       } else { note = 'Borç put spread — uygulamada karşılığı yok'; }
     } else if(g.length === 2 && calls.length === 2 && sells.length === 1 && buys.length === 1){
       // Call dikey: satilan strike USTTEKI'nden dusukse kredi spread'i (BCS)
       if(sells[0].strike < buys[0].strike){
         type = 'BCS'; strike = String(sells[0].strike);
+        strikes = { c: [sells[0].strike, buys[0].strike] };
         collateral = Math.abs(buys[0].strike - sells[0].strike) * 100 * qty;
       } else { note = 'Borç call spread — uygulamada karşılığı yok'; }
     } else if(g.length === 4 && puts.length === 2 && calls.length === 2 &&
@@ -6796,6 +6879,7 @@ function groupLegsIntoTrades(legs){
       if(sp && bp && sc && bc){
         type = 'IC';
         strike = String(sp.strike) + '/' + String(sc.strike);   // put/call — uygulamanın IC biçimi
+        strikes = { p: [sp.strike, bp.strike], c: [sc.strike, bc.strike] };
         var putW = Math.abs(sp.strike - bp.strike), callW = Math.abs(bc.strike - sc.strike);
         collateral = Math.max(putW, callW) * 100 * qty;         // IC'de yalnız bir taraf zarar eder
       }
@@ -6803,7 +6887,7 @@ function groupLegsIntoTrades(legs){
     if(!type) note = note || 'Strateji tanınamadı (' + g.length + ' bacak) — bacaklar ayrı ayrı eklenebilir';
 
     return {
-      ticker: g[0].ticker, type: type, strike: strike,
+      ticker: g[0].ticker, type: type, strike: strike, strikes: strikes,
       expiry: g[0].expiry, opened: g[0].date,
       q: qty, openPremium: Math.round(Math.abs(netCredit) * 100) / 100,
       teminat: Math.round(collateral), openCommission: Math.round(comm * 100) / 100,
@@ -7156,7 +7240,9 @@ function _shotRenderReview(warnings){
       +       (typeof ALL_TRADE_TYPES !== 'undefined' ? ALL_TRADE_TYPES : ['CSP','CC','PCS','BCS','IC'])
               .map(function(x){ return '<option' + (x === t.type ? ' selected' : '') + '>' + x + '</option>'; }).join('')
       +     '</select></div>'
-      +   '<div><div style="' + lbl + '">Strike</div><input id="sh_st_' + i + '" value="' + (t.strike || '') + '" style="' + inp + '"></div>'
+      +   '<div><div style="' + lbl + '">Strike</div><input id="sh_st_' + i + '" value="' + (t.strike || '') + '" style="' + inp + '">'
+      +     (t.strikes ? '<div style="font-size:9px;color:var(--info);font-family:var(--font-mono);margin-top:3px;">→ ' + fmtStrikes(t) + '</div>' : '')
+      +   '</div>'
       +   '<div><div style="' + lbl + '">Adet</div><input id="sh_q_' + i + '" type="number" oninput="_shotSplitSum(' + i + ')" value="' + (t.q || 1) + '" style="' + inp + '"></div>'
       +   '<div><div style="' + lbl + '">Net Kredi $</div><input id="sh_pr_' + i + '" type="number" step="0.01" value="' + t.openPremium + '" style="' + inp + '"></div>'
       +   '<div><div style="' + lbl + '">Teminat $</div><input id="sh_te_' + i + '" type="number" value="' + t.teminat + '" style="' + inp + '"></div>'
@@ -7410,6 +7496,9 @@ function _shotCommit(){
         ticker: sel.ticker,
         type: v('sh_ty_' + i),
         strike: v('sh_st_' + i),
+        // Gercek bacaklar — yalnizca strike alani elle degistirilmediyse
+        // anlamli kalir; degistirilmisse gosterim o degeri kullanir.
+        strikes: (v('sh_st_' + i) === String(_shotTrades[i].strike)) ? _shotTrades[i].strikes : null,
         expiry: v('sh_ex_' + i),
         opened: opened, closed: null, pnl: null,
         // Uygulamada `premium` TOPLAM primdir (Log New Trade formu da
