@@ -5416,7 +5416,8 @@ function _drawSpreadCard(D, scale){
   // ── Ozet kutulari ──
   var tiles = [
     { l:'TRADES',      v: String(D.count),                              col: TXT },
-    { l:'WIN RATE',    v: D.closedCount ? (D.winRate + '% (' + D.wins + 'W/' + D.losses + 'L)') : '—', col: D.winRate >= 50 ? GRN : RED },
+    { l:'WIN RATE',    v: D.closedCount ? (D.winRate + '%') : '—',
+      wl: D.closedCount ? { w: D.wins, l: D.losses } : null,       col: D.winRate >= 50 ? GRN : RED },
     { l:'CREDIT',      v: _srMoney(D.totCredit),                        col: AMB },
     { l:'CAPTURED',    v: D.capture === null ? '—' : Math.round(D.capture*100) + '%', col: BLU },
     // GIZLILIK: teminatin DOLAR tutari paylasim ciktisinda gosterilmez
@@ -5435,6 +5436,18 @@ function _drawSpreadCard(D, scale){
     c.fillText(t.l, x + 13, ty + 24);
     c.font = MONO(24, '700'); c.fillStyle = t.col;
     c.fillText(t.v, x + 13, ty + 56);
+    if(t.wl){
+      var gx2 = x + 13 + c.measureText(t.v).width + 10;
+      c.font = MONO(15, '700');
+      var w2 = t.wl.w + 'W', s2 = '·', l2 = t.wl.l + 'L';
+      if(gx2 + c.measureText(w2 + ' ' + s2 + ' ' + l2).width <= x + tw - 10){
+        c.fillStyle = GRN; c.fillText(w2, gx2, ty + 56);
+        gx2 += c.measureText(w2 + ' ').width;
+        c.fillStyle = MUT; c.fillText(s2, gx2, ty + 56);
+        gx2 += c.measureText(s2 + ' ').width;
+        c.fillStyle = RED; c.fillText(l2, gx2, ty + 56);
+      }
+    }
   });
 
   // ── Tablo ──
@@ -5987,7 +6000,8 @@ function _drawXCard(D, scale){
     { l:'TRADES',   v: String(D.count),
       s: D.closedCount + ' closed · ' + D.openCount + ' open', col: TXT },
     { l:'WIN RATE', v: D.closedCount ? D.winRate + '%' : '—',
-      s: D.closedCount ? ('(' + D.wins + 'W / ' + D.losses + 'L)') : 'no closed trades',
+      wl: D.closedCount ? { w: D.wins, l: D.losses } : null,
+      s: D.closedCount ? ('of ' + D.closedCount + ' closed') : 'no closed trades',
       col: D.winRate >= 50 ? GRN : RED },
     { l:'AVG ROC',  v: avgRoc, s: 'return on collateral', col: BLU },
     { l:'CREDIT',   v: _srMoney(D.totCredit), s: 'collected', col: AMB },
@@ -6003,6 +6017,20 @@ function _drawXCard(D, scale){
     c.fillText(t.l, x + 16, ty + 27);
     c.font = MONO(31, '800'); c.fillStyle = t.col;
     c.fillText(fit(t.v, tw - 32), x + 16, ty + 65);
+    // Kazanc/kayip sayisi degerin YANINA, ayni satira. Kutunun sagindaki
+    // genis bosluk bos duruyordu ve alt satirdaki kucuk punto okunmuyordu.
+    if(t.wl){
+      var gx = x + 16 + c.measureText(t.v).width + 16;
+      c.font = MONO(22, '800');
+      var wTxt = t.wl.w + 'W', sep = ' · ', lTxt = t.wl.l + 'L';
+      if(gx + c.measureText(wTxt + sep + lTxt).width <= x + tw - 12){
+        c.fillStyle = GRN; c.fillText(wTxt, gx, ty + 65);
+        gx += c.measureText(wTxt).width;
+        c.fillStyle = MUT; c.fillText(sep, gx, ty + 65);
+        gx += c.measureText(sep).width;
+        c.fillStyle = RED; c.fillText(lTxt, gx, ty + 65);
+      }
+    }
     c.font = F(13, '600'); c.fillStyle = MUT;
     c.fillText(fit(t.s, tw - 32), x + 16, ty + 86);
   });
