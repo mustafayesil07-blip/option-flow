@@ -2515,15 +2515,19 @@ function getEffectiveDashMonth(){
 }
 
 // ── Yıl filtresi yardımcıları ──────────────────────────────────────
-// Bir islem hangi yila ait sayilir?
-// KAPANMIS islem KAPANIS yilina aittir — kar/zarar o yil gerceklesir ve
-// vergi sayfasi da (getCrossProfileClosedTrades) kapanis yilini kullanir.
-// ACIK pozisyon acilis yilina aittir (henuz gerceklesmis bir sonuc yok).
-// Eskiden burada once `opened` bakiliyordu: Aralik 2025'te acilip Ocak
-// 2026'da kapanan islemler Dashboard'da 2025'e, Aile Dashboard ve vergi
-// sayfasinda 2026'ya dusuyor, rakamlar tutmuyordu.
+// Bir islem hangi doneme ait sayilir?
+// KURAL: islem hangi ayda ACILDIYSA kazanci o aya (ve o yila) aittir.
+// Pozisyonu hangi ay actiysak sermayeyi o ay bagladik; performans da o
+// aya yazilir. Kapanis tarihi bu atfi DEGISTIRMEZ.
+//
+// Vergi sayfasi bundan BAGIMSIZDIR: orada matrah kapanis yilina gore
+// hesaplanir (getCrossProfileClosedTrades), cunku vergi kar/zararin
+// gerceklestigi yila bakar. Iki farkli soru, iki farkli kural.
+//
+// Ay tarafi zaten `t.month` kovasiyla ayni sonucu veriyor (kova acilis
+// tarihinden doluyor); bu fonksiyon yil boyutunu ayni kurala baglar.
 function getTradeYear(t){
-  var d = (t.closed && t.pnl != null) ? t.closed : (t.opened || t.closed || '');
+  var d = t.opened || t.closed || '';
   return d ? String(d).substring(0,4) : '';
 }
 function getAvailableYears(){
@@ -8580,7 +8584,12 @@ function showAddTrade(existingTrade){
   var isEdit = !!existingTrade;
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
-  var _moKeys = Object.keys(tradesData).length > 0 ? Object.keys(tradesData) : ['Aralik','Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim'];
+  // Ay listesi HER ZAMAN 12 ay, takvim sirasinda. Eskiden yalnizca veride
+  // zaten islem BULUNAN aylar listeleniyordu: bos bir ayda ilk islemini
+  // acan kullanici o ayi secemiyordu. Kova kayit sirasinda olusturuluyor
+  // (if(!tradesData[month]) ...), bu yuzden yeni ay eklemek guvenli.
+  var _moKeys = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran',
+                 'Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
   var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=LONG_TYPES;
   var _initialType = isEdit ? existingTrade.type : 'CSP';
@@ -8682,6 +8691,23 @@ function showAddTrade(existingTrade){
     // Set today as default for open date if new trade
     if(!isEdit && sheet.querySelector('#nt_o') && !sheet.querySelector('#nt_o').value){
       sheet.querySelector('#nt_o').value=new Date().toISOString().split('T')[0];
+    }
+
+    // Ay alani ACILIS tarihini takip eder. Kural: islem hangi ayda
+    // acildiysa kazanci o aya aittir — ay elle yanlis secilirse rapor
+    // o isleme baska bir aya yazardi. Kullanici yine degistirebilir.
+    var _oInp = sheet.querySelector('#nt_o'), _mSel = sheet.querySelector('#nt_m');
+    if(_oInp && _mSel){
+      var _syncMonth = function(){
+        var v = _oInp.value;
+        if(!v) return;
+        var d = new Date(v + 'T00:00:00');
+        if(isNaN(d)) return;
+        var mk = _moKeys[d.getMonth()];   // _moKeys takvim sirasinda
+        if(mk) _mSel.value = mk;
+      };
+      _oInp.onchange = _syncMonth;
+      if(!isEdit) _syncMonth();
     }
 
     // Re-attach type change listener (native select fallback için)
@@ -11383,7 +11409,7 @@ function _renderAileDashboard() {
     var ys = _aileAvailableYears();
     perLbl.textContent = (AILE_YEAR === 'all')
       ? 'Tüm kayıtlar' + (ys.length ? ' (' + ys[ys.length-1] + '–' + ys[0] + ')' : '') + ' · kapanmış işlemler kapanış yılına göre'
-      : AILE_YEAR + ' yılı · kapanmış işlemler kapanış, açık pozisyonlar açılış yılına göre';
+      : AILE_YEAR + ' yılı · işlemler AÇILIŞ tarihine göre (vergi sayfası kapanışa göre hesaplar)';
   }
 
   // ── Hero row ───────────────────────────────────────────────────
