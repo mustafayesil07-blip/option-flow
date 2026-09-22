@@ -2515,9 +2515,16 @@ function getEffectiveDashMonth(){
 }
 
 // ── Yıl filtresi yardımcıları ──────────────────────────────────────
+// Bir islem hangi yila ait sayilir?
+// KAPANMIS islem KAPANIS yilina aittir — kar/zarar o yil gerceklesir ve
+// vergi sayfasi da (getCrossProfileClosedTrades) kapanis yilini kullanir.
+// ACIK pozisyon acilis yilina aittir (henuz gerceklesmis bir sonuc yok).
+// Eskiden burada once `opened` bakiliyordu: Aralik 2025'te acilip Ocak
+// 2026'da kapanan islemler Dashboard'da 2025'e, Aile Dashboard ve vergi
+// sayfasinda 2026'ya dusuyor, rakamlar tutmuyordu.
 function getTradeYear(t){
-  var d = t.opened || t.closed || '';
-  return d ? d.substring(0,4) : '';
+  var d = (t.closed && t.pnl != null) ? t.closed : (t.opened || t.closed || '');
+  return d ? String(d).substring(0,4) : '';
 }
 function getAvailableYears(){
   var ys = {};
@@ -11207,20 +11214,45 @@ function syncFromCloud() {
 
 /* Returns all trades (open + closed) for any profile from localStorage */
 function _aileReadProfileTrades(profileId) {
-  var lsKey = (profileId === 'mustafa') ? 'opt_v22' : (profileId + '_opt_v22');
+  var pk = function(base){ return (profileId === 'mustafa') ? base : (profileId + '_' + base); };
+  var out = [];
   try {
-    var raw = localStorage.getItem(lsKey);
-    if (!raw) return [];
-    var data = JSON.parse(raw);
-    var out = [];
-    Object.keys(data).forEach(function(month) {
-      if (!Array.isArray(data[month])) return;
-      data[month].forEach(function(t) {
-        if (t) out.push(Object.assign({}, t, { month: month, _profile: profileId }));
+    var raw = localStorage.getItem(pk('opt_v22'));
+    if (raw) {
+      var data = JSON.parse(raw);
+      Object.keys(data).forEach(function(month) {
+        if (!Array.isArray(data[month])) return;
+        data[month].forEach(function(t) {
+          if (t) out.push(Object.assign({}, t, { month: month, _profile: profileId }));
+        });
       });
-    });
-    return out;
-  } catch(e) { return []; }
+    }
+  } catch(e) {}
+  // KAPANMIS LEAPS'ler de P&L'e girer. getAllTrades bunlari dahil ediyordu,
+  // Aile Dashboard ise yalnizca opt_v22'yi okudugu icin LEAPS kar/zarari
+  // Dashboard'da gorunup Aile Dashboard'da gorunmuyordu.
+  try {
+    var lraw = localStorage.getItem(pk('leaps_v1'));
+    if (lraw) {
+      (JSON.parse(lraw) || []).forEach(function(l) {
+        if (!l || !l.closed || l.pnl == null) return;
+        var cp = parseFloat(l.costPer) || 0, sp = parseFloat(l.sellPer) || 0;
+        var q  = parseInt(l.qty, 10) || 1;
+        out.push({
+          id: l.id, ticker: l.ticker, type: 'LEAPS',
+          opened: l.opened || '', closed: l.closed,
+          pnl: parseFloat(l.pnl) || 0,
+          openPremium: cp * q * 100, closePremium: sp * q * 100,
+          openCommission: parseFloat(l.openCommission) || 0,
+          closeCommission: parseFloat(l.closeCommission) || 0,
+          premium: cp * q * 100, teminat: 0, q: q,
+          strike: l.strike || '', expiry: l.expiry || '',
+          month: 'LEAPS', _isLeap: true, _profile: profileId
+        });
+      });
+    }
+  } catch(e) {}
+  return out;
 }
 
 // Aile Dashboard donemi: 'all' | '2026' | '2025' ...
@@ -11229,8 +11261,11 @@ function _aileReadProfileTrades(profileId) {
 var AILE_YEAR = 'all';
 
 function _aileTradeYear(t){
-  var d = t.closed || t.opened || '';
-  return d ? String(d).substring(0,4) : '';
+  // Dashboard/Statistics ile AYNI kural — bkz. getTradeYear
+  return (typeof getTradeYear === 'function')
+    ? getTradeYear(t)
+    : (function(){ var d = (t.closed && t.pnl != null) ? t.closed : (t.opened || t.closed || '');
+                   return d ? String(d).substring(0,4) : ''; })();
 }
 // Secili doneme gore filtrele. Acik pozisyonlar acilis yilina gore,
 // kapanmislar kapanis yilina gore degerlendirilir.
