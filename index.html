@@ -2229,13 +2229,23 @@ function newRecordId(tag){
 //     bile bulut verisi silinmez). Silmeden SONRA duzenlenmis kayit ->
 //     CAKISMA.
 var SYNC_VERSION = 2;
-// Kayit ozetine GIRMEYEN alanlar: senkron damgalari + turetilmis/bilgi
-// alanlari. status kapanis alanlarindan turetilir, calculationVersion yalnizca
-// bilgi amacli; ikisi de yuklemede migration tarafindan (izleyici disinda)
-// eklenebildigi icin ozete girerse esitlemeden sonra kayit "yerelde
-// degismis" gorunur ve SAHTE CAKISMA uretir (gercek Firestore dogrulamasinda
-// yakalandi).
-var SYNC_META_FIELDS = ['updatedAt', 'revision', 'deviceId', 'status', 'calculationVersion'];
+var SYNC_META_FIELDS = ['updatedAt', 'revision', 'deviceId'];
+// KANONIK OZET: profil yuklenirken calisan migration'lar kayitlara
+// izleyici DISINDA belirlenimci alanlar ekler (status, calculationVersion,
+// legacy, direction, roll/atama baglari, varsayilan subOwner) ve eski
+// negatif primleri pozitife cevirir. Bunlar ozete girerse esitlemeden sonra
+// kayit "yerelde degismis" gorunur; diger cihaz da kaydi duzenlemisse
+// SAHTE CAKISMA cikar (gercek Firestore dogrulamasinda yakalandi). Ozet bu
+// yuzden kaydin kanonik halinden alinir: migration oncesi ve sonrasi ayni
+// ozeti verir. Kaydin kendisi DEGISMEZ; yalnizca karsilastirma.
+var SYNC_HASH_IGNORE = SYNC_META_FIELDS.concat(['status', 'calculationVersion', 'legacy', 'direction', 'rollChainId', 'rollKind', 'assignedFromTradeId']);
+function syncCanonicalRecord(rec){
+  var c = {};
+  Object.keys(rec).forEach(function(k){ if(SYNC_HASH_IGNORE.indexOf(k) < 0) c[k] = rec[k]; });
+  ['premium', 'openPremium', 'price'].forEach(function(f){ if(typeof c[f] === 'number' && c[f] < 0) c[f] = -c[f]; });
+  if('ticker' in c && !c.subOwner) c.subOwner = 'Eda';          // reloadProfileData varsayilani
+  return c;
+}
 var SYNC_DOC_SOFT_LIMIT = 900 * 1024;      // uyari/durdurma esigi (Firestore siniri 1 MiB)
 var SYNC_DOC_HARD_LIMIT = 1048576 - 4096;
 
@@ -2256,9 +2266,7 @@ function syncHashString(s){
 function syncRecordHash(rec){
   if(rec === undefined) return null;
   if(rec === null || typeof rec !== 'object') return syncHashString(syncStableStringify(rec));
-  var c = {};
-  Object.keys(rec).forEach(function(k){ if(SYNC_META_FIELDS.indexOf(k) < 0) c[k] = rec[k]; });
-  return syncHashString(syncStableStringify(c));
+  return syncHashString(syncStableStringify(syncCanonicalRecord(rec)));
 }
 function syncUtf8Bytes(s){
   var n = 0;
