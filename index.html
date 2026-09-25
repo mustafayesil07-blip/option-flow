@@ -4041,11 +4041,42 @@ function syncErrorText(e){
   if(/permission/i.test(code + msg)) hint = ' — Firestore güvenlik kuralları optionflow/profiles/** yoluna yazmaya izin vermiyor olabilir (kural: match /optionflow/{document=**}).';
   else if(/unavailable|offline|network|failed to get document because the client is offline/i.test(code + msg)) hint = ' — bulut erişilemiyor (internet bağlantısı yok ya da Firestore yanıt vermiyor). Yerel veri güvende.';
   else if(/DOC_TOO_LARGE|exceeds the maximum|maximum size/i.test(code + msg)) hint = ' — belge Firestore 1 MiB sınırına yaklaştı.';
+  else if(/deadline-exceeded/i.test(code)) hint = ' — bağlantı yavaş ya da ağ Firestore akış bağlantısını engelliyor.';
   return (code ? '[' + code + '] ' : '') + msg + hint;
 }
+// Her bulut cagrisi zaman sinirli: Firestore SDK'si akis kanali (Listen/
+// Write) kurulamayan aglarda HATA VERMEDEN suresiz bekleyebiliyor (gercek
+// Firestore dogrulamasinda goruldu) — durum sonsuza dek SYNCING kalirdi.
+var SYNC_TIMEOUT_MS = 25000, SYNC_TX_TIMEOUT_MS = 45000;
+function _syncTimeout(promise, ms, what){
+  var timer;
+  return Promise.race([
+    Promise.resolve(promise).then(function(v){ clearTimeout(timer); return v; }, function(e){ clearTimeout(timer); throw e; }),
+    new Promise(function(_, rej){ timer = setTimeout(function(){
+      var e = new Error('Bulut ' + Math.round(ms / 1000) + ' sn içinde yanıt vermedi (' + what + ')' +
+        (what === 'transaction' ? ' — yazmanın sonucu doğrulanamadı; tekrar eşitlemek güvenli, kopya oluşmaz.' : '.'));
+      e.code = 'deadline-exceeded'; rej(e); }, ms); })
+  ]);
+}
 function _syncCloud(){
-  if(!window.OFCloud || !window.OFCloud.ready){ var e = new Error('Bulut bağlantısı henüz hazır değil (Firebase yüklenmedi).'); e.code = 'not-ready'; throw e; }
-  return window.OFCloud;
+  var c = window.OFCloud;
+  if(!c || !c.ready){ var e = new Error('Bulut bağlantısı henüz hazır değil (Firebase yüklenmedi).'); e.code = 'not-ready'; throw e; }
+  // Acilista SDK baglantiyi kurmadan yapilan ilk sunucu okumasi 'unavailable'
+  // donebiliyor: kisa araliklarla en fazla 2 kez yeniden dene.
+  var getRetry = async function(p){
+    for(var i = 0; ; i++){
+      try { return await c.get(p); }
+      catch(err){ if(i >= 2 || !/unavailable|offline/i.test(String(err && (err.code || err.message)))) throw err;
+                  await new Promise(function(r){ setTimeout(r, 1500); }); }
+    }
+  };
+  return {
+    ready: true,
+    get: function(p){ return _syncTimeout(getRetry(p), SYNC_TIMEOUT_MS, 'okuma'); },
+    set: function(p, d){ return _syncTimeout(c.set(p, d), SYNC_TIMEOUT_MS, 'yazma'); },
+    batch: function(ops){ return _syncTimeout(c.batch(ops), SYNC_TX_TIMEOUT_MS, 'toplu yazma'); },
+    transaction: function(fn){ return _syncTimeout(c.transaction(fn), SYNC_TX_TIMEOUT_MS, 'transaction'); }
+  };
 }
 
 // ── Migration: backup_all -> profil belgeleri ──────────────────────────
