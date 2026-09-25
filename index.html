@@ -2229,7 +2229,13 @@ function newRecordId(tag){
 //     bile bulut verisi silinmez). Silmeden SONRA duzenlenmis kayit ->
 //     CAKISMA.
 var SYNC_VERSION = 2;
-var SYNC_META_FIELDS = ['updatedAt', 'revision', 'deviceId'];
+// Kayit ozetine GIRMEYEN alanlar: senkron damgalari + turetilmis/bilgi
+// alanlari. status kapanis alanlarindan turetilir, calculationVersion yalnizca
+// bilgi amacli; ikisi de yuklemede migration tarafindan (izleyici disinda)
+// eklenebildigi icin ozete girerse esitlemeden sonra kayit "yerelde
+// degismis" gorunur ve SAHTE CAKISMA uretir (gercek Firestore dogrulamasinda
+// yakalandi).
+var SYNC_META_FIELDS = ['updatedAt', 'revision', 'deviceId', 'status', 'calculationVersion'];
 var SYNC_DOC_SOFT_LIMIT = 900 * 1024;      // uyari/durdurma esigi (Firestore siniri 1 MiB)
 var SYNC_DOC_HARD_LIMIT = 1048576 - 4096;
 
