@@ -1540,6 +1540,701 @@
 </div>
 
 <script>
+// ═══════════════════════════════════════════════════════════════════════
+// CALCULATION LAYER — tek dogru kaynak (single source of truth)
+// ═══════════════════════════════════════════════════════════════════════
+// KURALLAR (bu bolume eklenen her fonksiyon icin gecerli):
+//   * HTML uretmez, DOM'a dokunmaz.
+//   * Uygulama durumunu (tradesData vb.) okumaz ve DEGISTIRMEZ; yalnizca
+//     parametre olarak verilen kayitlarla calisir. Girdi kayitlarini da
+//     degistirmez.
+//   * "Bugun" gereken fonksiyonlar opsiyonel `asOf` alir (test icin).
+// Render/kaydetme kodu buradaki sonuclari TUKETIR; ayni formulu baska
+// bir yerde yeniden yazmak yasak — bir hata varsa burada duzeltilir.
+//
+// Sozlesme notlari (uygulamanin mevcut konvansiyonlari):
+//   * openPremium / closePremium TOPLAM dolar tutaridir (kontrat basi degil).
+//   * Prim her zaman POZITIF buyukluk olarak saklanir; yon islem turunden
+//     (ya da kayittaki `direction` alanindan) okunur. Eski kayitlarda
+//     negatif prim bir yon isaretiydi — calcTradeDirection bunu hala anlar.
+//   * Teminat (collateral) konvansiyonu: CSP/CC/PMCC = strike x 100 x adet,
+//     dikey spread = genislik x 100 x adet, IC = genis kanat x 100 x adet.
+// ═══════════════════════════════════════════════════════════════════════
+
+var CALC_VERSION = 2;
+var CALC_EPSILON = 0.005;          // |P&L| bunun altindaysa BASABAS
+var CALC_PNL_TOLERANCE = 0.01;     // saklanan / hesaplanan fark esigi
+
+// Islem turleri — TEK KAYNAK. TRADE_TYPE_DEFS bundan turetilir.
+//   dir       : 'short' prim tahsil | 'long' prim odenir
+//   opt       : 'call' | 'put' | 'mixed'
+//   structure : 'single' | 'vertical' | 'ic' | 'collar'
+//   covered   : short call'in dayanak hisseyle karsilandigi turler
+var CALC_TYPE_DEFS = [
+  { code:'CSP',         dir:'short', opt:'put',   structure:'single'   },
+  { code:'PCS',         dir:'short', opt:'put',   structure:'vertical' },
+  { code:'CC',          dir:'short', opt:'call',  structure:'single', covered:true },
+  { code:'PMCC',        dir:'short', opt:'call',  structure:'single', covered:true },
+  { code:'BCS',         dir:'short', opt:'call',  structure:'vertical' },
+  { code:'IC',          dir:'short', opt:'mixed', structure:'ic'       },
+  { code:'COLLAR PUT',  dir:'short', opt:'put',   structure:'collar'   },
+  { code:'COLLAR CALL', dir:'short', opt:'call',  structure:'collar', covered:true },
+  // HEDGE yeni islemde secilemez; gecmis kayitlar icin tanim duruyor.
+  { code:'HEDGE',       dir:'short', opt:'call',  structure:'single', legacy:true },
+  { code:'Long Call',   dir:'long',  opt:'call',  structure:'single'   },
+  { code:'Long Put',    dir:'long',  opt:'put',   structure:'single'   },
+  { code:'LEAPS',       dir:'long',  opt:'call',  structure:'single'   }
+];
+
+var TRADE_STATUSES = ['planned', 'open', 'partially_closed', 'closed', 'assigned', 'expired'];
+var CLOSED_STATUSES = ['closed', 'assigned', 'expired'];
+
+// ── Kucuk yardimcilar ──────────────────────────────────────────────────
+function calcNum(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(typeof v === 'number') return isFinite(v) ? v : null;
+  var n = parseFloat(String(v).replace(',', '.'));
+  return isFinite(n) ? n : null;
+}
+function calcRound2(x){ return (x === null || !isFinite(x)) ? x : Math.round(x * 100) / 100; }
+function calcTypeDef(type){
+  var k = String(type || '').trim();
+  for(var i = 0; i < CALC_TYPE_DEFS.length; i++) if(CALC_TYPE_DEFS[i].code === k) return CALC_TYPE_DEFS[i];
+  return null;
+}
+// 'YYYY-MM-DD' -> YEREL gece yarisi. new Date('YYYY-MM-DD') UTC okur ve
+// UTC+3'te ay/gun kaydirabilir; tum tarih hesaplari bunu kullanir.
+function calcParseDate(s){
+  if(!s) return null;
+  if(s instanceof Date) return isNaN(s) ? null : new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+  if(!m) return null;
+  var d = new Date(+m[1], +m[2] - 1, +m[3]);
+  if(isNaN(d) || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3]) return null;   // 2026-02-31 gibi
+  return d;
+}
+function calcDaysBetween(a, b){
+  var d1 = calcParseDate(a), d2 = calcParseDate(b);
+  if(!d1 || !d2) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+function calcToday(asOf){
+  var d = asOf ? calcParseDate(asOf) : null;
+  if(d) return d;
+  var n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+}
+function calcQty(t){ var q = calcNum(t && t.q); return (q !== null && q > 0) ? q : null; }
+
+// ── Yon ve durum ───────────────────────────────────────────────────────
+// Kayit duzeyinde `direction` alani turden once gelir (eski COLLAR PUT /
+// HEDGE kayitlari tur tanimina gore "short" ama aslinda ALINMIS opsiyon;
+// bu bilgi eskiden yalnizca negatif primle tasiniyordu).
+function calcTradeDirection(t){
+  if(!t) return 'short';
+  if(t.direction === 'long' || t.direction === 'short') return t.direction;
+  var raw = calcNum(t.openPremium);
+  if(raw === null || raw === 0) raw = calcNum(t.premium);
+  if(raw !== null && raw < 0) return 'long';                // eski isaret konvansiyonu
+  var d = calcTypeDef(t.type);
+  return d ? d.dir : 'short';                                // bilinmeyen tur: eski davranis
+}
+function calcIsLongTrade(t){ return calcTradeDirection(t) === 'long'; }
+
+function calcPartialCloses(t){
+  return (t && Array.isArray(t.partialCloses)) ? t.partialCloses : [];
+}
+function calcClosedQty(t){
+  return calcPartialCloses(t).reduce(function(s, pc){ return s + (calcNum(pc.qty) || 0); }, 0);
+}
+// Kayittaki status gecerliyse ve alanlarla celismiyorsa onu, degilse
+// alanlardan turetilmis durumu dondurur. assigned/expired "yapiskan"dir.
+function calcTradeStatus(t){
+  if(!t) return null;
+  var closedField = !!t.closed;
+  var s = t.status;
+  if(s === 'planned') return 'planned';
+  if(closedField){
+    if(s === 'assigned' || s === 'expired' || s === 'closed') return s;
+    if(/\[ASSIGNED/.test(String(t.note || ''))) return 'assigned';    // eski atama kaydi
+    return 'closed';
+  }
+  return calcPartialCloses(t).length ? 'partially_closed' : 'open';
+}
+function calcIsClosedTrade(t){ return CLOSED_STATUSES.indexOf(calcTradeStatus(t)) >= 0; }
+
+// ── Prim ───────────────────────────────────────────────────────────────
+// Acilis primi: POZITIF toplam dolar buyuklugu. openPremium once gelir
+// (premium alani eskiden kontrat basi yazilabiliyordu).
+function calcTradePremium(t){
+  if(!t) return 0;
+  var v = calcNum(t.openPremium);
+  if(v === null || v === 0) v = calcNum(t.premium);
+  return v === null ? 0 : Math.abs(v);
+}
+// Nakit akisi isaretli: short +kredi, long -borc.
+function calcTradeCashflow(t){
+  var p = calcTradePremium(t);
+  return calcIsLongTrade(t) ? -p : p;
+}
+function calcPremiumPerShare(t){
+  var q = calcQty(t);
+  return q ? calcTradePremium(t) / (q * 100) : null;
+}
+
+// ── Strike / bacaklar ──────────────────────────────────────────────────
+// { put:{short,long}, call:{short,long}, width:{put,call}, source }
+// Kaynak sirasi: t.strikes (gercek bacaklar) > "a/b" strike metni >
+// teminattan geri hesap (yalnizca dikey spread/IC, eski konvansiyon).
+function calcLegs(t){
+  var out = { put:{ short:null, long:null }, call:{ short:null, long:null }, width:{ put:null, call:null }, source:null };
+  if(!t) return out;
+  var d = calcTypeDef(t.type);
+  var opt = d ? d.opt : null, structure = d ? d.structure : 'single';
+
+  if(t.strikes && (t.strikes.p || t.strikes.c)){
+    var p = (t.strikes.p || []).map(calcNum), c = (t.strikes.c || []).map(calcNum);
+    if(p[0] !== null && p[0] !== undefined) out.put.short = p[0];
+    if(p[1] !== null && p[1] !== undefined) out.put.long  = p[1];
+    if(c[0] !== null && c[0] !== undefined) out.call.short = c[0];
+    if(c[1] !== null && c[1] !== undefined) out.call.long  = c[1];
+    out.source = 'strikes';
+  } else {
+    var raw = String(t.strike == null ? '' : t.strike);
+    var seg = raw.split('/').map(function(x){ return calcNum(String(x).replace(/[PC\s]/gi, '')); });
+    if(structure === 'ic'){
+      out.put.short = seg[0] !== undefined ? seg[0] : null;
+      out.call.short = seg[1] !== undefined ? seg[1] : null;
+    } else if(structure === 'vertical'){
+      var sk = seg[0] !== undefined ? seg[0] : null, lk = seg.length > 1 ? seg[1] : null;
+      if(opt === 'put'){ out.put.short = sk; out.put.long = lk; } else { out.call.short = sk; out.call.long = lk; }
+    } else {
+      var k = seg[0] !== undefined ? seg[0] : null;
+      if(opt === 'put') out.put.short = k; else out.call.short = k;
+    }
+    out.source = 'strike';
+  }
+
+  // Eksik long bacak: teminattan (genislik x 100 x adet) geri hesap
+  var q = calcQty(t), coll = calcNum(t.teminat);
+  var w = (q && coll && coll > 0) ? coll / (q * 100) : null;
+  if(structure === 'vertical' && w){
+    if(opt === 'put' && out.put.short !== null && out.put.long === null){ out.put.long = out.put.short - w; out.source += '+collateral'; }
+    if(opt === 'call' && out.call.short !== null && out.call.long === null){ out.call.long = out.call.short + w; out.source += '+collateral'; }
+  }
+  if(structure === 'ic' && w){
+    if(out.put.short !== null && out.put.long === null){ out.put.long = out.put.short - w; out.source += '+collateral'; }
+    if(out.call.short !== null && out.call.long === null){ out.call.long = out.call.short + w; }
+  }
+  if(out.put.short !== null && out.put.long !== null) out.width.put = Math.abs(out.put.short - out.put.long);
+  if(out.call.short !== null && out.call.long !== null) out.width.call = Math.abs(out.call.long - out.call.short);
+  return out;
+}
+function calcPrimaryStrike(t){
+  var L = calcLegs(t);
+  var d = calcTypeDef(t && t.type);
+  if(d && d.opt === 'call') return L.call.short;
+  return L.put.short !== null ? L.put.short : L.call.short;
+}
+
+// ── P&L ────────────────────────────────────────────────────────────────
+// Yalnizca KAYNAK alanlardan formul. Hesaplanamiyorsa null.
+//   SHORT: openPremium - openCommission - closePremium - closeCommission
+//   LONG : closePremium - closeCommission - openPremium - openCommission
+// Kismi kapanislar varsa kapanis tarafi bunlarin TOPLAMIDIR (tam kapanista
+// son bacak da partialCloses'a yazilir). Negatif komisyon (IBKR iadesi)
+// formulde isaretiyle akar ve P&L'i artirir.
+// Kismen acik pozisyon: gerceklesen kisim, acilis primi/komisyonu kapanan
+// adet oraninda paylastirilarak hesaplanir.
+function calcTradePnlFromSource(t){
+  if(!t) return null;
+  var P = calcTradePremium(t);
+  var hasOpen = (calcNum(t.openPremium) !== null) || (calcNum(t.premium) !== null);
+  if(!hasOpen) return null;
+  var ok = calcNum(t.openCommission) || 0;
+  var lng = calcIsLongTrade(t);
+  var pcs = calcPartialCloses(t);
+  var status = calcTradeStatus(t);
+  var cp, ck, frac = 1;
+
+  if(pcs.length){
+    cp = pcs.reduce(function(s, x){ return s + (calcNum(x.closePremium) || 0); }, 0);
+    ck = pcs.reduce(function(s, x){ return s + (calcNum(x.closeCommission) || 0); }, 0);
+    if(status === 'partially_closed'){
+      var q = calcQty(t);
+      if(!q) return null;
+      frac = Math.min(1, calcClosedQty(t) / q);
+    }
+  } else {
+    if(!calcIsClosedTrade(t)) return null;              // acik, gerceklesen yok
+    var c = calcNum(t.closePremium);
+    if(c === null){
+      if(status === 'expired' || status === 'assigned') c = 0;   // degersiz / atama
+      else return null;                                          // kapanis primi yok
+    }
+    cp = c;
+    ck = calcNum(t.closeCommission) || 0;
+  }
+  var openSide = (P + (lng ? ok : -ok)) * frac;   // short: P-ok, long: P+ok (maliyet)
+  var v = lng ? (cp - ck - openSide) : (openSide - cp - ck);
+  return calcRound2(v);
+}
+
+// Tek kismi kapanis girisinin DOGRU (orantili) P&L'i.
+function calcPartialEntryPnl(t, pc){
+  var q = calcQty(t), pq = calcNum(pc && pc.qty);
+  if(!q || !pq) return null;
+  var P = calcTradePremium(t), ok = calcNum(t.openCommission) || 0;
+  var cp = calcNum(pc.closePremium) || 0, ck = calcNum(pc.closeCommission) || 0;
+  var f = pq / q;
+  return calcRound2(calcIsLongTrade(t) ? (cp - ck - (P + ok) * f) : ((P - ok) * f - cp - ck));
+}
+
+// UYGULAMANIN KULLANDIGI (efektif) gerceklesmis P&L.
+//   * Kapali islem: kayittaki pnl YETKILIDIR (kullanicinin kaydi; asla
+//     sessizce ezilmez). Yoksa kaynak alanlardan hesaplanir.
+//   * Kismen acik: gerceklesen kisim kaynak alanlardan (orantili) hesaplanir.
+//     Eski kayitlarda saklanan pc.pnl acilis primini icermiyordu; tanı
+//     ekrani bunlari isaretler.
+//   * Acik: null.
+function calcTradePnl(t){
+  if(!t) return null;
+  var status = calcTradeStatus(t);
+  if(CLOSED_STATUSES.indexOf(status) >= 0){
+    var stored = calcNum(t.pnl);
+    if(stored !== null) return stored;
+    return calcTradePnlFromSource(t);
+  }
+  if(status === 'partially_closed'){
+    var v = calcTradePnlFromSource(t);
+    if(v !== null) return v;
+    // kaynak alan yoksa saklanan kismi degerlerin toplami
+    return calcRound2(calcPartialCloses(t).reduce(function(s, pc){ return s + (calcNum(pc.pnl) || 0); }, 0));
+  }
+  return null;
+}
+
+// Saklanan pnl ile kaynak formulu karsilastirir. { status, stored, calculated, diff, reason }
+//   status: 'ok' | 'inconsistent' | 'unverifiable' | 'missing' | 'manual' | 'n/a'
+function calcPnlConsistency(t){
+  var res = { status:'n/a', stored:null, calculated:null, diff:null, reason:'' };
+  if(!calcIsClosedTrade(t)) return res;
+  res.stored = calcNum(t.pnl);
+  res.calculated = calcTradePnlFromSource(t);
+  if(res.calculated === null){
+    res.status = res.stored === null ? 'missing' : 'unverifiable';
+    res.reason = res.stored === null ? 'P&L yok ve kaynak alanlardan hesaplanamiyor'
+                                     : 'Kapanis primi kayitli degil — dogrulanamiyor';
+    return res;
+  }
+  if(res.stored === null){ res.status = 'missing'; res.reason = 'Saklanan P&L yok (hesaplanabilir)'; return res; }
+  res.diff = calcRound2(res.stored - res.calculated);
+  if(Math.abs(res.diff) <= CALC_PNL_TOLERANCE){ res.status = 'ok'; return res; }
+  if(t.pnlSource === 'manual'){ res.status = 'manual'; res.reason = 'Kullanici saklanan degeri korudu'; return res; }
+  res.status = 'inconsistent';
+  res.reason = calcExplainPnlDiff(t, res.stored, res.calculated);
+  return res;
+}
+function calcExplainPnlDiff(t, stored, calc){
+  var ok = calcNum(t.openCommission) || 0, ck = calcNum(t.closeCommission) || 0;
+  var pcs = calcPartialCloses(t);
+  if(pcs.length) ck = pcs.reduce(function(s, x){ return s + (calcNum(x.closeCommission) || 0); }, 0);
+  var d = stored - calc;
+  if(Math.abs(stored + calc) <= CALC_PNL_TOLERANCE && Math.abs(calc) > CALC_PNL_TOLERANCE) return 'Isaret ters (long/short yonu)';
+  if(Math.abs(d - (ok + ck)) <= CALC_PNL_TOLERANCE) return 'Saklanan deger komisyonlari icermiyor';
+  if(Math.abs(d + (ok + ck)) <= CALC_PNL_TOLERANCE) return 'Komisyon iki kez dusulmus';
+  var q = calcQty(t);
+  if(q && Math.abs(calc) > 1 && Math.abs(stored * q * 100 - calc) <= Math.max(1, Math.abs(calc) * 0.01)) return 'Saklanan deger kontrat basi';
+  return 'Elle girilmis ya da eski formulle hesaplanmis olabilir';
+}
+
+// ── Teminat ────────────────────────────────────────────────────────────
+// Varsayilan (turden hesaplanan) teminat. Hesaplanamazsa null.
+function calcDefaultCollateral(t){
+  var d = calcTypeDef(t && t.type);
+  var q = calcQty(t);
+  if(!d || !q) return null;
+  if(calcIsLongTrade(t)) return 0;                       // alinmis opsiyon: teminat yok
+  var L = calcLegs(t);
+  if(d.structure === 'vertical'){
+    var w = d.opt === 'put' ? L.width.put : L.width.call;
+    return (w && L.source && L.source.indexOf('collateral') === -1) ? w * 100 * q : null;
+  }
+  if(d.structure === 'ic'){
+    if(L.source && L.source.indexOf('collateral') !== -1) return null;
+    var wm = Math.max(L.width.put || 0, L.width.call || 0);
+    return wm > 0 ? wm * 100 * q : null;
+  }
+  // CSP, CC, PMCC, COLLAR CALL: strike x 100 x adet (uygulama konvansiyonu —
+  // CC/PMCC'de dayanak hisse degerinin vekili)
+  var k = calcPrimaryStrike(t);
+  return (k !== null && k > 0) ? k * 100 * q : null;
+}
+// { value, source:'override'|'stored'|'calculated'|'none', expected, warning }
+// Oncelik: collateralOverride > kayitli teminat (>0) > hesaplanan varsayilan.
+function calcCollateral(t){
+  var res = { value:0, source:'none', expected:false, calculated:null, warning:null };
+  if(!t) return res;
+  res.calculated = calcDefaultCollateral(t);
+  res.expected = !calcIsLongTrade(t);
+  var ov = calcNum(t.collateralOverride);
+  var stored = calcNum(t.teminat);
+  if(ov !== null && ov > 0){ res.value = ov; res.source = 'override'; }
+  else if(stored !== null && stored > 0){ res.value = stored; res.source = 'stored'; }
+  else if(res.calculated !== null && res.calculated > 0){
+    res.value = res.calculated; res.source = 'calculated';
+    res.warning = 'Kayitli teminat 0 — turden hesaplanan deger kullaniliyor';
+  }
+  if(res.expected && !(res.value > 0)) res.warning = 'Teminat eksik — ROC ve kullanim orani hesaplanamiyor';
+  return res;
+}
+
+// ── Maksimum kayip ─────────────────────────────────────────────────────
+// { value, unlimited, basis } — TEMINAT DEGILDIR.
+function calcMaxLoss(t){
+  var res = { value:null, unlimited:false, basis:'' };
+  if(!t) return res;
+  var d = calcTypeDef(t.type);
+  var q = calcQty(t);
+  var P = calcTradePremium(t);
+  var ok = calcNum(t.openCommission) || 0;
+  if(calcIsLongTrade(t)){
+    res.value = calcRound2(P + ok); res.basis = 'odenen prim'; return res;
+  }
+  if(t.naked === true && d && d.opt === 'call'){
+    res.value = Infinity; res.unlimited = true; res.basis = 'naked call — tanimsiz'; return res;
+  }
+  if(!d || !q){ res.basis = 'tur/adet bilinmiyor'; return res; }
+  var L = calcLegs(t);
+  if(d.structure === 'vertical'){
+    var w = d.opt === 'put' ? L.width.put : L.width.call;
+    if(w){ res.value = calcRound2(w * 100 * q - P); res.basis = 'genislik x 100 x adet - kredi'; }
+    else res.basis = 'spread genisligi bilinmiyor';
+    return res;
+  }
+  if(d.structure === 'ic'){
+    var wm = Math.max(L.width.put || 0, L.width.call || 0);
+    if(wm > 0){ res.value = calcRound2(wm * 100 * q - P); res.basis = 'genis kanat x 100 x adet - kredi'; }
+    else res.basis = 'kanat genisligi bilinmiyor';
+    return res;
+  }
+  var k = calcPrimaryStrike(t);
+  if(d.opt === 'put'){
+    if(k !== null){ res.value = calcRound2(k * 100 * q - P); res.basis = 'strike x 100 x adet - prim (hisse 0)'; }
+    return res;
+  }
+  // Covered call / PMCC / collar call: risk dayanak hisse pozisyonudur.
+  // Hisse maliyeti kayitta olmadigindan konvansiyon: teminat (hisse degeri
+  // vekili) - alinan prim.
+  var coll = calcCollateral(t).value;
+  if(coll > 0){ res.value = calcRound2(coll - P); res.basis = 'dayanak hisse degeri (teminat konvansiyonu) - prim'; }
+  else res.basis = 'dayanak degeri bilinmiyor';
+  return res;
+}
+
+// ── Basabas ────────────────────────────────────────────────────────────
+// Vade gunu hisse fiyati cinsinden basabas noktalari (dizi) ya da null.
+function calcBreakeven(t){
+  var d = calcTypeDef(t && t.type);
+  var pps = calcPremiumPerShare(t);
+  if(!d || pps === null) return null;
+  var L = calcLegs(t);
+  var r = function(x){ return x === null ? null : calcRound2(x); };
+  if(d.structure === 'ic'){
+    if(L.put.short === null || L.call.short === null) return null;
+    return [r(L.put.short - pps), r(L.call.short + pps)];
+  }
+  if(d.opt === 'put'){
+    var kp = L.put.short; if(kp === null) return null;
+    return [r(kp - pps)];
+  }
+  var kc = L.call.short; if(kc === null) return null;
+  return [r(kc + pps)];
+}
+
+// ── Sure ───────────────────────────────────────────────────────────────
+function calcHoldingDays(t, asOf){
+  if(!t || !t.opened) return null;
+  var end = t.closed || calcToday(asOf);
+  return calcDaysBetween(t.opened, end);
+}
+function calcDTE(t, asOf){
+  if(!t || !t.expiry) return null;
+  var e = calcParseDate(t.expiry); if(!e) return null;
+  return Math.round((e - calcToday(asOf)) / 86400000);        // negatif olabilir
+}
+
+// ── ROC ────────────────────────────────────────────────────────────────
+// Gerceklesmis P&L / fiilen kullanilan teminat. Acik islemde null.
+// { value, annualized, reason }
+function calcROCInfo(t){
+  var res = { value:null, annualized:null, reason:'' };
+  if(!calcIsClosedTrade(t)){ res.reason = 'Pozisyon kapanmadi'; return res; }
+  var pnl = calcTradePnl(t);
+  if(pnl === null){ res.reason = 'P&L yok'; return res; }
+  var capital = calcIsLongTrade(t) ? calcTradePremium(t) : calcCollateral(t).value;
+  if(!(capital > 0)){ res.reason = 'ROC unavailable — collateral missing'; return res; }
+  res.value = pnl / capital;
+  var hd = calcHoldingDays(t);
+  res.annualized = (hd !== null && hd > 0) ? res.value * 365 / hd : null;
+  return res;
+}
+function calcROC(t){ return calcROCInfo(t).value; }
+function calcAnnualizedROC(t){ return calcROCInfo(t).annualized; }
+// Coklu islem: toplam P&L / toplam kullanilan sermaye (yalnizca kapananlar).
+// ROC'u hesaplanamayan islemler SAYILIR ve raporlanir, sessizce dusmez.
+function calcAggregateROC(trades){
+  var res = { roc:null, pnl:0, capital:0, counted:0, unavailable:0, unavailableIds:[] };
+  (trades || []).forEach(function(t){
+    if(!calcIsClosedTrade(t)) return;
+    var pnl = calcTradePnl(t); if(pnl === null) return;
+    var capital = calcIsLongTrade(t) ? calcTradePremium(t) : calcCollateral(t).value;
+    if(!(capital > 0)){ res.unavailable++; res.unavailableIds.push(t.id); return; }
+    res.pnl += pnl; res.capital += capital; res.counted++;
+  });
+  res.pnl = calcRound2(res.pnl);
+  res.roc = res.capital > 0 ? res.pnl / res.capital : null;
+  return res;
+}
+
+// ── Win istatistikleri ─────────────────────────────────────────────────
+// Bir islem = bir POZISYON (kismi kapanislar ayri islem sayilmaz). Yalnizca
+// kapanmis (closed/assigned/expired) pozisyonlar sayilir. BASABAS kayip
+// degildir; ayri kovadir. Oranlarin paydasi tum kapanmis pozisyonlardir.
+function calcWinStats(trades){
+  var list = [];
+  (trades || []).forEach(function(t){
+    if(!calcIsClosedTrade(t)) return;
+    var p = calcTradePnl(t);
+    if(p === null) return;
+    list.push(p);
+  });
+  var wins = list.filter(function(p){ return p > CALC_EPSILON; });
+  var losses = list.filter(function(p){ return p < -CALC_EPSILON; });
+  var n = list.length;
+  var sum = function(a){ return a.reduce(function(s, x){ return s + x; }, 0); };
+  var gp = sum(wins), gl = sum(losses);
+  var total = sum(list);
+  return {
+    closedTrades: n,
+    wins: wins.length,
+    losses: losses.length,
+    breakevens: n - wins.length - losses.length,
+    winRate: n ? wins.length / n : 0,
+    lossRate: n ? losses.length / n : 0,
+    averageWinner: wins.length ? gp / wins.length : 0,
+    averageLoser: losses.length ? gl / losses.length : 0,          // negatif
+    grossProfit: gp,
+    grossLoss: gl,
+    profitFactor: gl < 0 ? gp / Math.abs(gl) : null,               // kayip yoksa tanimsiz
+    expectancy: n ? total / n : 0,
+    totalPnl: total
+  };
+}
+// Gerceklesmis P&L toplami: kapanmis pozisyonlar + kismen acik pozisyonlarin
+// gerceklesen kismi.
+function calcRealizedPnl(trades){
+  return calcRound2((trades || []).reduce(function(s, t){
+    var st = calcTradeStatus(t);
+    if(CLOSED_STATUSES.indexOf(st) < 0 && st !== 'partially_closed') return s;
+    var p = calcTradePnl(t);
+    return s + (p || 0);
+  }, 0));
+}
+
+// ── Greeks ─────────────────────────────────────────────────────────────
+// Delta elle girilir (mutlak, 22 = 0,22). Pozisyon deltasi hisse esdegeri:
+//   short put +, short call -, long call +, long put -   (x adet x 100 / 100)
+// IC gibi karma yapilarin tek delta degeri netlestirilemez; haric tutulur.
+// Gamma/vega icin veri yok: null doner (uydurma deger uretilmez).
+function calcPositionDelta(t){
+  var d = calcNum(t && t.delta), td = calcTypeDef(t && t.type);
+  var q = calcQty(t);
+  if(d === null || d === 0 || !td || !q || td.opt === 'mixed') return null;
+  var optSign = td.opt === 'call' ? 1 : -1;
+  var dirSign = calcIsLongTrade(t) ? 1 : -1;
+  return optSign * dirSign * Math.abs(d) * q;
+}
+function calcPortfolioGreeks(trades, asOf){
+  var res = { netDelta:0, positions:0, withDelta:0, missingDelta:0, excludedMixed:0,
+              estThetaPerDay:0, gamma:null, vega:null, source:'manual-delta' };
+  (trades || []).forEach(function(t){
+    var st = calcTradeStatus(t);
+    if(st !== 'open' && st !== 'partially_closed') return;
+    res.positions++;
+    var td = calcTypeDef(t.type);
+    if(td && td.opt === 'mixed') res.excludedMixed++;
+    var pd = calcPositionDelta(t);
+    if(pd === null){ if(!(td && td.opt === 'mixed')) res.missingDelta++; }
+    else { res.netDelta += pd; res.withDelta++; }
+    // Tahmini gunluk theta: kalan prim / kalan gun (kaba, dogrusal)
+    var dte = calcDTE(t, asOf);
+    if(dte !== null && dte > 0) res.estThetaPerDay += calcTradeCashflow(t) / dte;
+  });
+  res.netDelta = calcRound2(res.netDelta);
+  res.estThetaPerDay = calcRound2(res.estThetaPerDay);
+  return res;
+}
+
+// ── Bilanco maruziyeti ─────────────────────────────────────────────────
+function calcEarningsExposure(t, asOf){
+  var res = { earningsDate: t && t.earningsDate || null, daysToEarnings:null, earningsExposure:false };
+  if(!t || !t.earningsDate) return res;
+  var ed = calcParseDate(t.earningsDate); if(!ed) return res;
+  var today = calcToday(asOf);
+  res.daysToEarnings = Math.round((ed - today) / 86400000);
+  var st = calcTradeStatus(t);
+  var open = (st === 'open' || st === 'partially_closed');
+  var ex = calcParseDate(t.expiry);
+  res.earningsExposure = open && !calcIsLongTrade(t) && res.daysToEarnings >= 0 && !!ex && ed <= ex;
+  return res;
+}
+
+// ── Maruziyet / portfoy riski ──────────────────────────────────────────
+function calcTickerRoot(t){ return String(t && t.ticker || '').trim().split(/\s+/)[0].toUpperCase(); }
+// Acik pozisyonlarin dayanak bazinda toplami.
+function calcExposure(trades){
+  var map = {};
+  (trades || []).forEach(function(t){
+    var st = calcTradeStatus(t);
+    if(st !== 'open' && st !== 'partially_closed') return;
+    var tk = calcTickerRoot(t) || '?';
+    var e = map[tk] || (map[tk] = { ticker:tk, positions:0, collateral:0, maxLoss:0, unlimited:false, premium:0 });
+    e.positions++;
+    e.collateral += calcCollateral(t).value;
+    var ml = calcMaxLoss(t);
+    if(ml.unlimited) e.unlimited = true; else if(ml.value !== null) e.maxLoss += ml.value;
+    e.premium += calcTradeCashflow(t);
+  });
+  return Object.keys(map).map(function(k){
+    var e = map[k]; e.collateral = calcRound2(e.collateral); e.maxLoss = calcRound2(e.maxLoss); e.premium = calcRound2(e.premium); return e;
+  }).sort(function(a, b){ return b.collateral - a.collateral; });
+}
+// opts: { portfolioSize, asOf, sectorOf(tickerRoot) -> string }
+function calcPortfolioRisk(trades, opts){
+  opts = opts || {};
+  var port = calcNum(opts.portfolioSize) || 0;
+  var sectorOf = typeof opts.sectorOf === 'function' ? opts.sectorOf : function(){ return 'Diğer'; };
+  var open = (trades || []).filter(function(t){ var s = calcTradeStatus(t); return s === 'open' || s === 'partially_closed'; });
+  var exposure = calcExposure(open);
+  var totalColl = 0, totalMaxLoss = 0, unlimited = 0, maxLossUnknown = 0, zeroColl = 0;
+  var dte = { expired:0, d0_7:0, d8_21:0, d22_45:0, d46plus:0, unknown:0 };
+  var bySector = {}, earnings = [];
+  open.forEach(function(t){
+    var c = calcCollateral(t);
+    totalColl += c.value;
+    if(c.expected && !(c.value > 0)) zeroColl++;
+    var ml = calcMaxLoss(t);
+    if(ml.unlimited) unlimited++; else if(ml.value === null) maxLossUnknown++; else totalMaxLoss += ml.value;
+    var dd = calcDTE(t, opts.asOf);
+    if(dd === null) dte.unknown++; else if(dd < 0) dte.expired++; else if(dd <= 7) dte.d0_7++;
+    else if(dd <= 21) dte.d8_21++; else if(dd <= 45) dte.d22_45++; else dte.d46plus++;
+    var sec = sectorOf(calcTickerRoot(t)) || 'Diğer';
+    bySector[sec] = (bySector[sec] || 0) + c.value;
+    var ee = calcEarningsExposure(t, opts.asOf);
+    if(ee.earningsExposure) earnings.push({ id:t.id, ticker:t.ticker, earningsDate:ee.earningsDate, daysToEarnings:ee.daysToEarnings, expiry:t.expiry });
+  });
+  var share = function(v){ return totalColl > 0 ? v / totalColl : 0; };
+  var byTicker = exposure.map(function(e){ return { ticker:e.ticker, collateral:e.collateral, share:share(e.collateral), maxLoss:e.maxLoss }; });
+  var sectors = Object.keys(bySector).map(function(s){ return { sector:s, collateral:calcRound2(bySector[s]), share:share(bySector[s]) }; })
+                  .sort(function(a, b){ return b.collateral - a.collateral; });
+  var top3 = byTicker.slice(0, 3);
+  return {
+    openPositions: open.length,
+    totalCollateral: calcRound2(totalColl),
+    collateralUtilization: port > 0 ? totalColl / port : null,
+    maxLoss: { total: calcRound2(totalMaxLoss), unlimitedPositions: unlimited, unknownPositions: maxLossUnknown },
+    zeroCollateralPositions: zeroColl,
+    concentrationByTicker: byTicker,
+    concentrationBySector: sectors,
+    top3: top3,
+    top3Share: top3.reduce(function(s, x){ return s + x.share; }, 0),
+    dteConcentration: dte,
+    earningsExposure: earnings
+  };
+}
+
+// ── Roll zinciri ───────────────────────────────────────────────────────
+// Verilen islemin bagli oldugu zincirin tamami (eskiden yeniye).
+// allTrades: aranacak kayitlar (saf — global okumaz).
+function getRollChainTrades(trade, allTrades){
+  if(!trade) return [];
+  var all = allTrades || [];
+  var byId = {}; all.forEach(function(t){ byId[String(t.id)] = t; });
+  if(trade.rollChainId){
+    var same = all.filter(function(t){ return t.rollChainId === trade.rollChainId; });
+    if(same.length) return same.sort(function(a, b){ return String(a.opened || '').localeCompare(String(b.opened || '')); });
+  }
+  // rollChainId yoksa rolledFrom baglarini iki yone izle
+  var root = trade, seen = {};
+  while(root && root.rolledFrom && root.rollKind !== 'assignment' && byId[String(root.rolledFrom)] && !seen[String(root.id)]){
+    seen[String(root.id)] = true; root = byId[String(root.rolledFrom)];
+  }
+  var chain = [root], cur = root, guard = 0;
+  while(cur && guard++ < 500){
+    var next = all.filter(function(t){ return String(t.rolledFrom) === String(cur.id) && t.rollKind !== 'assignment'; })[0];
+    if(!next || chain.indexOf(next) >= 0) break;
+    chain.push(next); cur = next;
+  }
+  return chain;
+}
+
+// ── Atama (assignment) ─────────────────────────────────────────────────
+// CSP atamasindan dogan hisse pozisyonu kaydi (saf: yeni nesne dondurur).
+// Maliyet bazi hisse basi: strike - prim/hisse.
+function calcAssignmentStockPosition(cspTrade, assignDate, newId){
+  var q = calcQty(cspTrade) || 1;
+  var k = calcPrimaryStrike(cspTrade);
+  var pps = calcPremiumPerShare(cspTrade) || 0;
+  return {
+    id: newId,
+    ticker: calcTickerRoot(cspTrade),
+    shares: q * 100,
+    acquisitionPrice: k !== null ? calcRound2(k - pps) : null,
+    strike: k,
+    premiumPerShare: calcRound2(pps),
+    acquisitionDate: assignDate,
+    sourceTradeId: String(cspTrade.id),
+    status: 'open',
+    exitTradeIds: []
+  };
+}
+
+// ── ID ─────────────────────────────────────────────────────────────────
+// Carpismaya dayanikli yeni kimlik. Eski kimlikler gecerli kalir.
+function newRecordId(tag){
+  var rnd;
+  try { rnd = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null; } catch(e){ rnd = null; }
+  if(!rnd) rnd = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+  return Date.now().toString(36) + '_' + (tag ? tag + '_' : '') + rnd;
+}
+</script>
+
+<script>
+// Ticker -> sektor tablosu (Risk ekrani ve calcPortfolioRisk ortak kullanir)
+var OF_SECTOR_MAP = {
+      // Tech
+      AAPL:'Teknoloji',MSFT:'Teknoloji',NVDA:'Teknoloji',TSLA:'Teknoloji',META:'Teknoloji',GOOGL:'Teknoloji',GOOG:'Teknoloji',AMZN:'Teknoloji',AMD:'Teknoloji',INTC:'Teknoloji',CRM:'Teknoloji',ORCL:'Teknoloji',PLTR:'Teknoloji',AVGO:'Teknoloji',QCOM:'Teknoloji',MU:'Teknoloji',AMAT:'Teknoloji',LRCX:'Teknoloji',KLAC:'Teknoloji',ARM:'Teknoloji',SMCI:'Teknoloji',SNOW:'Teknoloji',NET:'Teknoloji',PANW:'Teknoloji',CRWD:'Teknoloji',ZS:'Teknoloji',DDOG:'Teknoloji',OKTA:'Teknoloji',HUBS:'Teknoloji',NOW:'Teknoloji',ADBE:'Teknoloji',INTU:'Teknoloji',TEAM:'Teknoloji',TTD:'Teknoloji',COIN:'Teknoloji',MSTR:'Teknoloji',
+      // Finans
+      JPM:'Finans',BAC:'Finans',GS:'Finans',MS:'Finans',WFC:'Finans',C:'Finans',V:'Finans',MA:'Finans',AXP:'Finans',BRK:'Finans',BLK:'Finans',SCHW:'Finans',IBKR:'Finans',
+      // Sağlık
+      JNJ:'Sağlık',PFE:'Sağlık',MRNA:'Sağlık',UNH:'Sağlık',ABBV:'Sağlık',LLY:'Sağlık',BMY:'Sağlık',AMGN:'Sağlık',GILD:'Sağlık',CVS:'Sağlık',
+      // Enerji
+      XOM:'Enerji',CVX:'Enerji',COP:'Enerji',SLB:'Enerji',OXY:'Enerji',BP:'Enerji',
+      // Tüketim
+      AMZN:'Tüketim',HD:'Tüketim',MCD:'Tüketim',NKE:'Tüketim',SBUX:'Tüketim',TGT:'Tüketim',WMT:'Tüketim',COST:'Tüketim',
+      // Telecom
+      T:'Telecom',VZ:'Telecom',TMUS:'Telecom',
+      // ETF/Endeks
+      SPY:'ETF/Endeks',QQQ:'ETF/Endeks',IWM:'ETF/Endeks',DIA:'ETF/Endeks',VXX:'ETF/Endeks',TLT:'ETF/Endeks',GLD:'ETF/Endeks',SLV:'ETF/Endeks',USO:'ETF/Endeks',XLE:'ETF/Endeks',XLF:'ETF/Endeks',XLK:'ETF/Endeks',SOFI:'Finans',
+    };;
+function ofSectorOf(tickerRoot){ return OF_SECTOR_MAP[String(tickerRoot||'').toUpperCase()] || 'Diğer'; }
+
+// Yapilandirilmis portfoy riski (gorsellestirme YOK — veri dondurur).
+function getPortfolioRiskSnapshot(){
+  return calcPortfolioRisk(getAllTrades(), { portfolioSize: PORT_SIZE, sectorOf: ofSectorOf });
+}
+
 // ─── Delete confirm helper ───────────────────────────────
 function showStatInfo(key){
   var INFO = {
@@ -2052,7 +2747,7 @@ function calcYufeIndexing(t){
 function applyYufeMatrah(r, t, yIdx){
   if(!yIdx || !yIdx.eligible) return r.matrah_try;
   var ratio = yIdx.ratio;
-  if(isLong(t.type)){
+  if(calcIsLongTrade(t)){
     // Long: income = close; cost = open (indexed)
     var incTRY = (r.closePrem - r.komKapanis) * r.kapanis_kur;
     var costTRY = (r.openPrem + r.komAcilis) * r.acilis_kur;
@@ -2175,8 +2870,595 @@ try {
 }
 try { var _l = localStorage.getItem(LEAPS_LS); leapsData = _l ? JSON.parse(_l) : []; } catch(e) { leapsData = []; }
 
-function saveData() { try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); if(typeof buildMonthPills==='function'){ buildMonthPills(); buildYearPills(); } }
+function saveData() { try { normalizeTradeStatuses(tradesData); } catch(e){} try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){} syncFirestoreIfReady(); if(typeof buildMonthPills==='function'){ buildMonthPills(); buildYearPills(); } }
 function saveLeaps() { try { localStorage.setItem(LEAPS_LS, JSON.stringify(leapsData)); } catch(e){} syncFirestoreIfReady(); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// VERI SURUMU, MIGRATION ve VERI BUTUNLUGU
+// ═══════════════════════════════════════════════════════════════════════
+// Surumler (profil basina `optflow_data_version` anahtari):
+//   1 = optflow-v45 ve oncesi (eski sema; anahtar yoksa varsayilan)
+//   2 = prim isareti normallestirildi, status + calculationVersion eklendi
+//   3 = iliski alanlari: rollChainId, planlanmis islem id/status
+// Migration'lar KAYIT BAZINDA idempotenttir: bir kaydin donusum kosulu
+// donusumden sonra artik saglanmaz, ikinci calistirma hicbir sey degistirmez.
+// Surum numarasi yalnizca bilgi amaclidir; buluttan eski veri geri
+// yuklenirse migration'lar yine calisir ve yine yedek alinir.
+// KURAL: kullanicinin P&L'i ASLA otomatik yazilmaz. Degistirilen her deger
+// kaydin `legacy` alaninda orijinal haliyle saklanir.
+var DATA_VERSION = 3;
+var DATA_VERSION_KEY = 'optflow_data_version';
+var MIGRATION_LOG_KEY = 'optflow_migration_log_v1';
+var PREMIG_BACKUP_PREFIX = 'optflow_premigration_backup_';
+var STOCK_POS_BASE = 'stock_positions_v1';
+
+var stockPositions = [];
+function loadStockPositions(){
+  try { var _sp = localStorage.getItem(profileKey(STOCK_POS_BASE)); stockPositions = _sp ? JSON.parse(_sp) : []; }
+  catch(e){ stockPositions = []; }
+  if(!Array.isArray(stockPositions)) stockPositions = [];
+}
+function saveStockPositions(){
+  try { localStorage.setItem(profileKey(STOCK_POS_BASE), JSON.stringify(stockPositions)); } catch(e){}
+  syncFirestoreIfReady();
+}
+
+function _forEachTradeRecord(td, fn){
+  Object.keys(td || {}).forEach(function(m){
+    if(!Array.isArray(td[m])) return;
+    td[m].forEach(function(t){ fn(t, m); });
+  });
+}
+
+// v1 -> v2 (yerinde, sayac dondurur). td: tradesData biciminde nesne.
+function migrateV1ToV2(td){
+  var r = { premiumNormalized:0, directionSet:0, statusAdded:0, calcVersionAdded:0, touchedIds:[] };
+  _forEachTradeRecord(td, function(t){
+    var touched = false;
+    var neg = ['premium', 'openPremium', 'price'].filter(function(f){ var v = calcNum(t[f]); return v !== null && v < 0; });
+    if(neg.length){
+      // Yon bilgisi yalnizca isarette ise (tur tanimi 'short' ama prim negatif:
+      // eski COLLAR PUT / HEDGE kayitlari) kayda ACIK yon yazilir.
+      if(!t.direction){
+        var d = calcTypeDef(t.type);
+        if(!d || d.dir !== 'long'){ t.direction = 'long'; r.directionSet++; }
+      }
+      t.legacy = t.legacy || {};
+      neg.forEach(function(f){
+        if(t.legacy[f] === undefined) t.legacy[f] = t[f];
+        t[f] = Math.abs(calcNum(t[f]));
+      });
+      t.legacy.normalizedAt = t.legacy.normalizedAt || new Date().toISOString().slice(0, 10);
+      r.premiumNormalized++; touched = true;
+    }
+    if(!t.status){ t.status = calcTradeStatus(t); r.statusAdded++; touched = true; }
+    if(t.calculationVersion === undefined){ t.calculationVersion = 1; r.calcVersionAdded++; touched = true; }
+    if(touched) r.touchedIds.push(String(t.id));
+  });
+  return r;
+}
+
+// v2 -> v3 (yerinde). Iliski alanlari; P&L'e dokunmaz.
+function migrateV2ToV3(td, planned){
+  var r = { rollChainAssigned:0, assignmentLinksMarked:0, plansUpdated:0, touchedIds:[] };
+  var all = [];
+  _forEachTradeRecord(td, function(t){ all.push(t); });
+  // Atama sonrasi acilan CC'ler eskiden rolledFrom ile CSP'ye baglaniyordu;
+  // bu bir roll degil — iliski turu isaretlenir, zincir hesabindan cikar.
+  all.forEach(function(t){
+    if(t.rolledFrom && !t.rollKind && /^Wheel: assigned from CSP/.test(String(t.note || ''))){
+      t.rollKind = 'assignment'; t.assignedFromTradeId = String(t.rolledFrom);
+      r.assignmentLinksMarked++; r.touchedIds.push(String(t.id));
+    }
+  });
+  all.forEach(function(t){
+    if(t.rollChainId) return;
+    var isRollChild = !!t.rolledFrom && t.rollKind !== 'assignment';
+    var hasRollChild = all.some(function(x){ return String(x.rolledFrom) === String(t.id) && x.rollKind !== 'assignment'; });
+    if(!isRollChild && !hasRollChild) return;
+    var chain = getRollChainTrades(t, all);
+    if(chain.length < 2) return;
+    var cid = chain.filter(function(x){ return x.rollChainId; }).map(function(x){ return x.rollChainId; })[0] || ('rc_' + String(chain[0].id));
+    chain.forEach(function(x){
+      if(!x.rollChainId){ x.rollChainId = cid; r.rollChainAssigned++; r.touchedIds.push(String(x.id)); }
+    });
+  });
+  (planned || []).forEach(function(p){
+    var ch = false;
+    if(!p.id){ p.id = newRecordId('plan'); ch = true; }
+    if(!p.status){ p.status = p.linkedTradeId ? 'opened' : 'planned'; ch = true; }
+    if(ch) r.plansUpdated++;
+  });
+  return r;
+}
+
+function _readDataVersion(){
+  try { var v = parseInt(localStorage.getItem(profileKey(DATA_VERSION_KEY)), 10); return isFinite(v) && v > 0 ? v : 1; }
+  catch(e){ return 1; }
+}
+function getMigrationLog(){
+  try { var l = JSON.parse(localStorage.getItem(profileKey(MIGRATION_LOG_KEY)) || '[]'); return Array.isArray(l) ? l : []; }
+  catch(e){ return []; }
+}
+
+// Aktif profilin verisini guncel semaya tasir. Yuklemeden ve profil
+// degisiminden sonra cagrilir. Degisecek kayit varsa ONCE yedek alinir.
+function runDataMigrations(reason){
+  var res = { from:_readDataVersion(), to:DATA_VERSION, changed:0, backupKey:null, v2:null, v3:null, reason:reason || '' };
+  if(typeof tradesData !== 'object' || !tradesData) return res;
+  // 1) Kuru calistirma: kopya uzerinde kac kayit degisecek?
+  var copyT = JSON.parse(JSON.stringify(tradesData));
+  var copyP = JSON.parse(JSON.stringify(plannedTrades || []));
+  var d2 = migrateV1ToV2(copyT), d3 = migrateV2ToV3(copyT, copyP);
+  var ids = {}; d2.touchedIds.concat(d3.touchedIds).forEach(function(i){ ids[i] = 1; });
+  var changed = Object.keys(ids).length + d3.plansUpdated;
+  if(changed > 0){
+    // 2) Yedek — orijinal ham localStorage degerleri (bellek degil, disk)
+    var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    var key = profileKey(PREMIG_BACKUP_PREFIX + 'v' + res.from + '_' + stamp);
+    var backup = { createdAt:new Date().toISOString(), profile:ACTIVE_PROFILE, fromVersion:res.from, toVersion:DATA_VERSION,
+                   trades: localStorage.getItem(LS) || JSON.stringify(tradesData),
+                   planned: localStorage.getItem(PLAN_LS) || JSON.stringify(plannedTrades || []) };
+    try { localStorage.setItem(key, JSON.stringify(backup)); res.backupKey = key; }
+    catch(e){
+      // Yedek yazilamiyorsa migration YAPILMAZ (veri kaybi riski alinmaz)
+      console.warn('[migration] yedek yazilamadi, migration ertelendi', e && e.message);
+      res.error = 'backup-failed';
+      return res;
+    }
+    // 3) Asil donusum (bellekteki gercek veride)
+    res.v2 = migrateV1ToV2(tradesData);
+    res.v3 = migrateV2ToV3(tradesData, plannedTrades);
+    res.changed = changed;
+    try { localStorage.setItem(LS, JSON.stringify(tradesData)); } catch(e){}
+    try { localStorage.setItem(PLAN_LS, JSON.stringify(plannedTrades)); } catch(e){}
+    var log = getMigrationLog();
+    log.push({ at:new Date().toISOString(), from:res.from, to:DATA_VERSION, reason:res.reason, records:changed,
+               premiumNormalized:res.v2.premiumNormalized, directionSet:res.v2.directionSet,
+               statusAdded:res.v2.statusAdded, calcVersionAdded:res.v2.calcVersionAdded,
+               rollChainAssigned:res.v3.rollChainAssigned, assignmentLinksMarked:res.v3.assignmentLinksMarked,
+               plansUpdated:res.v3.plansUpdated, backupKey:key });
+    try { localStorage.setItem(profileKey(MIGRATION_LOG_KEY), JSON.stringify(log.slice(-20))); } catch(e){}
+    window._lastMigrationResult = res;
+    setTimeout(function(){ _migrationToast(res); }, 1200);
+  }
+  try { localStorage.setItem(profileKey(DATA_VERSION_KEY), String(DATA_VERSION)); } catch(e){}
+  return res;
+}
+function _migrationToast(res){
+  try {
+    if(!document.body) return;
+    var el = document.createElement('div');
+    el.textContent = '🛟 Veri şeması güncellendi: ' + res.changed + ' kayıt (önce yedek alındı). Ayrıntı: Debug › Veri Bütünlüğü';
+    el.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);max-width:92vw;background:var(--card,#1e293b);color:var(--text,#fff);border:1px solid var(--border,#334155);padding:10px 16px;border-radius:12px;font-size:12px;font-weight:600;z-index:99999;box-shadow:0 6px 24px rgba(0,0,0,.25);';
+    document.body.appendChild(el);
+    setTimeout(function(){ el.remove(); }, 6000);
+  } catch(e){}
+}
+
+// status alanini alanlarla tutarli tutar (her kayittan once). Yalnizca
+// turetilmis alani gunceller; baska hicbir degere dokunmaz.
+function normalizeTradeStatuses(td){
+  var n = 0;
+  _forEachTradeRecord(td, function(t){
+    var st = calcTradeStatus(t);
+    if(t.status !== st){ t.status = st; n++; }
+  });
+  return n;
+}
+
+// ── Veri butunlugu denetimi ────────────────────────────────────────────
+// SAF: yalnizca verilen veriyle calisir. data = { trades:[...], planned:[...],
+// leaps:[...], stockPositions:[...] }, opts = { asOf }.
+// Donus: { issues:[{severity, code, id, ticker, message, detail}], counts, pnl:[...] }
+var INTEGRITY_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+function runDataIntegrityCheckOn(data, opts){
+  opts = opts || {};
+  var trades = data.trades || [], planned = data.planned || [];
+  var issues = [], pnlRows = [], partialRows = [];
+  var add = function(sev, code, t, msg, detail){
+    issues.push({ severity:sev, code:code, id:t ? String(t.id) : null, ticker:t ? (t.ticker || '') : '', message:msg, detail:detail || null });
+  };
+  var isDate = function(s){ return !!calcParseDate(s); };
+
+  // Kimlik tekrarlari
+  var seen = {};
+  trades.forEach(function(t){
+    var k = String(t.id);
+    if(t.id === undefined || t.id === null || t.id === ''){ add('CRITICAL', 'missing-id', t, 'Kimlik (id) yok'); return; }
+    (seen[k] = seen[k] || []).push(t);
+  });
+  Object.keys(seen).forEach(function(k){
+    if(seen[k].length > 1) add('CRITICAL', 'duplicate-id', seen[k][0], 'Ayni kimlik ' + seen[k].length + ' kayitta kullaniliyor', { months: seen[k].map(function(x){ return x.month; }) });
+  });
+  var byId = {}; trades.forEach(function(t){ byId[String(t.id)] = t; });
+  var planIds = {}; planned.forEach(function(p){ if(p.id) planIds[String(p.id)] = p; });
+
+  trades.forEach(function(t){
+    var st = calcTradeStatus(t);
+    var isOpen = (st === 'open' || st === 'partially_closed');
+    var d = calcTypeDef(t.type);
+    if(!String(t.ticker || '').trim()) add('HIGH', 'missing-ticker', t, 'Ticker yok');
+    if(!String(t.type || '').trim()) add('HIGH', 'missing-type', t, 'Islem turu yok');
+    else if(!d) add('MEDIUM', 'unknown-type', t, 'Bilinmeyen islem turu: ' + t.type);
+    var q = calcNum(t.q);
+    if(q === null || q <= 0 || Math.floor(q) !== q) add('HIGH', 'invalid-quantity', t, 'Adet eksik ya da gecersiz: ' + t.q);
+    if(t.opened && !isDate(t.opened)) add('HIGH', 'invalid-date', t, 'Gecersiz acilis tarihi: ' + t.opened);
+    if(!t.opened) add('MEDIUM', 'missing-opened', t, 'Acilis tarihi yok');
+    if(t.closed && !isDate(t.closed)) add('HIGH', 'invalid-date', t, 'Gecersiz kapanis tarihi: ' + t.closed);
+    if(t.expiry && !isDate(t.expiry)) add('HIGH', 'invalid-date', t, 'Gecersiz vade tarihi: ' + t.expiry);
+    if(!t.expiry && t.type !== 'LEAPS') add(isOpen ? 'MEDIUM' : 'LOW', 'missing-expiry', t, 'Vade tarihi yok');
+    if(isDate(t.opened) && isDate(t.closed) && calcDaysBetween(t.opened, t.closed) < 0) add('HIGH', 'closed-before-opened', t, 'Kapanis tarihi acilistan once');
+    if(isOpen){
+      var dte = calcDTE(t, opts.asOf);
+      if(dte !== null && dte < 0) add('MEDIUM', 'negative-dte', t, 'Vadesi ' + (-dte) + ' gun once gecti ama pozisyon acik gorunuyor');
+    }
+    // Strike
+    if(d && t.type !== 'LEAPS'){
+      var L = calcLegs(t);
+      var shortK = d.opt === 'call' ? L.call.short : L.put.short;
+      if(d.structure === 'ic' && (L.put.short === null || L.call.short === null)) add('MEDIUM', 'invalid-strike', t, 'IC icin put/call strike okunamadi: ' + t.strike);
+      else if(d.structure !== 'ic' && (shortK === null || !(shortK > 0))) add('MEDIUM', 'invalid-strike', t, 'Strike okunamadi: ' + t.strike);
+      if(d.structure === 'vertical' && L.source === 'strikes'){
+        if(d.opt === 'put' && L.put.long !== null && L.put.long >= L.put.short) add('MEDIUM', 'invalid-strike', t, 'Put spread long bacak short bacaktan yuksek olmamali');
+        if(d.opt === 'call' && L.call.long !== null && L.call.long <= L.call.short) add('MEDIUM', 'invalid-strike', t, 'Call spread long bacak short bacaktan dusuk olmamali');
+      }
+    }
+    // Prim tutarliligi
+    var op = calcNum(t.openPremium), pr = calcNum(t.premium);
+    if(op !== null && pr !== null && op !== 0 && pr !== 0 && Math.abs(Math.abs(op) - Math.abs(pr)) > CALC_PNL_TOLERANCE){
+      add('MEDIUM', 'inconsistent-premium', t, 'premium (' + pr + ') ile openPremium (' + op + ') farkli', { premium:pr, openPremium:op });
+    }
+    if(op === null && pr === null && t.type !== 'LEAPS') add('HIGH', 'missing-premium', t, 'Prim yok');
+    [op, pr].forEach(function(v){ if(v !== null && v < 0 && !t.legacy) add('LOW', 'negative-premium', t, 'Eski isaret konvansiyonu: negatif prim (' + v + ')'); });
+    // Teminat
+    var c = calcCollateral(t);
+    if(c.expected && !(c.value > 0)) add('MEDIUM', 'zero-collateral', t, 'Teminat 0 ve turden hesaplanamiyor — ROC hesaplanamaz');
+    else if(c.source === 'calculated') add('LOW', 'zero-collateral-defaulted', t, 'Kayitli teminat 0 — varsayilan kullaniliyor (' + calcRound2(c.value) + ')', { calculated:c.value });
+    // P&L
+    var pc = calcPnlConsistency(t);
+    if(pc.status === 'inconsistent'){
+      add('HIGH', 'inconsistent-pnl', t, 'Saklanan P&L hesaplanandan farkli (' + pc.diff + ')', pc);
+      pnlRows.push({ id:String(t.id), ticker:t.ticker, type:t.type, opened:t.opened, stored:pc.stored, calculated:pc.calculated, diff:pc.diff, reason:pc.reason });
+    } else if(pc.status === 'missing' && pc.calculated === null){
+      add('HIGH', 'missing-pnl', t, 'Kapali islemin P&L degeri yok ve hesaplanamiyor');
+    } else if(pc.status === 'missing'){
+      add('MEDIUM', 'missing-pnl', t, 'Kapali islemin saklanan P&L degeri yok (hesaplanan: ' + pc.calculated + ')');
+      pnlRows.push({ id:String(t.id), ticker:t.ticker, type:t.type, opened:t.opened, stored:null, calculated:pc.calculated, diff:null, reason:pc.reason });
+    }
+    // Kismi kapanislar
+    var pcs = calcPartialCloses(t);
+    if(pcs.length){
+      var cq = calcClosedQty(t);
+      if(q && cq > q) add('HIGH', 'invalid-partial-close', t, 'Kapatilan adet (' + cq + ') pozisyon adedinden (' + q + ') fazla');
+      pcs.forEach(function(e, i){
+        if(!(calcNum(e.qty) > 0)) add('HIGH', 'invalid-partial-close', t, (i + 1) + '. kismi kapanista adet gecersiz');
+        if(!isDate(e.date)) add('HIGH', 'invalid-partial-close', t, (i + 1) + '. kismi kapanista tarih gecersiz: ' + e.date);
+        else if(isDate(t.opened) && calcDaysBetween(t.opened, e.date) < 0) add('HIGH', 'invalid-partial-close', t, (i + 1) + '. kismi kapanis acilistan once');
+        var ex = calcPartialEntryPnl(t, e), sv = calcNum(e.pnl);
+        if(ex !== null && sv !== null && Math.abs(ex - sv) > CALC_PNL_TOLERANCE && !e.pnlReviewed){
+          partialRows.push({ id:String(t.id), ticker:t.ticker, index:i, stored:sv, calculated:ex, diff:calcRound2(sv - ex) });
+        }
+      });
+    }
+    // Iliskiler
+    if(t.rolledFrom && !byId[String(t.rolledFrom)]) add('LOW', 'orphaned-roll', t, 'rolledFrom kaydi bulunamadi: ' + t.rolledFrom);
+    if(t.plannedId && !planIds[String(t.plannedId)]) add('LOW', 'orphaned-plan-link', t, 'Bagli plan kaydi bulunamadi: ' + t.plannedId);
+  });
+  if(partialRows.length){
+    var byT = {}; partialRows.forEach(function(r){ (byT[r.id] = byT[r.id] || []).push(r); });
+    Object.keys(byT).forEach(function(id){
+      add('MEDIUM', 'inconsistent-partial-pnl', byId[id], byT[id].length + ' kismi kapanisin saklanan P&L degeri acilis primini icermiyor', byT[id]);
+    });
+  }
+  planned.forEach(function(p){
+    if(p.linkedTradeId && !byId[String(p.linkedTradeId)]) add('LOW', 'orphaned-plan', { id:p.id, ticker:p.ticker }, 'Plan acilmis gorunuyor ama bagli islem yok: ' + p.linkedTradeId);
+  });
+  (data.stockPositions || []).forEach(function(sp){
+    if(sp.sourceTradeId && !byId[String(sp.sourceTradeId)]) add('LOW', 'orphaned-stock-position', { id:sp.id, ticker:sp.ticker }, 'Hisse pozisyonunun kaynak islemi bulunamadi');
+  });
+
+  var counts = { CRITICAL:0, HIGH:0, MEDIUM:0, LOW:0, total:issues.length };
+  issues.forEach(function(i){ counts[i.severity]++; });
+  var byCode = {}; issues.forEach(function(i){ byCode[i.code] = (byCode[i.code] || 0) + 1; });
+  issues.sort(function(a, b){ return INTEGRITY_SEVERITIES.indexOf(a.severity) - INTEGRITY_SEVERITIES.indexOf(b.severity); });
+  return { issues:issues, counts:counts, byCode:byCode, pnl:pnlRows, partial:partialRows, checkedTrades:trades.length, checkedAt:new Date().toISOString() };
+}
+// Aktif profil icin (global veriyi okur, DEGISTIRMEZ)
+function runDataIntegrityCheck(){
+  var trades = [];
+  _forEachTradeRecord(tradesData, function(t, m){ trades.push(Object.assign({}, t, { month:m })); });
+  return runDataIntegrityCheckOn({ trades:trades, planned:plannedTrades || [], stockPositions:stockPositions || [] });
+}
+
+// ── Kullanici karari: P&L uyusmazligi ─────────────────────────────────
+function _findTradeRecord(id){
+  var hit = null;
+  _forEachTradeRecord(tradesData, function(t){ if(!hit && String(t.id) === String(id)) hit = t; });
+  return hit;
+}
+function integrityAcceptCalculated(id){
+  var t = _findTradeRecord(id); if(!t) return false;
+  var calc = calcTradePnlFromSource(t);
+  if(calc === null) return false;
+  if(!confirm(t.ticker + ' için saklanan P&L (' + t.pnl + ') hesaplanan değerle (' + calc + ') değiştirilsin mi?\nEski değer kayıtta saklanır.')) return false;
+  t.legacy = t.legacy || {};
+  if(t.legacy.pnl === undefined) t.legacy.pnl = t.pnl;
+  t.pnl = calc; t.pnlSource = 'calculated'; t.pnlReviewedAt = new Date().toISOString().slice(0, 10);
+  t.calculationVersion = CALC_VERSION;
+  var P = calcTradePremium(t); t.pct = P > 0 ? calc / P : null;
+  saveData(); _refreshAfterIntegrity(); return true;
+}
+function integrityKeepStored(id){
+  var t = _findTradeRecord(id); if(!t) return false;
+  t.pnlSource = 'manual'; t.pnlReviewedAt = new Date().toISOString().slice(0, 10);
+  saveData(); _refreshAfterIntegrity(); return true;
+}
+function integrityAcceptPartials(id){
+  var t = _findTradeRecord(id); if(!t) return false;
+  var pcs = calcPartialCloses(t); if(!pcs.length) return false;
+  if(!confirm(t.ticker + ' kısmi kapanış P&L değerleri orantılı açılış primiyle yeniden hesaplansın mı?\nEski değerler kayıtta saklanır.')) return false;
+  pcs.forEach(function(e){
+    var ex = calcPartialEntryPnl(t, e);
+    if(ex === null) return;
+    if(e.legacyPnl === undefined) e.legacyPnl = e.pnl;
+    e.pnl = ex;
+  });
+  saveData(); _refreshAfterIntegrity(); return true;
+}
+function integrityKeepPartials(id){
+  var t = _findTradeRecord(id); if(!t) return false;
+  calcPartialCloses(t).forEach(function(e){ e.pnlReviewed = true; });
+  saveData(); _refreshAfterIntegrity(); return true;
+}
+function _refreshAfterIntegrity(){
+  try { renderDashboard(); } catch(e){}
+  try { renderTradeList(currentFilter); } catch(e){}
+  try { if(typeof renderVergi === 'function') renderVergi(); } catch(e){}
+  try { showDiagnostics(true); } catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HESAP TEST PAKETI — runCalculationTests()
+// ═══════════════════════════════════════════════════════════════════════
+// Bagimlilik yok, DOM yok, uygulama verisine dokunmaz: her test kendi
+// sabit kaydini kurar. Konsoldan ya da Debug › Veri Butunlugu'nden calisir.
+function runCalculationTests(){
+  var results = [];
+  var near = function(a, b){ return (a === null || b === null) ? a === b : Math.abs(a - b) < 0.005; };
+  var eq = function(a, b){ return JSON.stringify(a) === JSON.stringify(b); };
+  var T = function(name, expected, actualFn, cmp){
+    var actual, pass;
+    try { actual = actualFn(); pass = (cmp || (typeof expected === 'number' ? near : eq))(actual, expected); }
+    catch(e){ actual = 'HATA: ' + e.message; pass = false; }
+    results.push({ name:name, expected:expected, actual:actual, pass:!!pass });
+  };
+  var clone = function(o){ return JSON.parse(JSON.stringify(o)); };
+  var closedT = function(o){ return Object.assign({ opened:'2026-01-05', closed:'2026-01-20', expiry:'2026-02-20', q:1 }, o); };
+
+  // 1. Kazanan short put
+  T('1 Kazanan short put (CSP) P&L', 248, function(){
+    return calcTradePnlFromSource(closedT({ type:'CSP', strike:'100', openPremium:300, openCommission:1, closePremium:50, closeCommission:1 })); });
+  // 2. Kaybeden short put
+  T('2 Kaybeden short put P&L', -502, function(){
+    return calcTradePnlFromSource(closedT({ type:'CSP', strike:'100', openPremium:300, openCommission:1, closePremium:800, closeCommission:1 })); });
+  // 3. Long call
+  T('3 Long call P&L', 398, function(){
+    return calcTradePnlFromSource(closedT({ type:'Long Call', strike:'50', openPremium:500, openCommission:1, closePremium:900, closeCommission:1 })); });
+  // 4. Long put
+  T('4 Long put P&L (zarar)', -251.3, function(){
+    return calcTradePnlFromSource(closedT({ type:'Long Put', strike:'40', openPremium:400, openCommission:0.65, closePremium:150, closeCommission:0.65 })); });
+  // 5. Dikey kredi spread
+  var pcs = closedT({ type:'PCS', strike:'100', strikes:{ p:[100, 95] }, q:2, openPremium:300, openCommission:2, closePremium:100, closeCommission:2 });
+  T('5a PCS P&L', 196, function(){ return calcTradePnlFromSource(pcs); });
+  T('5b PCS teminat = genislik x 100 x adet', 1000, function(){ return calcCollateral(Object.assign({}, pcs, { teminat:0 })).value; });
+  T('5c PCS max kayip = genislik - kredi', 700, function(){ return calcMaxLoss(pcs).value; });
+  T('5d PCS basabas', [98.5], function(){ return calcBreakeven(pcs); });
+  // 6. Iron condor
+  var ic = closedT({ type:'IC', strike:'725/790', strikes:{ p:[725, 715], c:[790, 800] }, q:2, openPremium:800, openCommission:5.2, closePremium:300, closeCommission:5.2 });
+  T('6a IC P&L', 489.6, function(){ return calcTradePnlFromSource(ic); });
+  T('6b IC teminat = genis kanat x 100 x adet', 2000, function(){ return calcCollateral(Object.assign({}, ic, { teminat:0 })).value; });
+  T('6c IC max kayip', 1200, function(){ return calcMaxLoss(ic).value; });
+  T('6d IC basabas noktalari', [721, 794], function(){ return calcBreakeven(ic); });
+  // 7. Kismi kapanis
+  var part = { type:'CSP', strike:'50', q:4, opened:'2026-01-05', expiry:'2026-02-20', openPremium:800, openCommission:4, closed:null, pnl:null,
+               partialCloses:[{ date:'2026-01-10', qty:2, closePremium:100, closeCommission:2, pnl:-102 }] };
+  T('7a Kismen acik: gerceklesen P&L orantili', 296, function(){ return calcTradePnl(part); });
+  T('7b Kismi giris P&L (eski kayit -102 yerine)', 296, function(){ return calcPartialEntryPnl(part, part.partialCloses[0]); });
+  T('7c Kismen acik pozisyon win istatistiginde sayilmaz', 0, function(){ return calcWinStats([part]).closedTrades; });
+  var full = clone(part); full.partialCloses.push({ date:'2026-01-15', qty:2, closePremium:60, closeCommission:2 }); full.closed = '2026-01-15';
+  T('7d Tam kapanis: toplam P&L (tum bacaklar)', 632, function(){ return calcTradePnlFromSource(full); });
+  T('7e Iki kismi kapanisli pozisyon = 1 islem', 1, function(){ return calcWinStats([Object.assign({}, full, { pnl:632 })]).closedTrades; });
+  // 8. Komisyon iadesi
+  T('8 Negatif komisyon (iade) P&L artirir', 300.35, function(){
+    return calcTradePnlFromSource(closedT({ type:'CSP', strike:'20', openPremium:300, openCommission:-0.35, closePremium:0, closeCommission:0 })); });
+  // 9. Basabas
+  T('9 Basabas islem P&L = 0', 0, function(){
+    return calcTradePnlFromSource(closedT({ type:'CC', strike:'30', openPremium:200, openCommission:1, closePremium:198, closeCommission:1 })); });
+  T('9b Basabas kayip sayilmaz', { wins:0, losses:0, breakevens:1 }, function(){
+    var w = calcWinStats([closedT({ type:'CC', pnl:0 })]); return { wins:w.wins, losses:w.losses, breakevens:w.breakevens }; });
+  // 10. Sifir teminat
+  var noColl = closedT({ type:'PCS', strike:'100', q:1, openPremium:100, pnl:50, teminat:0 });
+  T('10a Teminat yok: deger 0 + uyari', true, function(){ var c = calcCollateral(noColl); return c.value === 0 && !!c.warning; });
+  T('10b Teminat yok: ROC null + neden', 'ROC unavailable — collateral missing', function(){ return calcROCInfo(noColl).reason; });
+  T('10c Toplu ROC: teminatsiz islem sayilir, sessizce dusmez', { unavailable:1, counted:1 }, function(){
+    var a = calcAggregateROC([noColl, closedT({ type:'CSP', strike:'10', pnl:10, teminat:1000 })]); return { unavailable:a.unavailable, counted:a.counted }; });
+  T('10d CC teminat 0 ise strike x 100 x adet varsayilir', 2900, function(){ return calcCollateral({ type:'CC', strike:'29', q:1, teminat:0 }).value; });
+  // 11. Karma win istatistigi
+  T('11 Win/Loss/BE + profit factor + expectancy', { closedTrades:3, wins:1, losses:1, breakevens:1, winRate:0.3333, profitFactor:2, expectancy:16.67 }, function(){
+    var w = calcWinStats([closedT({ pnl:100 }), closedT({ pnl:-50 }), closedT({ pnl:0 })]);
+    return { closedTrades:w.closedTrades, wins:w.wins, losses:w.losses, breakevens:w.breakevens,
+             winRate:Math.round(w.winRate * 10000) / 10000, profitFactor:w.profitFactor, expectancy:Math.round(w.expectancy * 100) / 100 }; });
+  // 12. Eski negatif prim
+  var legacy = { m:[ { id:'L1', type:'COLLAR PUT', premium:-339, price:-3.39, q:1, opened:'2026-01-20', closed:'2026-01-27', pnl:65.89 },
+                     { id:'L2', type:'Long Call',  premium:-850, price:-4.25, q:2, opened:'2025-12-26', closed:'2026-01-07', pnl:131.37 },
+                     { id:'L3', type:'CSP', premium:320, q:5, opened:'2025-12-04', closed:'2025-12-12', pnl:320 } ] };
+  T('12a Yon eski isaretten okunur (migration oncesi)', 'long', function(){ return calcTradeDirection(legacy.m[0]); });
+  var mig = clone(legacy); var r1 = migrateV1ToV2(mig);
+  T('12b Migration: 2 kayit normallesir, 1 yon yazilir', { premiumNormalized:2, directionSet:1 }, function(){ return { premiumNormalized:r1.premiumNormalized, directionSet:r1.directionSet }; });
+  T('12c Migration sonrasi prim pozitif, yon korunur, orijinal saklanir', { premium:339, direction:'long', legacy:-339 }, function(){
+    return { premium:mig.m[0].premium, direction:mig.m[0].direction, legacy:mig.m[0].legacy.premium }; });
+  T('12d Ilgisiz kayit degismez (P&L ve prim)', { premium:320, pnl:320 }, function(){ return { premium:mig.m[2].premium, pnl:mig.m[2].pnl }; });
+  T('12e Idempotent: ikinci calistirma degisiklik yapmaz', true, function(){
+    var before = JSON.stringify(mig); var r2 = migrateV1ToV2(mig); return JSON.stringify(mig) === before && r2.premiumNormalized === 0; });
+  T('12f Saklanan P&L migration ile degismez', 65.89, function(){ return mig.m[0].pnl; });
+  // 13. Atama
+  var csp = { id:'A1', type:'CSP', ticker:'SOFI', strike:'50', q:2, openPremium:400, openCommission:0, opened:'2026-01-02', expiry:'2026-01-30', closed:'2026-01-30', status:'assigned' };
+  T('13a Atama: hisse pozisyonu (200 hisse @ strike - prim/hisse)', { shares:200, acquisitionPrice:48, sourceTradeId:'A1' }, function(){
+    var sp = calcAssignmentStockPosition(csp, '2026-01-30', 'S1'); return { shares:sp.shares, acquisitionPrice:sp.acquisitionPrice, sourceTradeId:sp.sourceTradeId }; });
+  T('13b Atanmis islem kapali sayilir, durum yapiskan', 'assigned', function(){ return calcTradeStatus(csp); });
+  // 14. Roll zinciri
+  var rc = { m:[ { id:'R1', type:'CSP', opened:'2026-01-02', closed:'2026-01-10', pnl:-100 },
+                 { id:'R2', type:'CSP', opened:'2026-01-10', closed:'2026-01-20', pnl:250, rolledFrom:'R1' },
+                 { id:'R3', type:'CSP', opened:'2026-01-20', closed:null, rolledFrom:'R2' },
+                 { id:'W1', type:'CC', opened:'2026-01-11', rolledFrom:'R1', note:'Wheel: assigned from CSP R1' } ] };
+  T('14a Roll zinciri R1>R2>R3 (atama baglantisi haric)', ['R1', 'R2', 'R3'], function(){
+    var m = clone(rc); migrateV2ToV3(m, []); return getRollChainTrades(m.m[1], m.m).map(function(x){ return x.id; }); });
+  T('14b Zincirin tum uyeleri ayni rollChainId', true, function(){
+    var m = clone(rc); migrateV2ToV3(m, []); var ids = m.m.slice(0, 3).map(function(x){ return x.rollChainId; });
+    return !!ids[0] && ids[0] === ids[1] && ids[1] === ids[2] && !m.m[3].rollChainId; });
+  T('14c Roll iliskisi P&L degistirmez', [-100, 250], function(){ var m = clone(rc); migrateV2ToV3(m, []); return [m.m[0].pnl, m.m[1].pnl]; });
+  // Ek: ROC, sure, tarih, greeks, risk
+  var rocT = closedT({ type:'CSP', strike:'100', pnl:100, teminat:10000, opened:'2026-01-01', closed:'2026-01-11' });
+  T('15 ROC ve yilliklastirilmis ROC', { roc:0.01, ann:0.365 }, function(){ var r = calcROCInfo(rocT); return { roc:r.value, ann:Math.round(r.annualized * 1000) / 1000 }; });
+  T('16 Tutma suresi 0 gun: yilliklastirilmis ROC null', null, function(){ return calcAnnualizedROC(Object.assign({}, rocT, { closed:'2026-01-01' })); });
+  T('17 Yerel tarih (UTC kaymasi yok)', '2026-03-01', function(){ var d = calcParseDate('2026-03-01'); return d.getFullYear() + '-0' + (d.getMonth() + 1) + '-0' + d.getDate(); });
+  T('18 Negatif DTE (vadesi gecmis)', -5, function(){ return calcDTE({ expiry:'2026-03-15' }, '2026-03-20'); });
+  T('19 Naked call max kayip tanimsiz', true, function(){ var m = calcMaxLoss({ type:'CC', strike:'50', q:1, openPremium:100, naked:true }); return m.unlimited && m.value === Infinity; });
+  T('20 Delta isareti: short put +, short call -, long put -', [20, -20, -20], function(){
+    return [calcPositionDelta({ type:'CSP', delta:20, q:1 }), calcPositionDelta({ type:'CC', delta:20, q:1 }), calcPositionDelta({ type:'Long Put', delta:20, q:1 })]; });
+  T('21 Bilanco vade oncesi: maruziyet var', { earningsExposure:true, daysToEarnings:5 }, function(){
+    var e = calcEarningsExposure({ type:'CSP', expiry:'2026-04-17', earningsDate:'2026-03-25' }, '2026-03-20'); return { earningsExposure:e.earningsExposure, daysToEarnings:e.daysToEarnings }; });
+  T('22 Saklanan/hesaplanan P&L uyusmazligi isaretlenir; "koru" secilince susar', ['inconsistent', 'manual'], function(){
+    var t = closedT({ type:'CSP', openPremium:300, openCommission:1, closePremium:50, closeCommission:1, pnl:250 });
+    return [calcPnlConsistency(t).status, calcPnlConsistency(Object.assign({}, t, { pnlSource:'manual' })).status]; });
+  T('23 Kapali islemde saklanan P&L yetkilidir (otomatik ezilmez)', 250, function(){
+    return calcTradePnl(closedT({ type:'CSP', openPremium:300, openCommission:1, closePremium:50, closeCommission:1, pnl:250 })); });
+  T('24 Portfoy riski: top3 ve DTE yogunlasmasi', { total:3000, d0_7:1, d22_45:1 }, function(){
+    var r = calcPortfolioRisk([{ type:'CSP', strike:'10', q:1, expiry:'2026-03-25', opened:'2026-03-01' }, { type:'CSP', strike:'20', q:1, expiry:'2026-04-20', opened:'2026-03-01' }],
+                              { portfolioSize:10000, asOf:'2026-03-20' });
+    return { total:r.totalCollateral, d0_7:r.dteConcentration.d0_7, d22_45:r.dteConcentration.d22_45 }; });
+
+  var passed = results.filter(function(r){ return r.pass; }).length;
+  var summary = { passed:passed, failed:results.length - passed, total:results.length, results:results };
+  try { console.table(results.map(function(r){ return { test:r.name, sonuc:r.pass ? 'PASS' : 'FAIL', beklenen:JSON.stringify(r.expected), gercek:JSON.stringify(r.actual) }; })); } catch(e){}
+  return summary;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TANI EKRANI (Debug sekmesi) — veri butunlugu, migration kaydi, testler
+// ═══════════════════════════════════════════════════════════════════════
+function showDiagnostics(refresh){
+  var ov = document.getElementById('_diagOverlay');
+  if(ov && !refresh){ ov.remove(); ov = null; }
+  if(!ov){
+    ov = document.createElement('div'); ov.className = 'overlay'; ov.id = '_diagOverlay';
+    ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+  var E = escHtml;
+  var R = runDataIntegrityCheck();
+  var money = function(v){ return v === null || v === undefined ? '—' : (v < 0 ? '-' : '') + '$' + Math.abs(v).toFixed(2); };
+  var sevClr = { CRITICAL:'var(--loss)', HIGH:'var(--loss)', MEDIUM:'var(--warn)', LOW:'var(--text-3)' };
+  var cell = 'padding:6px 7px;border-bottom:1px solid var(--border);font-size:11px;vertical-align:top;';
+  var btn = 'border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:8px;padding:5px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+  var h = '<div class="modal-sheet" style="max-height:92vh;overflow-y:auto;">'
+    + '<div class="modal-handle"></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">'
+    +   '<div style="font-family:var(--font-head);font-size:17px;font-weight:700;">🩺 Veri Bütünlüğü</div>'
+    +   '<button style="' + btn + '" onclick="document.getElementById(\'_diagOverlay\').remove()">Kapat</button></div>'
+    + '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">Profil: ' + E(ACTIVE_PROFILE) + ' · veri sürümü v' + _readDataVersion() + ' · hesap sürümü v' + CALC_VERSION + ' · ' + R.checkedTrades + ' kayıt denetlendi</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;">'
+    + INTEGRITY_SEVERITIES.map(function(s){
+        return '<div style="border:1px solid var(--border);border-radius:10px;padding:8px;text-align:center;">'
+          + '<div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:' + (R.counts[s] ? sevClr[s] : 'var(--text-3)') + ';">' + R.counts[s] + '</div>'
+          + '<div style="font-size:9px;letter-spacing:.5px;color:var(--text-3);">' + s + '</div></div>';
+      }).join('') + '</div>';
+
+  // P&L uyusmazliklari
+  h += '<div style="font-size:12px;font-weight:700;margin:4px 0 6px;">P&amp;L uyuşmazlıkları (' + R.pnl.length + ')</div>';
+  if(!R.pnl.length){
+    h += '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">Saklanan ve hesaplanan P&amp;L arasında fark yok. Kapanış primi kayıtlı olmayan eski işlemler doğrulanamaz ve burada listelenmez.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;"><thead><tr>'
+      + ['Ticker', 'Trade ID', 'Stored', 'Calculated', 'Difference', 'Reason', ''].map(function(x){ return '<th style="' + cell + 'text-align:left;color:var(--text-3);font-weight:600;">' + x + '</th>'; }).join('')
+      + '</tr></thead><tbody>'
+      + R.pnl.map(function(r){
+          var idq = E(String(r.id)).replace(/'/g, '&#39;');
+          return '<tr><td style="' + cell + '">' + E(r.ticker) + '</td><td style="' + cell + 'font-family:var(--font-mono);">' + E(String(r.id)).slice(0, 14) + '</td>'
+            + '<td style="' + cell + 'font-family:var(--font-mono);">' + money(r.stored) + '</td><td style="' + cell + 'font-family:var(--font-mono);">' + money(r.calculated) + '</td>'
+            + '<td style="' + cell + 'font-family:var(--font-mono);color:var(--warn);">' + (r.diff === null ? '—' : money(r.diff)) + '</td><td style="' + cell + '">' + E(r.reason) + '</td>'
+            + '<td style="' + cell + '"><div style="display:flex;flex-direction:column;gap:4px;">'
+            +   '<button style="' + btn + '" onclick="integrityAcceptCalculated(\'' + idq + '\')">Hesaplananı kabul et</button>'
+            +   (r.stored === null ? '' : '<button style="' + btn + '" onclick="integrityKeepStored(\'' + idq + '\')">Saklananı koru</button>')
+            + '</div></td></tr>';
+        }).join('') + '</tbody></table></div>';
+  }
+  // Kismi kapanis
+  var partIds = {}; R.partial.forEach(function(p){ (partIds[p.id] = partIds[p.id] || { ticker:p.ticker, n:0, stored:0, calc:0 }); partIds[p.id].n++; partIds[p.id].stored += p.stored; partIds[p.id].calc += p.calculated; });
+  var pk = Object.keys(partIds);
+  if(pk.length){
+    h += '<div style="font-size:12px;font-weight:700;margin:4px 0 6px;">Kısmi kapanış P&amp;L uyuşmazlıkları (' + pk.length + ' işlem)</div>'
+      + '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">Eski sürüm kısmi kapanışta açılış priminin payını P&amp;L\'e eklemiyordu. Ekranlar artık orantılı değeri gösteriyor; kayıttaki değerler sen onaylamadan değişmez.</div>';
+    pk.forEach(function(id){
+      var x = partIds[id], idq = E(String(id)).replace(/'/g, '&#39;');
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:6px;font-size:11px;">'
+        + '<div><b>' + E(x.ticker) + '</b> · ' + x.n + ' giriş · saklanan ' + money(x.stored) + ' → hesaplanan ' + money(calcRound2(x.calc)) + '</div>'
+        + '<div style="display:flex;gap:4px;"><button style="' + btn + '" onclick="integrityAcceptPartials(\'' + idq + '\')">Kabul et</button>'
+        + '<button style="' + btn + '" onclick="integrityKeepPartials(\'' + idq + '\')">Koru</button></div></div>';
+    });
+  }
+  // Diger bulgular
+  var other = R.issues.filter(function(i){ return i.code !== 'inconsistent-pnl' && i.code !== 'inconsistent-partial-pnl'; });
+  h += '<div style="font-size:12px;font-weight:700;margin:10px 0 6px;">Diğer bulgular (' + other.length + ')</div>';
+  if(!other.length) h += '<div style="font-size:11px;color:var(--text-3);">Bulgu yok.</div>';
+  else {
+    var codes = {}; other.forEach(function(i){ (codes[i.severity + '|' + i.code] = codes[i.severity + '|' + i.code] || []).push(i); });
+    Object.keys(codes).sort(function(a, b){ return INTEGRITY_SEVERITIES.indexOf(a.split('|')[0]) - INTEGRITY_SEVERITIES.indexOf(b.split('|')[0]); }).forEach(function(k){
+      var list = codes[k], sev = k.split('|')[0];
+      h += '<details style="border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:6px;font-size:11px;">'
+        + '<summary style="cursor:pointer;"><span style="color:' + sevClr[sev] + ';font-weight:700;">' + sev + '</span> · ' + E(list[0].code) + ' · <b>' + list.length + '</b></summary>'
+        + '<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px;">'
+        + list.slice(0, 200).map(function(i){ return '<div><span style="font-family:var(--font-mono);color:var(--text-3);">' + E(String(i.id || '—')).slice(0, 14) + '</span> ' + E(i.ticker || '') + ' — ' + E(i.message) + '</div>'; }).join('')
+        + (list.length > 200 ? '<div style="color:var(--text-3);">… +' + (list.length - 200) + '</div>' : '')
+        + '</div></details>';
+    });
+  }
+  // Migration kaydi
+  var log = getMigrationLog();
+  h += '<div style="font-size:12px;font-weight:700;margin:12px 0 6px;">Migration kaydı</div>';
+  h += log.length ? log.slice().reverse().map(function(l){
+      return '<div style="font-size:11px;border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:6px;">'
+        + E(String(l.at).replace('T', ' ').slice(0, 16)) + ' · v' + l.from + ' → v' + l.to + ' · <b>' + l.records + ' kayıt</b><br>'
+        + 'prim normalleşti: ' + l.premiumNormalized + ' · yön yazıldı: ' + l.directionSet + ' · durum eklendi: ' + l.statusAdded
+        + ' · roll zinciri: ' + l.rollChainAssigned + ' · atama bağı: ' + (l.assignmentLinksMarked || 0) + ' · plan: ' + l.plansUpdated
+        + '<br><span style="color:var(--text-3);">Yedek: ' + E(l.backupKey || '—') + '</span></div>';
+    }).join('') : '<div style="font-size:11px;color:var(--text-3);">Bu profilde henüz migration çalışmadı.</div>';
+
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
+    + '<button style="' + btn + '" onclick="_diagRunTests()">🧪 Hesap testlerini çalıştır</button>'
+    + '<button style="' + btn + '" onclick="showKurDebugInfo()">💱 Kur durumu</button></div>'
+    + '<div id="_diagTests" style="margin-top:10px;"></div>'
+    + '</div>';
+  ov.innerHTML = h;
+}
+function _diagRunTests(){
+  var el = document.getElementById('_diagTests'); if(!el) return;
+  var r = runCalculationTests();
+  var E = escHtml;
+  el.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:6px;color:' + (r.failed ? 'var(--loss)' : 'var(--profit)') + ';">'
+    + r.passed + '/' + r.total + ' PASS' + (r.failed ? ' · ' + r.failed + ' FAIL' : '') + '</div>'
+    + r.results.map(function(x){
+        return '<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);">'
+          + '<b style="color:' + (x.pass ? 'var(--profit)' : 'var(--loss)') + ';">' + (x.pass ? 'PASS' : 'FAIL') + '</b> ' + E(x.name)
+          + (x.pass ? '' : '<div style="font-family:var(--font-mono);color:var(--text-3);">beklenen ' + E(JSON.stringify(x.expected)) + ' · gerçek ' + E(JSON.stringify(x.actual)) + '</div>')
+          + '</div>';
+      }).join('');
+}
+
+// NOT: migration burada CALISMAZ — ACTIVE_PROFILE ve profil anahtarlari
+// selectProfile() ile belirlenir; o da reloadProfileData() icinden
+// runDataMigrations('profile-load') cagirir.
 
 var _fcmToken = null;
 function syncFirestoreIfReady() {
@@ -2230,59 +3512,49 @@ function getClosedQty(t){ return getPartialCloses(t).reduce(function(s,pc){retur
 function getRemainingQty(t){ return (t.q||1) - getClosedQty(t); }
 function isPartlyOpen(t){ var pc=getPartialCloses(t); return !t.closed && pc.length>0; }
 function getPartialPnl(t){
-  var _pcs=getPartialCloses(t);
-  if(!_pcs.length) return 0;
-  // Tamamlanmamış (partly open): sadece kapanış tarafı etkisini göster
-  var _sumCP=_pcs.reduce(function(s,x){return s+(x.closePremium||0);},0);
-  var _sumCK=_pcs.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-  var _op=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
-  var _ok=parseFloat(t.openCommission)||0;
-  var _calc=isLong(t.type)?(_sumCP-_sumCK-_op-_ok):(_op-_ok-_sumCP-_sumCK);
-  return Math.round(_calc*100)/100;
+  // Kismen acik pozisyonun GERCEKLESEN kismi — calcTradePnl (orantili).
+  if(!getPartialCloses(t).length) return 0;
+  var v = calcTradePnl(t);
+  return v === null ? 0 : v;
+}
+
+// calcWinStats sonucunu eski ekranlarin bekledigi alan adlarina esler.
+// avgLoss eskiden oldugu gibi MUTLAK deger; profitFactor kayip yoksa 0
+// (arayuz bu fazda degismiyor).
+function _statsCompat(ws){
+  var avgLoss = Math.abs(ws.averageLoser);
+  return { totalPnl:ws.totalPnl, winners:ws.wins, losers:ws.losses, breakevens:ws.breakevens,
+           total:ws.closedTrades, winRate:ws.winRate, lossRate:ws.lossRate,
+           avgWin:ws.averageWinner, avgLoss:avgLoss,
+           payoff: avgLoss > 0 ? ws.averageWinner/avgLoss : 0,
+           profitFactor: ws.profitFactor === null ? 0 : ws.profitFactor,
+           ev: ws.expectancy };
 }
 
 function calcStats() {
-  var closed = getClosedTrades();
-  var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
-  var winners  = closed.filter(function(t){ return t.pnl > 0; });
-  var losers   = closed.filter(function(t){ return t.pnl <= 0; });
-  var winRate  = closed.length ? winners.length/closed.length : 0;
-  var avgWin   = winners.length ? winners.reduce(function(s,t){return s+t.pnl;},0)/winners.length : 0;
-  var avgLoss  = losers.length  ? Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0)/losers.length) : 0;
-  var payoff   = avgLoss > 0 ? avgWin/avgLoss : 0;
-  var gP = winners.reduce(function(s,t){return s+t.pnl;},0);
-  var gL = Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0));
-  var pf = gL > 0 ? gP/gL : 0;
-  var ev = closed.length ? totalPnl/closed.length : 0;
-  return { totalPnl, winners:winners.length, losers:losers.length, total:closed.length, winRate, avgWin, avgLoss, payoff, profitFactor:pf, ev };
+  var closed = getAllTrades();   // pozisyon bazli — kismi kapanislar ayri islem sayilmaz
+  // Tek kaynak: calcWinStats (CALCULATION LAYER). Donen sekil eski
+  // ekranlarla uyumlu kalsin diye _statsCompat ile esleniyor.
+  return _statsCompat(calcWinStats(closed));
 }
 
 function getMonthlyStats() {
+  // Ay kovasi = ACILIS ayi. Islem sayisi ve win rate POZISYON bazli
+  // (calcWinStats); P&L kismen acik pozisyonlarin gerceklesen kismini da
+  // icerir (calcRealizedPnl).
   return Object.keys(tradesData).map(function(m){
     var src = (tradesData[m]||[]);
-    // Yıl filtresi
     if(ACTIVE_YEAR !== 'all') src = src.filter(function(t){ return getTradeYear(t) === ACTIVE_YEAR; });
-    var t = src.filter(function(x){ return x.closed && x.pnl!=null; });
-    // Kısmi kapanmaları da ekle
-    var partialTrades = [];
-    src.forEach(function(x){
-      if(!x.closed && x.partialCloses && x.partialCloses.length>0){
-        x.partialCloses.forEach(function(pc){ partialTrades.push({pnl:pc.pnl||0}); });
-      }
-    });
-    var all = t.concat(partialTrades);
-    var pnl = all.reduce(function(s,x){return s+x.pnl;},0);
-    var wins = all.filter(function(x){return x.pnl>0;}).length;
-    return { month:m, trades:all.length, pnl:pnl, wr: all.length ? wins/all.length : 0 };
-  }).filter(function(x){ return x.trades > 0; });
+    var ws = calcWinStats(src);
+    var pnl = calcRealizedPnl(src);
+    return { month:m, trades:ws.closedTrades, pnl:pnl, wr:ws.winRate };
+  }).filter(function(x){ return x.trades > 0 || Math.abs(x.pnl) > CALC_EPSILON; });
 }
 
 function getDTE(exp){
-  if(!exp) return null;
-  var p=exp.split('-'); if(p.length<3) return null;
-  var today=new Date(); today=new Date(today.getFullYear(),today.getMonth(),today.getDate()); // local midnight
-  var expD=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));                          // local midnight
-  return Math.max(0,Math.round((expD-today)/86400000));
+  // Arayuz icin 0'da kirpilir; ham (negatif olabilen) deger: calcDTE
+  var d = calcDTE({ expiry: exp });
+  return d === null ? null : Math.max(0, d);
 }
 function fmt$(v){ if(v==null) return '--'; return (v>=0?'+':'')+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 
@@ -2373,9 +3645,9 @@ function updateHealthBanner(){
   var weekEnd = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7);
   var expThisWeek = open.filter(function(t){ var d=t.expiry?new Date(t.expiry):null; return d&&d>=now&&d<=weekEnd; });
   var expUrgent   = open.filter(function(t){ var d=getDTE(t.expiry); return d!==null&&d<=3; });
-  var totalColl = open.reduce(function(s,t){ return s+(t.teminat||0); }, 0);
+  var totalColl = open.reduce(function(s,t){ return s+calcCollateral(t).value; }, 0);
   var byTicker = {};
-  open.forEach(function(t){ var tk=t.ticker.split(' ')[0]; byTicker[tk]=(byTicker[tk]||0)+(t.teminat||0); });
+  open.forEach(function(t){ var tk=t.ticker.split(' ')[0]; byTicker[tk]=(byTicker[tk]||0)+calcCollateral(t).value; });
   var concentrated = Object.keys(byTicker).filter(function(k){ return totalColl>0&&byTicker[k]/totalColl>0.25; });
   var highDelta = open.filter(function(t){ return t.delta&&t.delta>35; });
   var status = (expUrgent.length>0||highDelta.length>0) ? 'red' : (expThisWeek.length>0||concentrated.length>0) ? 'yellow' : 'green';
@@ -2859,13 +4131,12 @@ function calcAvgDailyCollStats(month){
   while(_d <= _calcEnd){
     var _dayColl = 0;
     _allT.forEach(function(t){
-      if(!t.teminat || t.teminat <= 0) return;
-      var _open = t.opened ? new Date(t.opened) : null;
-      var _close = t.closed ? new Date(t.closed) : null;
+      var _tc = calcCollateral(t).value;
+      if(!(_tc > 0)) return;
+      var _open = calcParseDate(t.opened);      // yerel tarih (UTC kaymasi yok)
+      var _close = calcParseDate(t.closed);
       if(!_open) return;
-      _open.setHours(0,0,0,0);
-      if(_close) _close.setHours(0,0,0,0);
-      if(_d >= _open && (!_close || _d <= _close)) _dayColl += (parseFloat(t.teminat)||0);
+      if(_d >= _open && (!_close || _d <= _close)) _dayColl += _tc;
     });
     _totalCollDays += _dayColl;
     _dayCount++;
@@ -2886,25 +4157,16 @@ function calcAvgDailyCollStats(month){
 
 function calcStatsFor(month){
   var closed = getFilteredClosedTrades(month);
-  var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
-  var winners  = closed.filter(function(t){ return t.pnl > 0; });
-  var losers   = closed.filter(function(t){ return t.pnl <= 0; });
-  var winRate  = closed.length ? winners.length/closed.length : 0;
-  var avgWin   = winners.length ? winners.reduce(function(s,t){return s+t.pnl;},0)/winners.length : 0;
-  var avgLoss  = losers.length  ? Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0)/losers.length) : 0;
-  var payoff   = avgLoss > 0 ? avgWin/avgLoss : 0;
-  var gP = winners.reduce(function(s,t){return s+t.pnl;},0);
-  var gL = Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0));
-  var pf = gL > 0 ? gP/gL : 0;
-  var ev = closed.length ? totalPnl/closed.length : 0;
-  return { totalPnl, winners:winners.length, losers:losers.length, total:closed.length, winRate, avgWin, avgLoss, payoff, profitFactor:pf, ev };
+  // Tek kaynak: calcWinStats (CALCULATION LAYER). Donen sekil eski
+  // ekranlarla uyumlu kalsin diye _statsCompat ile esleniyor.
+  return _statsCompat(calcWinStats(closed));
 }
 
 function renderDashboard(){
   var month = getEffectiveDashMonth();
   var stats = calcStatsFor(month);
   var open  = getOpenTrades();
-  var coll=open.reduce(function(s,t){return s+(t.teminat||0);},0);
+  var coll=open.reduce(function(s,t){return s+calcCollateral(t).value;},0);
   var cp=PORT_SIZE>0?coll/PORT_SIZE:0;
   var monthly = month==='all' ? getMonthlyStats() : Array.isArray(month) ? getMonthlyStats().filter(function(x){return month.indexOf(x.month)>=0;}) : getMonthlyStats().filter(function(x){return x.month===month;});
   var ytd=monthly.reduce(function(s,x){return s+x.pnl;},0);
@@ -2937,13 +4199,13 @@ function renderDashboard(){
   // Açık pozisyon primleri — YALNIZCA primi TAHSİL EDİLEN (short) pozisyonlar.
   // Long pozisyonlarda (Long Put / Long Call / LEAPS) prim ÖDENİR; bunlar
   // toplama katılırsa ödenen para tahsil edilmiş gibi görünüyordu.
-  var openShort = open.filter(function(t){ return !isLong(t.type); });
-  var openLong  = open.filter(function(t){ return  isLong(t.type); });
-  var openPremTotal = openShort.reduce(function(s,t){ return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
+  var openShort = open.filter(function(t){ return !calcIsLongTrade(t); });
+  var openLong  = open.filter(function(t){ return  calcIsLongTrade(t); });
+  var openPremTotal = openShort.reduce(function(s,t){ return s + calcTradePremium(t); }, 0);
   var openKomTotal  = openShort.reduce(function(s,t){ return s + (parseFloat(t.openCommission)||0); }, 0);
   var openPremNet   = openPremTotal - openKomTotal;
   // Ödenen prim kaybolmasın — ayrı ve açıkça "ödenen" olarak gösteriliyor.
-  var openLongPaid  = openLong.reduce(function(s,t){ return s + Math.abs(parseFloat(t.openPremium)||parseFloat(t.premium)||0); }, 0);
+  var openLongPaid  = openLong.reduce(function(s,t){ return s + calcTradePremium(t); }, 0);
   el=document.getElementById('heroOpenPrem');
   if(el){ el.textContent=fmtA$(openPremTotal); el.style.color='var(--info)'; }
   el=document.getElementById('heroOpenPremSub');
@@ -3134,11 +4396,11 @@ function renderTradeList(filter, month){
         var _pcs=t.partialCloses||[];
         var displayPnl=t.pnl;
         if(_pcs.length>0){
-          var _op=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
+          var _op=calcTradePremium(t);
           var _ok=parseFloat(t.openCommission)||0;
           var _sCP=_pcs.reduce(function(s,x){return s+(x.closePremium||0);},0);
           var _sCK=_pcs.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-          displayPnl=Math.round((isLong(t.type)?(_sCP-_sCK-_op-_ok):(_op-_ok-_sCP-_sCK))*100)/100;
+          displayPnl=Math.round((calcIsLongTrade(t)?(_sCP-_sCK-_op-_ok):(_op-_ok-_sCP-_sCK))*100)/100;
         }
         var _partlyOpen=isPartlyOpen(t);
         var _remainingQty=getRemainingQty(t);
@@ -3229,7 +4491,7 @@ function renderTradeList(filter, month){
           })()+
           '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+fmtExpiryCompact(t.expiry)+'</td>'+
           '<td style="padding:7px 5px;text-align:center;font-family:var(--font-mono);color:var(--text-2);font-size:11px;white-space:nowrap">'+(_partlyOpen?(_remainingQty+'/'+t.q):t.q)+'</td>'+
-          '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);color:var(--text);font-size:11px;white-space:nowrap">'+fmtA$(parseFloat(t.openPremium)||parseFloat(t.premium)||0)+'</td>'+
+          '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);color:var(--text);font-size:11px;white-space:nowrap">'+fmtA$(calcTradePremium(t))+'</td>'+
           '<td style="padding:7px 5px;text-align:right;font-family:var(--font-mono);font-weight:700;font-size:12px;color:'+pnlColor+';white-space:nowrap">'+(shownPnl!=null?(shownPnl>=0?'+':'')+Math.round(shownPnl):'—')+'</td>'+
           '<td style="padding:7px 5px;text-align:center;font-family:var(--font-mono);font-size:11px;color:'+dteColor+';white-space:nowrap">'+(dte!==null?dte:'—')+'</td>'+
         '</tr>';
@@ -3243,35 +4505,16 @@ function renderTradeList(filter, month){
     var dc=dte===null?'var(--text-3)':dte<=7?'var(--loss)':dte<=14?'var(--warn)':'var(--info)';
     // Auto-calc PnL; handle partly-open
     var _partlyOpen = isPartlyOpen(t);
-    var _partialPnl = getPartialPnl(t);
     var _remainingQty = getRemainingQty(t);
     var _closedQty = getClosedQty(t);
-    // PnL hesabı — partialCloses varsa onları kullan, yoksa t.pnl
-    var displayPnl = t.pnl;
-    var _pcs = t.partialCloses||[];
-    if(_pcs.length > 0){
-      // partialCloses'tan hesapla: openPrem - openKom - Σ(closePrem) - Σ(closeKom)
-      var _op2=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
-      var _ok2=parseFloat(t.openCommission)||0;
-      var _sumCP=_pcs.reduce(function(s,x){return s+(x.closePremium||0);},0);
-      var _sumCK=_pcs.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-      var _calcPnl=isLong(t.type)?(_sumCP-_sumCK-_op2-_ok2):(_op2-_ok2-_sumCP-_sumCK);
-      displayPnl=Math.round(_calcPnl*100)/100;
-    } else if(!isOpen){
-      // partialCloses yok, closePremium varsa ondan hesapla
-      var _op3=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
-      var _cp3=parseFloat(t.closePremium);
-      var _ok3=parseFloat(t.openCommission)||0;
-      var _ck3=parseFloat(t.closeCommission)||0;
-      if(!isNaN(_cp3)&&_cp3>=0){
-        displayPnl=isLong(t.type)?(_cp3-_ck3-_op3-_ok3):(_op3-_ok3-_cp3-_ck3);
-      }
-    }
-    // Partly open: kısmi kapanmalardan çalışan toplam
-    var _runningPnl = _pcs.length>0 ? displayPnl : _partialPnl;
-    var shownPnl = isOpen ? (_partlyOpen ? _runningPnl : null) : displayPnl;
+    // Tek kaynak: calcTradePnl — kapali islemde saklanan P&L (yetkili kayit),
+    // kismen acikta gerceklesen kisim (orantili). Eskiden kart gorunumu
+    // kapali islemde saklanan yerine yeniden hesaplanani gosteriyordu;
+    // tablo gorunumu saklanani — ayni islem iki farkli rakam verebiliyordu.
+    var displayPnl = calcTradePnl(t);
+    var shownPnl = isOpen ? (_partlyOpen ? displayPnl : null) : displayPnl;
     var pc=(!isOpen||_partlyOpen)&&shownPnl!=null?(shownPnl>=0?'var(--profit)':'var(--loss)'):'var(--text-2)';
-    var _pct2=(!isOpen&&displayPnl!=null)?(function(){var _op2=parseFloat(t.openPremium)||parseFloat(t.premium)||0;return _op2>0?displayPnl/_op2:null;})():null;
+    var _pct2=(!isOpen&&displayPnl!=null)?(function(){var _op2=calcTradePremium(t);return _op2>0?displayPnl/_op2:null;})():null;
     var tc=tcol(t.ticker.split(' ')[0]);
     var ab=isOpen&&((t.delta&&t.delta>35)||(dte!==null&&dte<=7))?'border-color:rgba(239,68,68,.35);':'';
     var dw=dte!==null&&t.expiry?Math.min(100,Math.max(0,((new Date()-new Date(t.opened))/(new Date(t.expiry)-new Date(t.opened)))*100)):0;
@@ -3284,14 +4527,14 @@ function renderTradeList(filter, month){
     var partialSummaryHtml = '';
     if(_partlyOpen && _closedQty>0){
       partialSummaryHtml = '<div style="margin:0 14px 10px;padding:7px 10px;background:rgba(245,158,11,0.08);border-left:3px solid var(--warn);border-radius:0 6px 6px 0;font-size:11px;color:var(--warn);">'+
-        '📊 Partially closed: '+_closedQty+'/'+t.q+' contracts · Partial P&L: <span style="color:'+((_partialPnl>=0)?'var(--profit)':'var(--loss)')+'">'+fmt$(_partialPnl)+'</span></div>';
+        '📊 Partially closed: '+_closedQty+'/'+t.q+' contracts · Partial P&L: <span style="color:'+(((displayPnl||0)>=0)?'var(--profit)':'var(--loss)')+'">'+fmt$(displayPnl||0)+'</span></div>';
     }
     // Monthly annualized return — closed premium-selling positions only
     var _monthlyHtml = '';
     var _mSellers = ['CSP','CC','PCS','BCS','IC'];
     if (!isOpen && displayPnl !== null && _mSellers.indexOf(t.type) >= 0) {
-      var _mDays = (t.opened && t.closed) ? Math.round((new Date(t.closed) - new Date(t.opened)) / 86400000) : 0;
-      var _mBasis = parseFloat(t.teminat) > 0 ? parseFloat(t.teminat) : (t.type === 'CSP' ? parseFloat(String(t.strike).replace(',','.')) * (t.q||1) * 100 : 0);
+      var _mDays = calcHoldingDays(t) || 0;
+      var _mBasis = calcCollateral(t).value;
       if (_mDays > 0 && _mBasis > 0 && _mDays <= 90) {
         var _mRet = (displayPnl / _mBasis) / _mDays * 30 * 100;
         var _mCol = _mRet >= 0 ? 'var(--profit)' : 'var(--loss)';
@@ -3359,7 +4602,7 @@ function renderTradeList(filter, month){
         '<div><div class="trade-metric-lbl">Qty</div><div class="trade-metric-val">'+(_partlyOpen?(_remainingQty+'/'+t.q):t.q)+' × 100</div></div>'+
         '<div><div class="trade-metric-lbl">Delta</div><div class="trade-metric-val" style="color:'+(t.delta&&t.delta>35?'var(--loss)':'var(--info)')+'">'+(t.delta!=null?t.delta:'—')+'</div></div>'+
         '<div><div class="trade-metric-lbl">IVR</div><div class="trade-metric-val" style="color:'+(t.ivr&&t.ivr>50?'var(--profit)':t.ivr>30?'var(--warn)':'var(--text-3)')+'">'+(t.ivr||'—')+'</div></div>'+
-        '<div><div class="trade-metric-lbl">Collateral</div><div class="trade-metric-val">'+(t.teminat>0?fmtA$(t.teminat):'—')+'</div></div></div>'+
+        '<div><div class="trade-metric-lbl">Collateral</div><div class="trade-metric-val">'+(function(){var _c=calcCollateral(t);return _c.value>0?fmtA$(_c.value)+(_c.source==='calculated'?'*':''):(_c.expected?'⚠ missing':'—');})()+'</div></div></div>'+
       partialSummaryHtml+
       '<div class="trade-card-foot"><div class="dte-bar-wrap">'+
         '<div class="dte-label"><span>'+(isOpen?'Time elapsed':'Result')+'</span>'+
@@ -3475,18 +4718,9 @@ function getStatsFilteredTrades(month) {
 
 function calcStatsForStats(month) {
   var closed = getStatsFilteredTrades(month);
-  var totalPnl = closed.reduce(function(s,t){ return s+t.pnl; }, 0);
-  var winners  = closed.filter(function(t){ return t.pnl > 0; });
-  var losers   = closed.filter(function(t){ return t.pnl <= 0; });
-  var winRate  = closed.length ? winners.length/closed.length : 0;
-  var avgWin   = winners.length ? winners.reduce(function(s,t){return s+t.pnl;},0)/winners.length : 0;
-  var avgLoss  = losers.length  ? Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0)/losers.length) : 0;
-  var payoff   = avgLoss > 0 ? avgWin/avgLoss : 0;
-  var gP = winners.reduce(function(s,t){return s+t.pnl;},0);
-  var gL = Math.abs(losers.reduce(function(s,t){return s+t.pnl;},0));
-  var pf = gL > 0 ? gP/gL : 0;
-  var ev = closed.length ? totalPnl/closed.length : 0;
-  return { totalPnl:totalPnl, winners:winners.length, losers:losers.length, total:closed.length, winRate:winRate, avgWin:avgWin, avgLoss:avgLoss, payoff:payoff, profitFactor:pf, ev:ev };
+  // Tek kaynak: calcWinStats (CALCULATION LAYER). Donen sekil eski
+  // ekranlarla uyumlu kalsin diye _statsCompat ile esleniyor.
+  return _statsCompat(calcWinStats(closed));
 }
 
 function renderStats(){
@@ -3500,14 +4734,17 @@ function renderStats(){
   if(dctx){if(donutChartInst)donutChartInst.destroy();donutChartInst=new Chart(dctx.getContext('2d'),{type:'doughnut',data:{datasets:[{data:[stats.winners,stats.losers],backgroundColor:['rgba(34,197,94,.8)','rgba(239,68,68,.8)'],borderColor:['#22C55E','#EF4444'],borderWidth:1.5,hoverOffset:4}]},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});}
   var dl=document.getElementById('donutLegend');
   if(dl)dl.innerHTML='<div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div><span class="legend-txt">Winners</span><span class="legend-pct" style="color:var(--profit)">'+Math.round(stats.winRate*100)+'% · '+stats.winners+'</span></div>'+
-    '<div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div><span class="legend-txt">Losers</span><span class="legend-pct" style="color:var(--loss)">'+Math.round((1-stats.winRate)*100)+'% · '+stats.losers+'</span></div>'+
+    '<div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div><span class="legend-txt">Losers</span><span class="legend-pct" style="color:var(--loss)">'+Math.round((stats.lossRate||0)*100)+'% · '+stats.losers+'</span></div>'+(stats.breakevens?'<div class="legend-item"><div class="legend-dot" style="background:#94A3B8"></div><span class="legend-txt">Breakeven</span><span class="legend-pct" style="color:var(--text-3)">'+stats.breakevens+'</span></div>':'')+
     (month!=='all'?'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">'+label+' · '+stats.total+' trades</div>':'');
-  var totalTeminat = closed.reduce(function(s,t){return s+(parseFloat(t.teminat)||0);},0);
+  // Tek kaynak: calcCollateral / calcAggregateROC. Teminati bilinmeyen
+  // islemler paydadan sessizce DUSMEZ — sayilari ekranda yazilir.
+  var _agg = calcAggregateROC(closed);
+  var totalTeminat = closed.reduce(function(s,t){ return s + calcCollateral(t).value; },0);
   var avgTeminat   = closed.length ? totalTeminat/closed.length : 0;
-  var teminatROC   = totalTeminat > 0 ? stats.totalPnl/totalTeminat : null;
-  var tradesWithColl = closed.filter(function(t){return parseFloat(t.teminat)>0;});
+  var teminatROC   = _agg.roc;
+  var tradesWithColl = closed.filter(function(t){ return calcROC(t) !== null; });
   var avgPerTradeROC = tradesWithColl.length
-    ? tradesWithColl.reduce(function(s,t){return s+(t.pnl/(parseFloat(t.teminat)||1));},0)/tradesWithColl.length
+    ? tradesWithColl.reduce(function(s,t){ return s + calcROC(t); },0)/tradesWithColl.length
     : null;
 
   var sg=document.getElementById('statsGrid');
@@ -3523,7 +4760,7 @@ function renderStats(){
     (function(){
       var SPREAD=['CSP','PCS','IC','BCS'];
       var sp=closed.filter(function(t){return SPREAD.indexOf(t.type)>=0;});
-      var wr=sp.length?sp.filter(function(t){return t.pnl>0;}).length/sp.length:null;
+      var _spWs=calcWinStats(sp); var wr=_spWs.closedTrades?_spWs.winRate:null;
       var hd=calcAvgHoldDays(sp);
       return [
         {l:'Strategy Win Rate',v:wr!==null?Math.round(wr*100)+'%':'—',sub:sp.length+' trades',bar:wr||0,bc:'var(--profit)',c:wr===null?'var(--text-3)':wr>=0.7?'var(--profit)':wr>=0.5?'var(--warn)':'var(--loss)'},
@@ -3531,7 +4768,7 @@ function renderStats(){
       ];
     })(),
     {l:'Total Collateral',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'avg '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' trades with collateral',c:'var(--info)',full:true},
-    {l:'Collateral Return',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:avgPerTradeROC!==null?('avg trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'collateral data missing',bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true},
+    {l:'Collateral Return',v:teminatROC!==null?((teminatROC*100).toFixed(2)+'%'):'—',sub:(avgPerTradeROC!==null?('avg trade ROC: '+(avgPerTradeROC*100).toFixed(2)+'%'):'collateral data missing')+(_agg.unavailable?' · ROC unavailable: '+_agg.unavailable+' trades':''),bar:teminatROC!==null?Math.min(1,Math.max(0,teminatROC*10)):0,bc:teminatROC>=0?'var(--profit)':'var(--loss)',c:teminatROC===null?'var(--text-3)':teminatROC>=0?'var(--profit)':'var(--loss)',full:true},
     (function(){
       var _s = calcAvgDailyCollStats(month);
       if(!_s) return null;
@@ -3544,19 +4781,19 @@ function renderStats(){
     })()
   ].flat().filter(function(x){return x!=null;}).map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
-  if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var pnl=t.reduce(function(s,x){return s+x.pnl;},0);var wr=t.length?t.filter(function(x){return x.pnl>0;}).length/t.length:0;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
+  if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var _tws=calcWinStats(t);var pnl=_tws.totalPnl;var wr=_tws.winRate;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
   // Analytics charts
   _buildAnalyticsCharts();
 }
 
 // ═══════════════════ RISK ═══════════════════
 function renderRisk(){
-  var open=getOpenTrades(); var coll=open.reduce(function(s,t){return s+(t.teminat||0);},0); var cp=PORT_SIZE>0?coll/PORT_SIZE:0;
+  var open=getOpenTrades(); var coll=open.reduce(function(s,t){return s+calcCollateral(t).value;},0); var cp=PORT_SIZE>0?coll/PORT_SIZE:0;
   var alerts=[];
   open.forEach(function(t){if(t.delta&&t.delta>35)alerts.push({type:'danger',icon:'⚠️',title:'Delta Threshold Breached',desc:t.ticker+' '+t.type+' at '+t.delta+'Δ — exceeds 35Δ rule.',meta:t.ticker+' $'+t.strike+' · '+t.expiry});});
   open.forEach(function(t){var d=getDTE(t.expiry);if(d!==null&&d<=7)alerts.push({type:'danger',icon:'⏱',title:'DTE Alert — Near Expiry',desc:t.ticker+' has '+d+' days left. Gamma risk accelerates below 7 DTE.',meta:t.ticker+' · '+d+' DTE'});});
   open.forEach(function(t){if(t.ivr&&t.ivr>65)alerts.push({type:'warn',icon:'📈',title:'High IVR',desc:t.ticker+' IVR: '+t.ivr+'. Verify setup.',meta:t.ticker});});
-  open.forEach(function(t){if(t.teminat>PORT_SIZE*0.1)alerts.push({type:'warn',icon:'💰',title:'Large Position Size',desc:t.ticker+' uses '+(t.teminat/PORT_SIZE*100).toFixed(1)+'% of portfolio — over 10% limit.',meta:fmtA$(t.teminat)});});
+  open.forEach(function(t){var _tc=calcCollateral(t).value;if(_tc>PORT_SIZE*0.1)alerts.push({type:'warn',icon:'💰',title:'Large Position Size',desc:t.ticker+' uses '+(_tc/PORT_SIZE*100).toFixed(1)+'% of portfolio — over 10% limit.',meta:fmtA$(t.teminat)});});
   // Earnings Date alerts (5 gün öncesi uyarı)
   open.forEach(function(t){
     if(!t.earningsDate) return;
@@ -3605,7 +4842,7 @@ function renderRisk(){
   var rb=document.getElementById('riskBadge'); if(rb){rb.textContent=tot+' Alert'+(tot!==1?'s':'');rb.style.color=dc>0?'var(--loss)':'var(--warn)';rb.style.background=dc>0?'var(--loss-dim)':'var(--warn-dim)';rb.style.borderColor=dc>0?'rgba(239,68,68,.25)':'rgba(245,158,11,.25)';}
   var al=document.getElementById('alertList');
   if(al)al.innerHTML=alerts.map(function(a){return'<div class="alert-card '+a.type+'"><div class="alert-icon '+a.type+'">'+a.icon+'</div><div class="alert-body"><div class="alert-title" style="color:'+(a.type==='danger'?'var(--loss)':a.type==='warn'?'var(--warn)':'var(--profit)')+'">'+a.title+'</div><div class="alert-desc">'+a.desc+'</div><div class="alert-ticker">'+a.meta+'</div></div></div>';}).join('');
-  var tmap={};open.forEach(function(t){var tk=t.ticker.split(' ')[0];tmap[tk]=(tmap[tk]||0)+(t.teminat||0);});
+  var tmap={};open.forEach(function(t){var tk=t.ticker.split(' ')[0];tmap[tk]=(tmap[tk]||0)+calcCollateral(t).value;});
   var tkList=Object.keys(tmap).map(function(k){return{ticker:k,val:tmap[k]};}).sort(function(a,b){return b.val-a.val;});
   var tc2=tkList.reduce(function(s,x){return s+x.val;},0); var bcs=['var(--info)','var(--purple)','var(--profit)','var(--warn)','var(--loss)','#10b981'];
   var tcEl=document.getElementById('tickerConc');
@@ -3617,25 +4854,19 @@ function renderRisk(){
     if(!open.length){
       greekEl.innerHTML = '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:10px;">Açık pozisyon yok</div>';
     } else {
-      var netDelta = 0, estTheta = 0, hasDelta = false;
-      open.forEach(function(t){
-        var d = parseFloat(t.delta) || 0;
-        var qty = t.q || 1;
-        var dSign = isShortType(t.type) ? -1 : 1;
-        netDelta += dSign * d * qty;
-        if(d > 0) hasDelta = true;
-        // Estimated daily theta: premium collected ÷ DTE (short = positive theta decay)
-        var prem = parseFloat(t.openPremium) || parseFloat(t.premium) || 0;
-        var dte = getDTE(t.expiry);
-        if(dte && dte > 0) estTheta += (isShort ? 1 : -1) * prem / dte;
-      });
+      // Tek kaynak: calcPortfolioGreeks. Eskiden (1) delta isareti yalnizca
+      // short/long'a bakiyordu — short put'un deltasi POZITIFTIR, long put'un
+      // negatif; (2) theta satirindaki isShort bu noktada tanimsizdi (asagida
+      // var ile tanimlaniyor), her pozisyonun thetasi ters isaretle toplaniyordu.
+      var _gk = calcPortfolioGreeks(open);
+      var netDelta = _gk.netDelta, estTheta = _gk.estThetaPerDay, hasDelta = _gk.withDelta > 0;
       var deltaClr = Math.abs(netDelta) > 100 ? 'var(--loss)' : Math.abs(netDelta) > 50 ? 'var(--warn)' : 'var(--profit)';
       var thetaClr = estTheta > 0 ? 'var(--profit)' : 'var(--loss)';
       greekEl.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">' +
         '<div style="text-align:center;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px;">' +
           '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Net Delta</div>' +
           '<div style="font-size:20px;font-weight:700;font-family:var(--font-mono);color:'+deltaClr+';">' + (hasDelta ? (netDelta > 0 ? '+' : '') + Math.round(netDelta) : '—') + '</div>' +
-          '<div style="font-size:10px;color:var(--text-3);margin-top:2px;">' + (hasDelta ? (Math.abs(netDelta) > 100 ? '⚠ Yüksek' : '✓ OK') : 'delta girilmedi') + '</div>' +
+          '<div style="font-size:10px;color:var(--text-3);margin-top:2px;">' + (hasDelta ? (Math.abs(netDelta) > 100 ? '⚠ Yüksek' : '✓ OK') + (_gk.missingDelta ? ' · ' + _gk.missingDelta + ' delta yok' : '') : 'delta girilmedi') + '</div>' +
         '</div>' +
         '<div style="text-align:center;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px;">' +
           '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Est. Daily Θ</div>' +
@@ -3645,7 +4876,7 @@ function renderRisk(){
         '<div style="text-align:center;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px;">' +
           '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Pozisyon</div>' +
           '<div style="font-size:20px;font-weight:700;font-family:var(--font-mono);color:var(--info);">' + open.length + '</div>' +
-          '<div style="font-size:10px;color:var(--text-3);margin-top:2px;">' + open.filter(function(t){return SHORT_TYPES.indexOf(t.type)>=0;}).length + ' short · ' + open.filter(function(t){return SHORT_TYPES.indexOf(t.type)<0;}).length + ' long</div>' +
+          '<div style="font-size:10px;color:var(--text-3);margin-top:2px;">' + open.filter(function(t){return !calcIsLongTrade(t);}).length + ' short · ' + open.filter(function(t){return SHORT_TYPES.indexOf(t.type)<0;}).length + ' long</div>' +
         '</div>' +
       '</div>' +
       (hasDelta ? '<div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:11px;color:var(--text-3);">Not: Delta değerleri trade girişindeki manuel delta alanından alınmaktadır. Anlık değerlere göre farklılık gösterebilir.</div>' : '');
@@ -3662,28 +4893,13 @@ function renderRisk(){
   // ── Sector Exposure ───────────────────────────────────────────
   var secEl = document.getElementById('sectorConc');
   if(secEl){
-    var SECTOR_MAP = {
-      // Tech
-      AAPL:'Teknoloji',MSFT:'Teknoloji',NVDA:'Teknoloji',TSLA:'Teknoloji',META:'Teknoloji',GOOGL:'Teknoloji',GOOG:'Teknoloji',AMZN:'Teknoloji',AMD:'Teknoloji',INTC:'Teknoloji',CRM:'Teknoloji',ORCL:'Teknoloji',PLTR:'Teknoloji',AVGO:'Teknoloji',QCOM:'Teknoloji',MU:'Teknoloji',AMAT:'Teknoloji',LRCX:'Teknoloji',KLAC:'Teknoloji',ARM:'Teknoloji',SMCI:'Teknoloji',SNOW:'Teknoloji',NET:'Teknoloji',PANW:'Teknoloji',CRWD:'Teknoloji',ZS:'Teknoloji',DDOG:'Teknoloji',OKTA:'Teknoloji',HUBS:'Teknoloji',NOW:'Teknoloji',ADBE:'Teknoloji',INTU:'Teknoloji',TEAM:'Teknoloji',TTD:'Teknoloji',COIN:'Teknoloji',MSTR:'Teknoloji',
-      // Finans
-      JPM:'Finans',BAC:'Finans',GS:'Finans',MS:'Finans',WFC:'Finans',C:'Finans',V:'Finans',MA:'Finans',AXP:'Finans',BRK:'Finans',BLK:'Finans',SCHW:'Finans',IBKR:'Finans',
-      // Sağlık
-      JNJ:'Sağlık',PFE:'Sağlık',MRNA:'Sağlık',UNH:'Sağlık',ABBV:'Sağlık',LLY:'Sağlık',BMY:'Sağlık',AMGN:'Sağlık',GILD:'Sağlık',CVS:'Sağlık',
-      // Enerji
-      XOM:'Enerji',CVX:'Enerji',COP:'Enerji',SLB:'Enerji',OXY:'Enerji',BP:'Enerji',
-      // Tüketim
-      AMZN:'Tüketim',HD:'Tüketim',MCD:'Tüketim',NKE:'Tüketim',SBUX:'Tüketim',TGT:'Tüketim',WMT:'Tüketim',COST:'Tüketim',
-      // Telecom
-      T:'Telecom',VZ:'Telecom',TMUS:'Telecom',
-      // ETF/Endeks
-      SPY:'ETF/Endeks',QQQ:'ETF/Endeks',IWM:'ETF/Endeks',DIA:'ETF/Endeks',VXX:'ETF/Endeks',TLT:'ETF/Endeks',GLD:'ETF/Endeks',SLV:'ETF/Endeks',USO:'ETF/Endeks',XLE:'ETF/Endeks',XLF:'ETF/Endeks',XLK:'ETF/Endeks',SOFI:'Finans',
-    };
+    var SECTOR_MAP = OF_SECTOR_MAP;
     var SECTOR_COLORS = {'Teknoloji':'#3B82F6','Finans':'#22C55E','Sağlık':'#EC4899','Enerji':'#F59E0B','Tüketim':'#A855F7','Telecom':'#10B981','ETF/Endeks':'#64748B','Diğer':'#6B7280'};
     var sectorMap = {};
     open.forEach(function(t){
       var tk = (t.ticker||'').split(' ')[0].toUpperCase();
       var sector = SECTOR_MAP[tk] || 'Diğer';
-      sectorMap[sector] = (sectorMap[sector]||0) + (t.teminat||0);
+      sectorMap[sector] = (sectorMap[sector]||0) + calcCollateral(t).value;
     });
     var sectorList = Object.keys(sectorMap).map(function(s){return{s:s,v:sectorMap[s]};}).sort(function(a,b){return b.v-a.v;});
     var sTotal = sectorList.reduce(function(sum,x){return sum+x.v;},0);
@@ -3720,10 +4936,11 @@ function buildThetaCalendar(){
   // Per-position daily theta estimate (premium ÷ DTE)
   var rows = [];
   open.forEach(function(t){
-    var prem = (parseFloat(t.openPremium)||parseFloat(t.premium)||0) * (t.q||1) * 100;
+    // openPremium zaten TOPLAM dolar; eskiden x adet x 100 ile carpiliyordu.
+    var prem = calcTradePremium(t);
     var dte = getDTE(t.expiry);
     if(!dte || dte <= 0 || prem <= 0) return;
-    var isShort = SHORT_TYPES.indexOf(t.type) >= 0;
+    var isShort = !calcIsLongTrade(t);
     var sign = isShort ? 1 : -1;
     var dailyTheta = sign * prem / dte;
     rows.push({ticker:t.ticker, type:t.type, dte:dte, prem:prem, dailyTheta:dailyTheta, expiry:t.expiry});
@@ -3808,9 +5025,9 @@ function updateBlackSwan(movePct) {
   var rows = [];
   var totalImpact = 0;
   open.forEach(function(t){
-    var prem = parseFloat(t.openPremium) || parseFloat(t.premium) || 0;
-    var coll = t.teminat || 0;
-    var isShort = isShortType(t.type);
+    var prem = calcTradePremium(t);
+    var coll = calcCollateral(t).value;
+    var isShort = (!calcIsLongTrade(t));
     var impact = 0;
     if(t.type === 'CSP'){
       // Short put: loss if market falls. At -X% move, assume strike is touched proportionally
@@ -3877,10 +5094,10 @@ function buildStratCompChart(){
   var STRATS = KNOWN_TRADE_TYPES;
   var data = STRATS.map(function(s){
     var t = closed.filter(function(x){ return x.type===s; });
-    var wins = t.filter(function(x){ return x.pnl>0; }).length;
-    var wr = t.length ? (wins/t.length)*100 : 0;
-    var avgPnl = t.length ? t.reduce(function(a,x){return a+x.pnl;},0)/t.length : 0;
-    return { label:s, wr:wr, avgPnl:avgPnl, count:t.length };
+    var _sws = calcWinStats(t);
+    var wr = _sws.winRate*100;
+    var avgPnl = _sws.expectancy;
+    return { label:s, wr:wr, avgPnl:avgPnl, count:_sws.closedTrades };
   }).filter(function(d){ return d.count>0; });
   if(!data.length) return;
   var ctx = el.getContext('2d');
@@ -3923,9 +5140,8 @@ function buildWinRateChart(){
   var labels=[], wrs=[];
   for(var i=n-1; i<closed.length; i++){
     var window = closed.slice(i-n+1, i+1);
-    var wins = window.filter(function(t){return t.pnl>0;}).length;
     labels.push(closed[i].closed ? (_wrMultiYear ? closed[i].closed.slice(2) : closed[i].closed.slice(5)) : i);
-    wrs.push(Math.round((wins/n)*100));
+    wrs.push(Math.round(calcWinStats(window).winRate*100));
   }
   var ctx = el.getContext('2d');
   if(winRateChartInst) winRateChartInst.destroy();
@@ -4216,15 +5432,17 @@ function showWhatIfCalc(trade){
   titleEl.textContent='🎯 What-If P&L — '+trade.ticker+' '+trade.type;
   var subEl=document.createElement('div');
   subEl.style.cssText='font-size:11px;color:var(--text-3);margin-bottom:18px';
-  subEl.textContent='Strike: $'+trade.strike+' | Premium: $'+(parseFloat(trade.openPremium)||parseFloat(trade.premium)||0).toFixed(2);
+  subEl.textContent='Strike: $'+trade.strike+' | Premium: $'+calcTradePremium(trade).toFixed(2);
   sh.appendChild(titleEl); sh.appendChild(subEl);
 
   var strike=parseFloat(String(trade.strike).replace(',','.'))||0;
-  var prem=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
+  var prem=calcTradePremium(trade);
   var qty=trade.q||1;
   var currentPrice=stockPrices[trade.ticker.split(' ')[0]]||strike;
   var SPREADS=['PCS','CCS','BCS'];
-  var maxLossSpread=trade.teminat||0;
+  // Tabandaki zarar = calcMaxLoss (genislik - kredi); teminat degil.
+  var _mlS=calcMaxLoss(trade);
+  var maxLossSpread=(_mlS.value!==null&&!_mlS.unlimited)?(_mlS.value+prem):calcCollateral(trade).value;
 
   // Price range: ±40% around strike
   var minP=Math.max(0.01, strike*0.5);
@@ -4233,7 +5451,7 @@ function showWhatIfCalc(trade){
 
   function calcPnlAtPrice(price){
     var t=trade;
-    var isLongPos=isLong(t.type);
+    var isLongPos=calcIsLongTrade(t);
     if(t.type==='CSP'){
       if(price>=strike) return prem; // max profit
       return prem - (strike-price)*qty*100; // loss if ITM
@@ -4363,13 +5581,18 @@ function showRollTrade(oldTrade){
     var newExpiry=document.getElementById('roll_new_expiry').value||'';
     var newPrem=parseFloat(document.getElementById('roll_new_premium').value)||0;
     // 1. Close old trade
+    var _rollChainId=oldTrade.rollChainId||('rc_'+String(oldTrade.id));
     var months=Object.keys(tradesData);
     for(var mi=0;mi<months.length;mi++){
       var arr=tradesData[months[mi]];
       for(var ti=0;ti<arr.length;ti++){
         if(String(arr[ti].id)===String(oldTrade.id)){
           arr[ti].closed=closeDate; arr[ti].pnl=closePnl;
-          arr[ti].pct=arr[ti].premium?closePnl/Math.abs(arr[ti].premium):null;
+          arr[ti].pnlSource='manual';                       // roll ekraninda elle girilir
+          arr[ti].pct=calcTradePremium(arr[ti])?closePnl/calcTradePremium(arr[ti]):null;
+          arr[ti].status='closed';
+          if(!arr[ti].rollChainId) arr[ti].rollChainId='rc_'+String(arr[ti].id);
+          _rollChainId=arr[ti].rollChainId;
           break;
         }
       }
@@ -4378,15 +5601,21 @@ function showRollTrade(oldTrade){
     var _jsToApp=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
     var nowMonth=_jsToApp[new Date().getMonth()];
     if(!tradesData[nowMonth]) tradesData[nowMonth]=[];
-    var newId=Date.now()+'_roll';
+    var newId=newRecordId('roll');
     var newTrade={
       id:newId, ticker:oldTrade.ticker, type:oldTrade.type,
       strike:newStrike, expiry:newExpiry,
-      openPremium:newPrem*100*(oldTrade.q||1), premium:newPrem,
+      // premium TOPLAM tutardir (openPremium ile ayni) — eskiden burada
+      // kontrat basi fiyat yaziliyordu ve iki alan birbirini tutmuyordu.
+      openPremium:newPrem*100*(oldTrade.q||1), premium:newPrem*100*(oldTrade.q||1),
+      price:newPrem,
       q:oldTrade.q||1, teminat:oldTrade.teminat||0,
       opened:closeDate, delta:oldTrade.delta||null, ivr:oldTrade.ivr||null,
       subOwner:oldTrade.subOwner||'Eda',
-      rolledFrom:String(oldTrade.id) // 🔗 link to previous trade
+      rolledFrom:String(oldTrade.id), // 🔗 link to previous trade
+      rollChainId:_rollChainId, rollKind:'roll',
+      direction:oldTrade.direction,
+      status:'open', calculationVersion:CALC_VERSION
     };
     tradesData[nowMonth].push(newTrade);
     saveData();
@@ -4423,7 +5652,7 @@ function showAssignmentModal(cspTrade){
   var strike = parseFloat(String(cspTrade.strike).replace(',','.')) || 0;
   var qty = cspTrade.q || 1;
   var stockCost = strike * qty * 100;
-  var prem = parseFloat(cspTrade.openPremium) || parseFloat(cspTrade.premium) || 0;
+  var prem = calcTradePremium(cspTrade);
   var netCost = stockCost - prem;
 
   var infoBox=document.createElement('div');
@@ -4463,6 +5692,7 @@ function showAssignmentModal(cspTrade){
   confirmBtn.onclick=function(){
     var assignDate=document.getElementById('assign_date').value||new Date().toISOString().slice(0,10);
     // Close CSP at net loss (prem already received, stock assigned = net cost)
+    var _assignedStock=null;
     var cspPnl = 0; // At assignment: premium kept but stock bought at strike = break even on prem
     var months=Object.keys(tradesData);
     for(var mi=0;mi<months.length;mi++){
@@ -4471,7 +5701,15 @@ function showAssignmentModal(cspTrade){
         if(String(arr[ti].id)===String(cspTrade.id)){
           arr[ti].closed=assignDate;
           arr[ti].pnl=cspPnl;
+          arr[ti].pnlSource='manual';
           arr[ti].note=(arr[ti].note||'')+'[ASSIGNED @ $'+strike+']';
+          arr[ti].status='assigned';
+          // Atamadan dogan hisse pozisyonu (wheel surekliligi): maliyet bazi
+          // hisse basi strike - prim/hisse. Mevcut P&L konvansiyonu degismedi.
+          var _sp=calcAssignmentStockPosition(arr[ti], assignDate, newRecordId('stk'));
+          stockPositions.push(_sp); saveStockPositions();
+          arr[ti].stockPositionId=_sp.id;
+          _assignedStock=_sp;
           break;
         }
       }
@@ -4486,14 +5724,19 @@ function showAssignmentModal(cspTrade){
       var nowMonth=_jsToApp[new Date().getMonth()];
       if(!tradesData[nowMonth]) tradesData[nowMonth]=[];
       tradesData[nowMonth].push({
-        id:Date.now()+'_cc', ticker:cspTrade.ticker, type:'CC',
+        id:newRecordId('cc'), ticker:cspTrade.ticker, type:'CC',
         strike:ccStrike, expiry:ccExpiry,
-        openPremium:ccPrem*100*(cspTrade.q||1), premium:ccPrem,
+        openPremium:ccPrem*100*(cspTrade.q||1), premium:ccPrem*100*(cspTrade.q||1), price:ccPrem,   // premium = TOPLAM
         q:cspTrade.q||1, teminat:netCost,
         opened:assignDate, subOwner:cspTrade.subOwner||'Eda',
         note:'Wheel: assigned from CSP '+String(cspTrade.id),
-        rolledFrom:String(cspTrade.id)
+        rolledFrom:String(cspTrade.id),        // eski gorunumler icin korunuyor
+        rollKind:'assignment', assignedFromTradeId:String(cspTrade.id),
+        stockPositionId:_assignedStock?_assignedStock.id:null,
+        status:'open', calculationVersion:CALC_VERSION
       });
+      // CC -> hissenin olasi cikisi
+      if(_assignedStock){ _assignedStock.exitTradeIds.push(String(tradesData[nowMonth][tradesData[nowMonth].length-1].id)); saveStockPositions(); }
     }
     saveData(); ov.remove();
     renderDashboard(); renderTradeList(currentFilter);
@@ -4566,7 +5809,7 @@ function showExpiryCalendar(){
       info.appendChild(tn);info.appendChild(ts);lft.appendChild(badge);lft.appendChild(info);
       var prem=document.createElement('div');
       prem.style.cssText='font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--info)';
-      prem.textContent=fmtA$(parseFloat(t.openPremium)||parseFloat(t.premium)||0);
+      prem.textContent=fmtA$(calcTradePremium(t));
       row.appendChild(lft);row.appendChild(prem);tbody.appendChild(row);
     });
     section.appendChild(tbody);sh.appendChild(section);
@@ -4598,8 +5841,8 @@ function renderGroupedTrades(f){
     // Prim yalnizca SHORT islemlerde tahsil edilir; long'da (Long Put/
     // Long Call/LEAPS) odenir. Ikisi ayni toplamda birlesince odenen para
     // tahsil edilmis gibi gorunuyordu.
-    var totalPrem=trades.reduce(function(s,t){return isLong(t.type)?s:s+(parseFloat(t.openPremium)||parseFloat(t.premium)||0);},0);
-    var totalPaid=trades.reduce(function(s,t){return isLong(t.type)?s+Math.abs(parseFloat(t.openPremium)||parseFloat(t.premium)||0):s;},0);
+    var totalPrem=trades.reduce(function(s,t){return calcIsLongTrade(t)?s:s+calcTradePremium(t);},0);
+    var totalPaid=trades.reduce(function(s,t){return calcIsLongTrade(t)?s+calcTradePremium(t):s;},0);
     var pnlColor=totalPnl>=0?'var(--profit)':'var(--loss)';
     var html='<div style="margin-bottom:14px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08)">';
     html+='<div onclick="this.nextSibling.style.display=this.nextSibling.style.display===\'none\'?\'block\':\'none\'" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,0.04);cursor:pointer;">';
@@ -4934,7 +6177,9 @@ function autoFetchTCMB(){
 }
 
 // ═══════════════════ DEBUG: KUR DURUMU ═══════════════════
-function showDebugInfo(){
+// Debug sekmesi artik Veri Butunlugu ekranini acar; kur durumu oradan.
+function showDebugInfo(){ showDiagnostics(); }
+function showKurDebugInfo(){
   try {
     var today   = _tcmbIso(new Date());
     var dayName = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt'][new Date().getDay()];
@@ -4985,7 +6230,7 @@ function exportCSV(){
   var headers=['ID','Month','Ticker','Type','Strike','Expiry','Qty','Open Date','Close Date','Open Premium','Close Premium','Open Comm','Close Comm','P&L','P&L %','Delta','IVR','Collateral','Note'];
   var rows=[headers.join(',')];
   all.forEach(function(t){
-    var op=parseFloat(t.openPremium)||parseFloat(t.premium)||0;
+    var op=calcTradePremium(t);
     var cp=parseFloat(t.closePremium)||0;
     var ok=parseFloat(t.openCommission)||0;
     var ck=parseFloat(t.closeCommission)||0;
@@ -5036,8 +6281,8 @@ function exportTaxCSV(){
 
   ctx.rows.forEach(function(r){
     var t = r.t, res = r.res;
-    var alinan = isLong(t.type) ? res.closePrem : res.openPrem;
-    var odenen = isLong(t.type) ? res.openPrem  : res.closePrem;
+    var alinan = calcIsLongTrade(t) ? res.closePrem : res.openPrem;
+    var odenen = calcIsLongTrade(t) ? res.openPrem  : res.closePrem;
 
     var manual = vergiManualOverride[String(t.id)];
     var yIdx   = (typeof calcYufeIndexing === 'function') ? calcYufeIndexing(t) : {eligible:false};
@@ -5102,8 +6347,8 @@ function showBeyannamePDF(){
   var rowsHtml = ctx.rows.map(function(r){
     var t = r.t, res = r.res;
     // Alinan/odenen prim yone gore: long'da acilista ODENIR, kapanista ALINIR
-    var alinan = isLong(t.type) ? res.closePrem : res.openPrem;
-    var odenen = isLong(t.type) ? res.openPrem  : res.closePrem;
+    var alinan = calcIsLongTrade(t) ? res.closePrem : res.openPrem;
+    var odenen = calcIsLongTrade(t) ? res.openPrem  : res.closePrem;
 
     var manual = vergiManualOverride[String(t.id)];
     var yIdx   = (typeof calcYufeIndexing === 'function') ? calcYufeIndexing(t) : {eligible:false};
@@ -5361,15 +6606,12 @@ function _repFilterTrades(fromISO, toISO, types, status){
 function _spreadReportData(fromISO, toISO, types, status){
   var rows = [];
   _repFilterTrades(fromISO, toISO, types, status).forEach(function(t){
-    var isClosed = !!(t.closed && t.pnl != null);
+    var isClosed = calcIsClosedTrade(t) && calcTradePnl(t) !== null;
     var cd = isClosed ? String(t.closed).substring(0,10) : null;
 
-    var credit = parseFloat(t.openPremium);
-    if(!isFinite(credit)) credit = parseFloat(t.premium);
-    if(!isFinite(credit)) credit = 0;
-    credit = Math.abs(credit);
-    var pnl  = isClosed ? (parseFloat(t.pnl) || 0) : null;
-    var risk = parseFloat(t.teminat) || 0;
+    var credit = calcTradePremium(t);
+    var pnl  = isClosed ? calcTradePnl(t) : null;
+    var risk = calcCollateral(t).value;
     // Long bacak YALNIZCA dikey spread'lerde teminattan turetilir. CSP/CC
     // gibi tek bacakli turlerde teminat strike x100 oldugundan buradan
     // uydurma bir "50/100C" ikinci bacagi cikiyordu.
@@ -5404,7 +6646,10 @@ function _spreadReportData(fromISO, toISO, types, status){
   rows.sort(function(a,b){ return a.opened < b.opened ? -1 : a.opened > b.opened ? 1 : 0; });
 
   var done      = rows.filter(function(r){ return !r.isOpen; });
-  var wins      = done.filter(function(r){ return r.pnl > 0; }).length;
+  var _srcTrades = _repFilterTrades(fromISO, toISO, types, status);
+  var _ws       = calcWinStats(_srcTrades);
+  var _agg      = calcAggregateROC(_srcTrades);
+  var wins      = _ws.wins;
   var totCredit = rows.reduce(function(s,r){ return s + r.credit; }, 0);
   var totPnl    = done.reduce(function(s,r){ return s + r.pnl; }, 0);
   var totRisk   = rows.reduce(function(s,r){ return s + r.risk; }, 0);
@@ -5418,16 +6663,21 @@ function _spreadReportData(fromISO, toISO, types, status){
     closedCount: done.length,
     openCount: rows.length - done.length,
     wins: wins,
-    winRate: done.length ? Math.round(wins / done.length * 100) : 0,
+    winRate: _ws.closedTrades ? Math.round(_ws.winRate * 100) : 0,
+    breakevens: _ws.breakevens,
+    rocUnavailable: _agg.unavailable,
     totCredit: totCredit,
     totPnl: totPnl,
     totRisk: totRisk,
     // ROC yalnizca KAPANMIS islemlerin teminatina bolunmeli. Aksi halde
     // "Tumu" gorunumunde acik pozisyonlarin teminati da paydaya girip
     // gerceklesmis getiriyi oldugundan kucuk gosteriyordu.
-    closedRisk: done.reduce(function(s,r){ return s + r.risk; }, 0),
+    // ROC tek kaynaktan: calcAggregateROC — teminati olmayan islemler
+    // paydan da paydadan da cikar ve rocUnavailable'da SAYILIR.
+    closedRisk: _agg.capital,
+    rocValue: _agg.roc,
     closedCredit: doneCredit,
-    losses: done.length - wins,
+    losses: _ws.losses,
     avgPctMax: withPct.length ? withPct.reduce(function(s,r){ return s + r.pctMax; },0) / withPct.length : null,
     avgDays: withDays.length ? Math.round(withDays.reduce(function(s,r){ return s + r.days; },0) / withDays.length) : null,
     capture: doneCredit > 0 ? totPnl / doneCredit : null
@@ -5516,7 +6766,7 @@ function _drawSpreadCard(D, scale){
     // GIZLILIK: teminatin DOLAR tutari paylasim ciktisinda gosterilmez
     // (Reddit aktarimi icin konulan kural). Yerine riske gore getiri
     // YUZDE olarak veriliyor — bilgi korunuyor, portfoy buyuklugu sizmiyor.
-    { l:'AVG ROC',     v: (D.closedRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.closedRisk) : '—', col: PNK },
+    { l:'AVG ROC',     v: (D.rocValue !== null && D.closedCount) ? _srPct(D.rocValue) : '—', col: PNK },
     { l:'AVG HOLD',    v: D.avgDays === null ? '—' : D.avgDays + 'd',   col: MUT }
   ];
   var tw = (W - PAD*2 - 5*10) / 6, ty = HEAD + 18;
@@ -5729,9 +6979,7 @@ function buildSpreadMarkdown(){
   var done = rows.filter(function(r){ return !r.isOpen; });
 
   // Deployed collateral'a gore AGIRLIKLI ortalama ROC — yalnizca kapanmislar
-  var sumColl = done.reduce(function(s,r){ return s + (r.risk||0); }, 0);
-  var sumPnl  = done.reduce(function(s,r){ return s + (r.pnl||0); }, 0);
-  var wRoc = sumColl > 0 ? (sumPnl / sumColl * 100) : null;
+  var wRoc = D.rocValue !== null ? D.rocValue * 100 : null;
 
   var only = _spreadRepTypes.slice().sort().join('+');
   var kindLbl = (only === 'PCS') ? 'PCS' : (only === 'BCS') ? 'BCS' : 'credit spread';
@@ -5748,12 +6996,13 @@ function buildSpreadMarkdown(){
   L.push(head + '**');
   L.push('');
   L.push('- Period covers trades **opened** in this range');
-  if(D.status !== 'open') L.push('- Closed: **' + done.length + '** (' + D.wins + 'W / ' + (done.length - D.wins) + 'L)');
+  if(D.status !== 'open') L.push('- Closed: **' + done.length + '** (' + D.wins + 'W / ' + D.losses + 'L' + (D.breakevens ? ' / ' + D.breakevens + ' BE' : '') + ')');
   if(D.status !== 'closed') L.push('- Still open: **' + D.openCount + '**');
   if(done.length){
     L.push('- Win rate: **' + D.winRate + '%**');
     L.push('- Avg hold: **' + (D.avgDays === null ? 'n/a' : D.avgDays + ' days') + '**');
     L.push('- Collateral-weighted ROC: **' + pct1(wRoc) + '**');
+    if(D.rocUnavailable) L.push('- ROC unavailable: **' + D.rocUnavailable + ' trades** (collateral missing)');
   }
   L.push('');
   L.push('| Ticker | Structure | Opened | Closed | Days | Credit | Realized P/L | ROC |');
@@ -6045,7 +7294,7 @@ function _xrCapital(D){
   var port = (typeof PORT_SIZE === 'number' && PORT_SIZE > 0) ? PORT_SIZE : 0;
   var nowColl = 0;
   try {
-    nowColl = getOpenTrades().reduce(function(s, t){ return s + (parseFloat(t.teminat) || 0); }, 0);
+    nowColl = getOpenTrades().reduce(function(s, t){ return s + calcCollateral(t).value; }, 0);
   } catch(e){}
 
   // Rapor araligindaki GUNLUK ortalama teminat. O gun acik olan TUM
@@ -6063,7 +7312,7 @@ function _xrCapital(D){
     while(d <= end){
       var dayColl = 0;
       all.forEach(function(t){
-        var col = parseFloat(t.teminat) || 0;
+        var col = calcCollateral(t).value;
         if(col <= 0 || !t.opened) return;
         var o  = new Date(String(t.opened).substring(0,10) + 'T00:00:00');
         var cl = t.closed ? new Date(String(t.closed).substring(0,10) + 'T00:00:00') : null;
@@ -6078,7 +7327,7 @@ function _xrCapital(D){
     port: port, nowColl: nowColl, avgColl: avgColl, days: days,
     utilNow: port > 0 ? nowColl / port : null,
     utilAvg: port > 0 ? avgColl / port : null,
-    roc: (D.closedRisk > 0 && D.closedCount) ? (D.totPnl / D.closedRisk) : null,
+    roc: (D.rocValue !== null && D.closedCount) ? D.rocValue : null,
     rop: (port > 0 && D.closedCount) ? (D.totPnl / port) : null
   };
 }
@@ -6140,7 +7389,7 @@ function _drawXCard(D, scale){
   // ── Ozet kutulari (alt satirli) ──
   // ROC yalnizca kapanmislarin teminatina bolunur; teminatin DOLAR
   // tutari paylasim ciktisinda hicbir yerde gosterilmez.
-  var avgRoc = (D.closedRisk > 0 && D.closedCount) ? _srPct(D.totPnl / D.closedRisk) : '—';
+  var avgRoc = (D.rocValue !== null && D.closedCount) ? _srPct(D.rocValue) : '—';
   var pctOf = function(x){ return x === null ? '—' : (Math.round(x * 1000) / 10).toFixed(1) + '%'; };
   var rows1 = [
     { l:'TRADES',   v: String(D.count),
@@ -6298,7 +7547,8 @@ function buildXTweet(D){
   L.push(line2);
   if(D.closedCount){
     L.push('Realized: ' + _srSigned(D.totPnl));
-    if(D.closedRisk > 0) L.push('ROC: ' + _srPct(D.totPnl / D.closedRisk));
+    if(D.rocValue !== null) L.push('ROC: ' + _srPct(D.rocValue));
+    if(D.rocUnavailable) L.push('ROC unavailable: ' + D.rocUnavailable + ' trades');
     if(_xrShowCapital){
       var cp = _xrCapital(D);
       if(cp.rop !== null)     L.push('On portfolio: ' + _srPctFine(cp.rop));
@@ -6692,7 +7942,7 @@ function parseIBKRCsv(csv){
     var d = new Date(tradeDate);
     var month = _jsToApp[isNaN(d)?new Date().getMonth():d.getMonth()];
     trades.push({
-      id: Date.now() + '_ibkr_' + i,
+      id: newRecordId('ibkr' + i),
       ticker: ticker, type: tradeType,
       strike: strike, expiry: expiry,
       opened: tradeDate, closed: null, pnl: null,
@@ -7224,7 +8474,7 @@ function _shotFindCloseMatch(g){
     if(String(t.ticker || '').toUpperCase() !== String(g.ticker).toUpperCase()) return false;
     if(t.expiry !== g.expiry) return false;
     // Acilista SATILAN pozisyon kapanista ALINIR (long'ta tersi)
-    var wantSide = (typeof isLong === 'function' && isLong(t.type)) ? 'SELL' : 'BUY';
+    var wantSide = (typeof isLong === 'function' && calcIsLongTrade(t)) ? 'SELL' : 'BUY';
     var strikes = _shotStrikeNums(t.strike);
     return legs.some(function(l){
       return l.side === wantSide && strikes.indexOf(l.strike) !== -1;
@@ -7239,7 +8489,7 @@ function _shotFindCloseMatch(g){
     if(l.side) return;
     for(var hi = 0; hi < hits.length; hi++){
       var t = hits[hi].trade, pl = _posLegStrikes(t);
-      var lng = (typeof isLong === 'function') && isLong(t.type);
+      var lng = (typeof isLong === 'function') && calcIsLongTrade(t);
       if(pl.short.indexOf(l.strike) >= 0){ l.side = lng ? 'SELL' : 'BUY';  l.sideGuessed = true; return; }
       if(pl.long.indexOf(l.strike)  >= 0){ l.side = lng ? 'BUY'  : 'SELL'; l.sideGuessed = true; return; }
     }
@@ -7250,7 +8500,7 @@ function _shotFindCloseMatch(g){
     return legs.filter(function(l){ return l.side === side; })
                .reduce(function(s, l){ return s + (l.amount || 0); }, 0);
   };
-  var anyLong = hits.some(function(p){ return typeof isLong === 'function' && isLong(p.trade.type); });
+  var anyLong = hits.some(function(p){ return typeof isLong === 'function' && calcIsLongTrade(p.trade); });
   var closePrem = anyLong ? (sum('SELL') - sum('BUY')) : (sum('BUY') - sum('SELL'));
   var closeComm = legs.reduce(function(s, l){ return s + (l.comm || 0); }, 0);
   var qty = legs.reduce(function(m, l){ return Math.min(m, l.qty || 0); }, Infinity);
@@ -7296,7 +8546,7 @@ function _posLegStrikes(t){
   var out = { short: [], long: [] };
   if(!t) return out;
   var type = String(t.type || '').toUpperCase();
-  var lng  = (typeof isLong === 'function') && isLong(t.type);
+  var lng  = (typeof isLong === 'function') && calcIsLongTrade(t);
   if(t.strikes){
     ['p','c'].forEach(function(k){
       var a = t.strikes[k];
@@ -7347,9 +8597,10 @@ function _shotCloseTradeIn(pid, tradeId, patch){
 
 // Kapanis P&L — Log New Trade ekranindakiyle ayni formul
 function _shotPnl(t, cp, ck){
-  var op = parseFloat(t.openPremium) || 0, ok = parseFloat(t.openCommission) || 0;
-  var lng = (typeof isLong === 'function') && isLong(t.type);
-  return Math.round((lng ? (cp - ck - op - ok) : (op - ok - cp - ck)) * 100) / 100;
+  // Tek kaynak: calcTradePnlFromSource
+  var v = calcTradePnlFromSource(Object.assign({}, t, { partialCloses:[], closePremium:cp, closeCommission:ck,
+                                                        closed:t.closed || 'draft', status:'closed', pnl:null }));
+  return v === null ? 0 : v;
 }
 
 function _shotRenderReview(warnings){
@@ -7715,7 +8966,7 @@ function _shotCommit(){
                  : (part.pid === 'mustafa' ? 'Mustafa' : 'Eda');
 
       _shotAddTradeTo(part.pid, month, {
-        id: stamp + '_shot_' + i + '_' + part.pid,
+        id: newRecordId('shot' + i + '_' + part.pid),
         ticker: sel.ticker,
         type: v('sh_ty_' + i),
         strike: v('sh_st_' + i),
@@ -7983,6 +9234,7 @@ function dataStores() {
   try { add('vergiOverride', VERGI_OVERRIDE_LS, function(){return vergiManualOverride;}, function(v){vergiManualOverride=v;}); } catch(e){}
   try { add('planned',       PLAN_LS,           function(){return plannedTrades;},       function(v){plannedTrades=v;}); } catch(e){}
   try { add('deletedIds',    DELETED_IDS_LS,    function(){return deletedIds;},          function(v){deletedIds=v;}); } catch(e){}
+  try { add('stockPositions', profileKey(STOCK_POS_BASE), function(){return stockPositions;}, function(v){stockPositions=v;}); } catch(e){}
   // Profil bağımsız depolar
   try { add('kurlar',     KURLAR_LS,       function(){return kurlarData;},     function(v){kurlarData=v;}); } catch(e){}
   try { add('yufe',       YUFE_LS,         function(){return yufeData;},       function(v){yufeData=v;},       true); } catch(e){}
@@ -7993,6 +9245,7 @@ function dataStores() {
 // Yeniden üretilebilen piyasa cache'leri — yedeğe girmesi anlamsız.
 function _isCacheKey(k) {
   return !k || k.indexOf('optflow_prices')  !== -1
+            || k.indexOf(PREMIG_BACKUP_PREFIX) !== -1   // migration oncesi yedekler (yedegin yedegi olmasin)
             || k.indexOf('optflow_prepost') !== -1
             || k.indexOf('optflow_zones')   !== -1;
 }
@@ -8044,6 +9297,8 @@ var CLOUD_PROFILE_KEY_BASES = {
   vergiOverride: 'optflow_vergi_override_v1',
   planned:       'planned_v1',
   deletedIds:    'deleted_ids_v1',
+  stockPositions:'stock_positions_v1',
+  dataVersion:   'optflow_data_version',
   portSize:      'temH',
   nlv:           'nlv_start'
 };
@@ -8528,23 +9783,8 @@ function importData(){
 //   dir : 'short' = prim TAHSİL edilir (kredi) | 'long' = prim ÖDENİR (borç)
 //         → vergi matrahının yönünü ve delta işaretini belirler
 //   opt : 'call' | 'put' | 'mixed'  → payoff eğrisi ve ITM mesafesi için
-var TRADE_TYPE_DEFS = [
-  { code:'CSP',         dir:'short', opt:'put'   },
-  { code:'PCS',         dir:'short', opt:'put'   },
-  { code:'CC',          dir:'short', opt:'call'  },
-  { code:'PMCC',        dir:'short', opt:'call'  },
-  { code:'BCS',         dir:'short', opt:'call'  },
-  { code:'IC',          dir:'short', opt:'mixed' },
-  { code:'COLLAR PUT',  dir:'short', opt:'put'   },
-  { code:'COLLAR CALL', dir:'short', opt:'call'  },
-  // HEDGE artik YENI islemlerde secilemiyor (kullanici kaldirilmasini istedi).
-  // Tanim burada KALIYOR: gecmis HEDGE kayitlarinin siniflandirmasi, vergi
-  // matrahi, rengi ve filtrelenmesi aynen calismaya devam etsin diye.
-  { code:'HEDGE',       dir:'short', opt:'call', legacy:true },
-  { code:'Long Call',   dir:'long',  opt:'call'  },
-  { code:'Long Put',    dir:'long',  opt:'put'   },
-  { code:'LEAPS',       dir:'long',  opt:'call'  }
-];
+// Tanimlar artik CALCULATION LAYER'daki CALC_TYPE_DEFS'te (tek kaynak).
+var TRADE_TYPE_DEFS = CALC_TYPE_DEFS;
 // KNOWN = uygulamanin TANIDIGI tum turler (eski kayitlar dahil)
 // ALL_TRADE_TYPES = kullanicinin YENI islemde secebilecegi turler
 var KNOWN_TRADE_TYPES = TRADE_TYPE_DEFS.map(function(d){ return d.code; });
@@ -8580,8 +9820,11 @@ function _fldWrap(labelTxt, inputHtml, labelId){
   return '<div><div'+idAttr+' style="'+_lblStyle()+'">'+labelTxt+'</div>'+inputHtml+'</div>';
 }
 
-function showAddTrade(existingTrade){
+function showAddTrade(existingTrade, prefill){
   var isEdit = !!existingTrade;
+  // prefill: planli islemden acilirken formu on-doldurur (yeni kayit modu)
+  if(isEdit) prefill = null;
+  if(!prefill) window._pendingPlanLink = null;
   var m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:flex;align-items:flex-end;justify-content:center;';
   // Ay listesi HER ZAMAN 12 ay, takvim sirasinda. Eskiden yalnizca veride
@@ -8592,7 +9835,7 @@ function showAddTrade(existingTrade){
                  'Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
   var mo=_moKeys.map(function(k){return'<option'+(isEdit&&k===existingTrade.month?' selected':'')+'>'+k+'</option>';}).join('');
   var longTypes=LONG_TYPES;
-  var _initialType = isEdit ? existingTrade.type : 'CSP';
+  var _initialType = isEdit ? existingTrade.type : ((prefill && prefill.type) || 'CSP');
 
   var sheet=document.createElement('div');
   sheet.style.cssText='width:100%;max-width:500px;background:var(--bg2);border-radius:20px 20px 0 0;border-top:1px solid rgba(255,255,255,.1);padding:20px 20px 36px;max-height:90vh;overflow-y:auto;';
@@ -8847,34 +10090,39 @@ function showAddTrade(existingTrade){
       // 2) partialCloses YOKSA ve closePrem girilmişse: closePrem/closeKom'dan hesapla
       // 3) partialCloses VARSA: son partialClose entry'sini closePrem/closeKom ile güncelle, toplamı hesapla
 
+      // P&L kaynagi: elle girilen deger YETKILIDIR; bos ise kaynak alanlardan
+      // CALCULATION LAYER hesaplar (tek formul — calcTradePnlFromSource).
+      var _pnlSource = null;
       if(pnl !== null){
-        // Elle girildi, kullan
-      } else if(_existingPC.length === 0){
-        // partialCloses yok — closePrem'den hesapla
-        if(closePrem != null && closedDate){
-          pnl = _isLongType ? (closePrem-closeKom-openPrem-openKom) : (openPrem-openKom-closePrem-closeKom);
-          pnl = Math.round(pnl*100)/100;
-        }
+        var _prevPnl = isEdit ? calcNum(existingTrade.pnl) : null;
+        _pnlSource = (isEdit && _prevPnl !== null && Math.abs(_prevPnl - pnl) <= CALC_PNL_TOLERANCE)
+          ? (existingTrade.pnlSource || null)          // on-dolu deger degismedi
+          : 'manual';
       } else {
-        // partialCloses VAR — son entry'yi kapanış bilgileriyle güncelle (editten geliyorsa)
-        // Son entry'nin closePremium ve closeCommission'ını formdan gelen değerle güncelle
-        if(closePrem != null){
+        if(_existingPC.length && closePrem != null){
           var _lastIdx = _existingPC.length - 1;
           _existingPC[_lastIdx].closePremium  = closePrem;
           _existingPC[_lastIdx].closeCommission = closeKom;
           if(closedDate) _existingPC[_lastIdx].date = closedDate;
         }
-        // Tüm partial'lardan topla
-        var _sumCP2 = _existingPC.reduce(function(s,x){return s+(x.closePremium||0);},0);
-        var _sumCK2 = _existingPC.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-        pnl = _isLongType ? (_sumCP2-_sumCK2-openPrem-openKom) : (openPrem-openKom-_sumCP2-_sumCK2);
-        pnl = Math.round(pnl*100)/100;
+        var _draftT = { type:_tradeTypeVal, q:qty, openPremium:openPrem, openCommission:openKom,
+                        closePremium:closePrem, closeCommission:closeKom, partialCloses:_existingPC,
+                        direction: isEdit ? existingTrade.direction : undefined,
+                        closed: closedDate || (_existingPC.length ? null : null) };
+        if(_existingPC.length){
+          // Kismi kapanislar varken form tam kapanis anlamina gelir
+          _draftT.closed = closedDate || 'draft';
+        }
+        if(_draftT.closed || _existingPC.length){
+          var _calcP = calcTradePnlFromSource(_draftT);
+          if(_calcP !== null && (_draftT.closed)){ pnl = _calcP; _pnlSource = 'calculated'; }
+        }
       }
 
       if(pnl!==null&&!closedDate) closedDate=new Date().toISOString().split('T')[0];
 
       var trade={
-        id:isEdit?existingTrade.id:Date.now(),
+        id:isEdit?existingTrade.id:newRecordId('t'),
         ticker,
         type:sheet.querySelector('#nt_ty').value,
         strike:sheet.querySelector('#nt_s').value,
@@ -8901,6 +10149,37 @@ function showAddTrade(existingTrade){
         earningsDate:sheet.querySelector('#nt_earn')?sheet.querySelector('#nt_earn').value||null:null,
         exDivDate:sheet.querySelector('#nt_exdiv')?sheet.querySelector('#nt_exdiv').value||null:null
       };
+      // Duzenlemede formun bilmedigi alanlar (strikes, rolledFrom, rollChainId,
+      // plannedId, direction, collateralOverride...) KORUNUR. Eskiden yeni
+      // nesne yazildigi icin bu alanlar her duzenlemede sessizce siliniyordu.
+      if(isEdit) trade = Object.assign({}, existingTrade, trade);
+      if(_pnlSource) trade.pnlSource = _pnlSource;
+      trade.calculationVersion = CALC_VERSION;
+      trade.pct = (trade.pnl != null && calcTradePremium(trade) > 0) ? trade.pnl / calcTradePremium(trade) : null;
+      // Girilen teminat turden hesaplanan varsayilandan farkliysa override olarak isaretle
+      var _defColl = calcDefaultCollateral(trade);
+      if(trade.teminat > 0 && _defColl !== null && Math.abs(trade.teminat - _defColl) > 0.5){
+        trade.collateralOverride = trade.teminat; trade.collateralOverrideReason = 'user-entered';
+      } else if(trade.teminat > 0 && _defColl !== null){
+        trade.collateralOverride = null; trade.collateralOverrideReason = null;
+      }
+      trade.status = calcTradeStatus(trade);
+      if(!isEdit && window._pendingPlanLink){
+        // Planli islemle iki yonlu bag + giris kalitesi olcumu icin plan/gercek giris
+        trade.plannedId = window._pendingPlanLink.plannedId;
+        trade.plannedEntry = window._pendingPlanLink.plannedEntry;
+        trade.actualEntry = calcPremiumPerShare(trade);
+        var _plan = (plannedTrades || []).filter(function(pp){ return String(pp.id) === String(trade.plannedId); })[0];
+        if(_plan){
+          _plan.plannedId = _plan.id;
+          _plan.status = 'opened';
+          _plan.linkedTradeId = String(trade.id);
+          _plan.openedAt = trade.opened || new Date().toISOString().slice(0, 10);
+          savePlanned();
+        }
+        window._pendingPlanLink = null;
+        try { renderPlannedList(); } catch(e){}
+      }
 
       if(isEdit){
         // Remove from old month, add to new month
@@ -8925,6 +10204,11 @@ function showAddTrade(existingTrade){
   }
 
   rebuildSheet();
+  if(prefill){
+    var _pf = function(id, v){ var el = sheet.querySelector('#' + id); if(el && v !== undefined && v !== null && v !== '') el.value = v; };
+    _pf('nt_t', prefill.ticker); _pf('nt_s', prefill.strike); _pf('nt_e', prefill.expiry);
+    _pf('nt_q', prefill.q); _pf('nt_p', prefill.openPremium); _pf('nt_d', prefill.delta); _pf('nt_i', prefill.ivr);
+  }
   m.addEventListener('click',function(e){if(e.target===m)m.remove();});
 }
 
@@ -8978,7 +10262,7 @@ function calcTaxForTrade(t){
         ? parseFloat(pc.closePremium) : 0;
       totalKomKapanis += pcKapanis;
       totalClosePrem  += pcClosePrem;
-      if(isLong(t.type)){
+      if(calcIsLongTrade(t)){
         sumCloseMatrah += (pcClosePrem - pcKapanis) * pcKur;
       } else {
         sumCloseMatrah += (pcClosePrem + pcKapanis) * pcKur;
@@ -8986,7 +10270,7 @@ function calcTaxForTrade(t){
     });
 
     // Açılış katkısı
-    if(isLong(t.type)){
+    if(calcIsLongTrade(t)){
       matrah_try = sumCloseMatrah - (openPrem + komAcilis) * acilis_kur;
     } else {
       matrah_try = (openPrem - komAcilis) * acilis_kur - sumCloseMatrah;
@@ -8999,11 +10283,11 @@ function calcTaxForTrade(t){
     if(!kapanis_kur) hasAllKur = false;
     var closePrem = parseFloat(t.closePremium);
     var pnl = parseFloat(t.pnl)||0;
-    if(isNaN(closePrem)||closePrem<0){closePrem=isLong(t.type)?openPrem+pnl:openPrem-pnl;}
+    if(isNaN(closePrem)||closePrem<0){closePrem=calcIsLongTrade(t)?openPrem+pnl:openPrem-pnl;}
     if(closePrem<0)closePrem=0;
     totalClosePrem = closePrem;
     totalKomKapanis = komKapanis;
-    if(isLong(t.type)){
+    if(calcIsLongTrade(t)){
       matrah_try=(closePrem-komKapanis)*kapanis_kur-(openPrem+komAcilis)*acilis_kur;
     } else {
       matrah_try=(openPrem-komAcilis)*acilis_kur-(closePrem+komKapanis)*kapanis_kur;
@@ -9520,8 +10804,8 @@ function _renderVergiInner(){
         var tid=String(tr.id);
         var hasManual=vergiManualOverride[tid]!==undefined;
         var manualVal=hasManual?vergiManualOverride[tid]:null;
-        var alinan = isLong(tr.type) ? res.closePrem : res.openPrem;
-        var odenen = isLong(tr.type) ? res.openPrem  : res.closePrem;
+        var alinan = calcIsLongTrade(tr) ? res.closePrem : res.openPrem;
+        var odenen = calcIsLongTrade(tr) ? res.openPrem  : res.closePrem;
         var lastCloseDate = res.isPartialOnly
           ? (tr.partialCloses&&tr.partialCloses.length>0 ? tr.partialCloses[tr.partialCloses.length-1].date : '')
           : (tr.closed||'');
@@ -9710,8 +10994,8 @@ function renderLeaps(){
         '<div class="status-label"><div class="status-dot" style="background:'+(isClosed?'var(--loss)':'#22c55e')+'"></div>'+
         '<span style="color:'+(isClosed?'var(--loss)':'#22c55e')+'">'+(isClosed?'CLOSED':'OPEN')+'</span></div></div>'+
       '<div style="padding:0 16px 14px;display:flex;gap:8px;">'+
-        '<button onclick="event.stopPropagation();showAddLeap(leapsData.find(function(x){return x.id==='+l.id+'}))" style="flex:1;padding:9px;background:rgba(79,127,255,0.12);border:1px solid rgba(79,127,255,0.25);border-radius:10px;color:#4F7FFF;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✎ Edit</button>'+
-        '<button onclick="event.stopPropagation();deleteLeap('+l.id+')" style="padding:9px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✕</button>'+
+        '<button onclick="event.stopPropagation();showAddLeap(leapsData.find(function(x){return String(x.id)===\''+l.id+'\'}))" style="flex:1;padding:9px;background:rgba(79,127,255,0.12);border:1px solid rgba(79,127,255,0.25);border-radius:10px;color:#4F7FFF;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✎ Edit</button>'+
+        '<button onclick="event.stopPropagation();deleteLeap(\''+l.id+'\')" style="padding:9px 14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;color:#ef4444;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body)">✕</button>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -9792,7 +11076,7 @@ function showAddLeap(existingLeap){
     var _pnl=(_sellTotal&&_costTotal)?_sellTotal-_costTotal-_okm-_ckm:null;
     var _unit=_qty*100;
     var leap={
-      id:existingLeap?existingLeap.id:Date.now(),
+      id:existingLeap?existingLeap.id:newRecordId('leap'),
       ticker:ticker,
       direction:_q('lf_d').value,
       strike:_q('lf_s').value,
@@ -9960,7 +11244,7 @@ function openTradeDetail(tradeId, month){
   if(isOpen){
     var sec=document.createElement('div');
     sec.style.cssText='margin-top:4px;padding-top:16px;border-top:1px solid var(--border)';
-    var isLongPos2=LONG_TYPES.indexOf((trade.type||'').trim())!==-1;
+    var isLongPos2=calcIsLongTrade(trade);
     var closePremLabel2=isLongPos2?'Premium Received — Close ($)':'Premium Paid — Close ($)';
     var currentPC=trade.partialCloses||[];
     var alreadyClosedQty=currentPC.reduce(function(s,pc){return s+(pc.qty||0);},0);
@@ -10023,23 +11307,18 @@ function openTradeDetail(tradeId, month){
         return;
       }
       if(!isNaN(_cp)&&_cp>=0){
-        var _totQ=trade.q||1;
-        var _opFull=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
-        var _okFull=parseFloat(trade.openCommission)||0;
-        var _opThis=(_opFull/_totQ)*_cq;
-        var _okThis=(_okFull/_totQ)*_cq;
-        // Mevcut kapanışların toplam primini bul
-        var _existingPC=(trade.partialCloses||[]);
-        var _sumExistCP=_existingPC.reduce(function(s,x){return s+(x.closePremium||0);},0);
-        var _sumExistCK=_existingPC.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-        var _opFull2=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
+        // Tek kaynak: CALCULATION LAYER (orantili kismi P&L + tam formul)
+        var _draftPc={ qty:_cq, closePremium:_cp, closeCommission:_km, date:'draft' };
+        var _pcsAll=(trade.partialCloses||[]).concat([_draftPc]);
+        var _willClose=_cq>=remainingQ;
+        var _draft=Object.assign({}, trade, { partialCloses:_pcsAll, pnl:null,
+                      closed:_willClose?'draft':null, status:_willClose?'closed':null });
+        var _est=calcTradePnlFromSource(_draft); if(_est===null)_est=0;
+        var _thisEst=calcPartialEntryPnl(trade,_draftPc); if(_thisEst===null)_thisEst=0;
+        var _opFull2=calcTradePremium(trade);
         var _okFull2=parseFloat(trade.openCommission)||0;
-        // Bu kapanış dahil toplam tahmini PnL
-        var _totalCP=_sumExistCP+_cp;
-        var _totalCK=_sumExistCK+_km;
-        var _est=isLong(trade.type)?(_totalCP-_totalCK-_opFull2-_okFull2):(_opFull2-_okFull2-_totalCP-_totalCK);
-        _est=Math.round(_est*100)/100;
-        var _thisEst=isLong(trade.type)?(_cp-_km):(-_cp-_km);
+        var _totalCP=_pcsAll.reduce(function(s,x){return s+(x.closePremium||0);},0);
+        var _totalCK=_pcsAll.reduce(function(s,x){return s+(x.closeCommission||0);},0);
         _prev.style.display='block';
         _prev.innerHTML='<div style="margin-bottom:4px"><span style="color:var(--text-3)">This close: </span>'+
           '<span style="font-family:monospace;font-weight:600;color:'+(_thisEst>=0?'var(--profit)':'var(--loss)')+'">'+(_thisEst>=0?'+':'')+_thisEst.toFixed(2)+'</span></div>'+
@@ -10088,24 +11367,12 @@ function openTradeDetail(tradeId, month){
       if(pStr!==''&&!isNaN(parseFloat(pStr))){
         p=parseFloat(pStr);
       } else {
-        var _opFull2=parseFloat(trade.openPremium)||parseFloat(trade.premium)||0;
-        var _okFull2=parseFloat(trade.openCommission)||0;
-        // Daha önce kaydedilmiş partial kapanışları da hesaba kat
-        var _prevCP=(_t2=trade.partialCloses||[]).reduce(function(s,x){return s+(x.closePremium||0);},0);
-        var _prevCK=_t2.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-        var _totalCP=_prevCP+cpVal;
-        var _totalCK=_prevCK+komK+_okFull2;
-        if(isLong(trade.type)){
-          p=_totalCP-_totalCK-_opFull2;
-        } else {
-          p=_opFull2-_okFull2-_totalCP-komK-_prevCK;
-        }
-        // Sadece bu kapanışın katkısı (partial için)
-        if(isLong(trade.type)){
-          p=cpVal-komK;
-        } else {
-          p=-(cpVal+komK);
-        }
+        // Bu kapanis girisinin P&L'i: acilis primi/komisyonu kapanan adet
+        // oraninda paylastirilir (calcPartialEntryPnl). Eskiden short'ta
+        // yalnizca -(kapanis primi+komisyon) yaziliyordu; her kismi kapanis
+        // kayip gorunuyordu.
+        p=calcPartialEntryPnl(trade,{ qty:closingQty, closePremium:cpVal, closeCommission:komK });
+        if(p===null) p=0;
       }
       p=Math.round(p*100)/100;
 
@@ -10137,14 +11404,13 @@ function openTradeDetail(tradeId, month){
               if(!_t.partialCloses)_t.partialCloses=[];
               _t.partialCloses.push(lastEntry);
               // Toplam PnL = açılış primi - açılış kom - Σ(kapanış primleri) - Σ(kapanış komisyonları)
-              var _opFull=parseFloat(_t.openPremium)||parseFloat(_t.premium)||0;
-              var _okFull=parseFloat(_t.openCommission)||0;
-              var _sumCP=_t.partialCloses.reduce(function(s,x){return s+(x.closePremium||0);},0);
-              var _sumCK=_t.partialCloses.reduce(function(s,x){return s+(x.closeCommission||0);},0);
-              var totalPnl=isLong(_t.type)?(_sumCP-_sumCK-_opFull-_okFull):(_opFull-_okFull-_sumCP-_sumCK);
               _t.closed=d;
-              _t.pnl=Math.round(totalPnl*100)/100;
-              _t.pct=_t.premium?_t.pnl/Math.abs(_t.premium):null;
+              _t.status='closed';
+              var totalPnl=calcTradePnlFromSource(Object.assign({}, _t, { pnl:null }));
+              _t.pnl=totalPnl;
+              _t.pnlSource='calculated';
+              _t.calculationVersion=CALC_VERSION;
+              _t.pct=calcTradePremium(_t)?_t.pnl/calcTradePremium(_t):null;
               _t.closePremium=cpVal;
               _t.closeCommission=komK;
               if(!taxData[tradeId])taxData[tradeId]={};
@@ -10620,12 +11886,27 @@ function renderPlannedList(){
       +'<span style="font-size:16px;font-weight:800;font-family:monospace;color:#f1f5f9">'+p.ticker+'</span>'
       +'<span style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:5px;font-size:10px;font-weight:700;padding:2px 8px">'+p.type+'</span>'
       +'</div>'
+      +(p.status==='opened'?'<span style="font-size:10px;font-weight:700;color:#22c55e;margin-right:6px">✓ OPENED</span>':'<button onclick="openTradeFromPlan('+i+')" style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:#22c55e;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px;margin-right:6px">Open Trade</button>')
       +'<button onclick="deletePlan('+i+')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px">Delete</button>'
       +'</div>'
       +(grid?'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:'+(p.note?'10':'0')+'px">'+grid+'</div>':'')
       +(p.note?'<div style="font-size:11px;color:#94a3b8;background:rgba(255,255,255,.03);border-radius:6px;padding:7px 9px;font-style:italic">'+p.note+'</div>':'')
       +'</div>';
   }).join('');
+}
+
+// PLANNED -> OPEN: gercek islem formunu plan verisiyle on-doldurur.
+// Kayit edilince trade.plannedId ve plan.linkedTradeId birbirine baglanir.
+function openTradeFromPlan(i){
+  var p = plannedTrades[i]; if(!p) return;
+  if(!p.id){ p.id = newRecordId('plan'); if(!p.status) p.status = 'planned'; savePlanned(); }
+  var q = parseInt(p.q, 10) || 1;
+  var pps = calcNum(p.premium);                    // plan primi hisse basi (ornek 0.50)
+  window._pendingPlanLink = { plannedId: String(p.id), plannedEntry: pps };
+  showAddTrade(null, { ticker:p.ticker, type:p.type, strike:p.strike, expiry:p.expiry, q:q,
+                       openPremium: pps !== null ? Math.round(pps * q * 100 * 100) / 100 : '',
+                       delta:p.delta, ivr:p.ivr });
+  window._pendingPlanLink = { plannedId: String(p.id), plannedEntry: pps };   // showAddTrade sifirlar
 }
 
 function deletePlan(i){
@@ -10709,7 +11990,9 @@ function openAddPlan(){
       delta:   document.getElementById('_pl_delta').value || '',
       ivr:     document.getElementById('_pl_ivr').value || '',
       note:    (document.getElementById('_pl_note').value||'').trim(),
-      created: new Date().toISOString().slice(0,10)
+      created: new Date().toISOString().slice(0,10),
+      id:      newRecordId('plan'),
+      status:  'planned'
     };
     plannedTrades.unshift(plan);
     savePlanned();
@@ -10729,7 +12012,7 @@ document.addEventListener('click', function(e){
 
 
 function deleteLeap(id){
-  leapsData = leapsData.filter(function(l){ return l.id !== id; });
+  leapsData = leapsData.filter(function(l){ return String(l.id) !== String(id); });
   saveLeaps();
   renderLeaps();
 }
@@ -11108,6 +12391,11 @@ function reloadProfileData() {
   // deletedIds
   try { var _di = localStorage.getItem(DELETED_IDS_LS); deletedIds = _di ? JSON.parse(_di) : []; } catch(e) { deletedIds = []; }
 
+  // Hisse pozisyonlari (atama) + sema migration'i — profil degisiminde ve
+  // buluttan geri yuklemede de calisir (kayit bazinda idempotent).
+  try { loadStockPositions(); } catch(e){ stockPositions = []; }
+  try { runDataMigrations('profile-load'); } catch(e){ console.warn('[migration]', e && e.message); }
+
   // PORT_SIZE — her profil için bağımsız, yoksa varsayılan 200000
   PORT_SIZE = 200000;
   try { var _h = localStorage.getItem(profileKey('temH')); if(_h) PORT_SIZE = parseInt(_h); } catch(e){}
@@ -11311,23 +12599,18 @@ function _aileAvailableYears(){
 
 /* Compute per-profile stats: totalPnl (closed), openCount, maxLoss */
 function _aileProfileStats(trades) {
-  var closed = trades.filter(function(t){ return t.closed && t.pnl != null; });
-  var open   = trades.filter(function(t){ return !t.closed; });
-  var wins   = closed.filter(function(t){ return (t.pnl || 0) > 0; });
-  var totalPnl = closed.reduce(function(s,t){ return s + (t.pnl || 0); }, 0);
-  var partialPnl = 0;
-  trades.forEach(function(t){
-    if(!t.closed && t.partialCloses && t.partialCloses.length){
-      t.partialCloses.forEach(function(pc){ partialPnl += (pc.pnl || 0); });
-    }
-  });
-  // Max loss from open positions
-  var SPREADS = ['PCS','CCS','BCS','IC'];
-  var maxLoss = open.reduce(function(s, t){
-    var prem = parseFloat(t.openPremium) || parseFloat(t.premium) || 0;
-    if (SPREADS.indexOf(t.type) >= 0) return s + (t.teminat || 0);
-    return s + (t.teminat || 0);
-  }, 0);
+  // Tek kaynak: CALCULATION LAYER. Kismen acik pozisyonlarin gerceklesen
+  // kismi dahil (calcRealizedPnl); win rate pozisyon bazli (calcWinStats).
+  var closed = trades.filter(function(t){ return calcIsClosedTrade(t) && calcTradePnl(t) !== null; });
+  var open   = trades.filter(function(t){ var st = calcTradeStatus(t); return st === 'open' || st === 'partially_closed'; });
+  var _ws    = calcWinStats(trades);
+  var wins   = { length: _ws.wins };
+  var _realized = calcRealizedPnl(trades);
+  // "Toplam Risk" karti TEMINAT toplamini gosterir (etiketi de oyle);
+  // maksimum kayip ayri alanda (maxLossTrue) — teminat ile karistirilmaz.
+  var collateral = open.reduce(function(s, t){ return s + calcCollateral(t).value; }, 0);
+  var maxLossTrue = open.reduce(function(s, t){ var m = calcMaxLoss(t); return s + (m.unlimited || m.value === null ? 0 : m.value); }, 0);
+  var maxLoss = collateral;
   // Nearest expiry among open trades
   var now = new Date();
   var nearest = null;
@@ -11342,8 +12625,8 @@ function _aileProfileStats(trades) {
   });
   // Tahsil edilen prim: yalnizca SHORT islemler (long'da prim odenir)
   var premCollected = trades.reduce(function(s,t){
-    if(isLong(t.type)) return s;
-    return s + (parseFloat(t.openPremium)||parseFloat(t.premium)||0);
+    if(calcIsLongTrade(t)) return s;
+    return s + calcTradePremium(t);
   }, 0);
   // En iyi / en kotu kapali islem
   var best = null, worst = null;
@@ -11352,13 +12635,17 @@ function _aileProfileStats(trades) {
     if(worst === null || (t.pnl||0) < (worst.pnl||0)) worst = t;
   });
   return {
-    totalPnl: totalPnl + partialPnl,
+    totalPnl: _realized,
     closedCount: closed.length,
     openCount: open.length,
     tradeCount: trades.length,
     winCount: wins.length,
-    winRate: closed.length ? Math.round(wins.length / closed.length * 100) : 0,
+    winRate: _ws.closedTrades ? Math.round(_ws.winRate * 100) : 0,
+    lossCount: _ws.losses,
+    breakevenCount: _ws.breakevens,
     maxLoss: maxLoss,
+    collateral: collateral,
+    maxLossTrue: maxLossTrue,
     premCollected: premCollected,
     best: best,
     worst: worst,
