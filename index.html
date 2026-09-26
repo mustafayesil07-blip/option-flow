@@ -10420,7 +10420,7 @@ function _drawSpreadCard(D, scale){
   c.textAlign = 'left'; c.font = F(13, '500'); c.fillStyle = MUT;
   c.fillText('STRIKES = short/long  ·  % MAX = P&L ÷ credit  ·  ROC = P&L ÷ collateral  ·  date range = OPEN date', PAD, y + 27);
   c.font = F(12, '400'); c.fillStyle = '#5A636D';
-  c.fillText('Generated with OptionFlow · ' + _srIso(new Date()), PAD, y + 47);
+  c.fillText(_srIso(new Date()) + ' · personal log, not financial advice', PAD, y + 47);
 
   return cv;
 }
@@ -11497,8 +11497,6 @@ function _mtdPaintCard(c, D, W, PAD){
   yy += 30;
   c.font = F(13, '400'); c.fillStyle = MUT2; c.textAlign = 'left';
   c.fillText('Personal trading log · Not financial advice', left, yy + 4);
-  c.font = F(18, '700'); c.fillStyle = TXT; c.textAlign = 'right';
-  c.fillText('OptionFlow', W - PAD, yy + 8);
   yy += 40;
 
   return yy;
@@ -12991,12 +12989,10 @@ function exportShareCard(){
   var _yr   = ACTIVE_YEAR !== 'all' ? ACTIVE_YEAR : String(new Date().getFullYear());
   var profName = (PROFILES[ACTIVE_PROFILE]||{}).name || ACTIVE_PROFILE;
 
-  // ── Header left: logo + label
+  // ── Header left: etiket ──
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 36px sans-serif';
-  ctx.fillText('OptionFlow', 44, 62);
-  ctx.fillStyle = '#6366F1'; ctx.font = 'bold 18px sans-serif';
-  ctx.fillText('PERFORMANCE CARD', 44, 90);
+  ctx.fillStyle = '#6366F1'; ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('PERFORMANCE CARD', 44, 68);
 
   // ── Header right: profile + date
   ctx.textAlign = 'right';
