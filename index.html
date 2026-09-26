@@ -10967,9 +10967,8 @@ function _xrPaintCard(c, D, W){
   var pos = D.totPnl >= 0;
   var yy = 22;
 
-  // ── Ust bant: marka + gercek filtre ──
-  text('OPTIONFLOW', PAD + 4, yy + 10, F(11, '700'), TXT, 'left', 2.4);
-  text((_xrStatusLabel(D.status) + ' · OPENED IN PERIOD').toUpperCase(), W - PAD - 4, yy + 10, F(9.5, '600'), MUT2, 'right', 1);
+  // ── Ust bant: gercek filtre acikligi ──
+  text((_xrStatusLabel(D.status) + ' · OPENED IN PERIOD').toUpperCase(), W / 2, yy + 10, F(10, '700'), MUT2, 'center', 1.4);
   yy += 44;
 
   // ── Hero ──
@@ -11221,9 +11220,7 @@ function _xrPaintCard(c, D, W){
   yy += 24;
 
   // ── Alt bilgi ──
-  text('OptionFlow', W / 2, yy + 12, F(13, '700'), TXT, 'center', -0.2);
-  yy += 20;
-  text('Personal trading journal · Not financial advice', W / 2, yy + 10, F(10.5, '500'), MUT2, 'center');
+  text('Personal trading journal · Not financial advice', W / 2, yy + 10, F(11, '600'), MUT, 'center');
   yy += 16;
   text('Positions opened in period · ROC = realized P&L ÷ cash collateral · CC/PMCC: no cash collateral', W / 2, yy + 10, F(9.5, '500'), MUT2, 'center');
   yy += 30;
