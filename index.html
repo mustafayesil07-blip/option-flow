@@ -1766,6 +1766,7 @@
     <button onclick="showIBKRImport()" style="flex:1;min-width:140px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px;color:var(--warn);font-family:var(--font-head);font-size:14px;font-weight:600;cursor:pointer;">&#x1F916; IBKR Import</button>
     <button onclick="showSpreadReport()" style="flex:1;min-width:140px;background:rgba(236,72,153,0.10);border:1px solid rgba(236,72,153,.3);border-radius:12px;padding:14px;color:#EC4899;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;">&#x1F4E3; Spread Raporu</button>
     <button onclick="showXReport()" style="flex:1;min-width:140px;background:rgba(29,155,240,0.12);border:1px solid rgba(29,155,240,.35);border-radius:12px;padding:14px;color:#1D9BF0;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;">&#x1D54F; Payla&#x15F;&#x131;m Raporu</button>
+    <button onclick="showMtdReport()" style="flex:1;min-width:140px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:14px;color:var(--accent);font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;">MTD Report</button>
     <button onclick="showScreenshotImport()" style="flex:1;min-width:140px;background:rgba(59,130,246,0.10);border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:14px;color:#3B82F6;font-family:var(--font-head);font-size:13px;font-weight:600;cursor:pointer;">&#x1F4F8; Ekran G&#xF6;r&#xFC;nt&#xFC;s&#xFC;</button>
   </div>
   <div id="ibkrImportStatus" style="display:none;margin:0 20px 12px;padding:10px 14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;font-size:13px;color:var(--profit);"></div>
@@ -5185,6 +5186,305 @@ function _diagRunTests(){
           + '</div>';
       }).join('');
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// PHASE 4B — MTD (MONTH-TO-DATE) SHARE REPORT ENGINE (pure)
+// ═══════════════════════════════════════════════════════════════════════
+// Ay basindan (secilen ay/yil) rapor tarihine (as-of) kadarki performansi
+// tek bir paylasilabilir gorsele donusturur. Bu bir "son 7 gun" ya da
+// "acilis tarihine gore filtrelenmis tum islemler" raporu DEGILDIR.
+//
+// TARIH KURALLARI (degistirilemez):
+//   - Realized P&L : yalnizca SECILEN AY icinde KAPANAN (kapanis tarihi)
+//                     pozisyonlarin + o ay icinde gerceklesen kismi
+//                     kapanislarin P&L toplami. Acik pozisyonlarin
+//                     gerceklesmemis (mark-to-market) P&L'i ASLA tahmin
+//                     edilip gosterilmez — OptionFlow canli opsiyon
+//                     fiyati cekmez.
+//   - Opened (aktivite)   : secilen ay icinde ACILAN pozisyon sayisi
+//                     (acilis tarihine gore), kapanma ayindan bagimsiz.
+//   - Closed (aktivite)   : secilen ay icinde KAPANAN pozisyon sayisi
+//                     (kapanis tarihine gore), acilis ayindan bagimsiz.
+//   - Still open          : as-of tarihi itibariyla HALA ACIK olan
+//                     pozisyonlar (acilis <= as-of ve (kapanmamis ya da
+//                     kapanis as-of'tan SONRA)) — gecmis bir ay + as-of
+//                     secilse bile o gunku dogru acik kitabini verir.
+//   - Kismi kapanis       : pozisyon TEK trade olarak kalir (iki ayri
+//                     islem gibi gosterilmez). Tamamen kapanmamis bir
+//                     pozisyonun o ana kadarki kismi kapanislari, GERCEKLESTIKLERI
+//                     GUNE gore ilgili aya yazilir; kalan adet "still open"
+//                     tarafinda gorunur. Pozisyon SONRADAN tamamen kapanirsa
+//                     (uygulamanin genel kurali geregi) toplam P&L tek
+//                     kalemde nihai kapanis tarihine yazilir — bu, uygulamanin
+//                     her yerinde gecerli olan mevcut P&L modelidir, bu
+//                     rapor icin yeniden tasarlanmadi.
+//
+// TEMINAT KURALI: calcCollateral / calcIsCoveredTrade zaten CC ve PMCC
+// icin teminati $0 sayiyor (nakit teminat degil, hisse/LEAPS karsiliyor);
+// bu motor o kurali degistirmeden aynen kullanir, ROC hesabinda da bu
+// pozisyonlari calcAggregateROC'un mevcut disleme mantigiyla aynen disler.
+
+// Secilen ay/yilin ilk ve son gunu (ISO 'YYYY-MM-DD').
+function mtdMonthRange(year, month){                 // month: 1-12
+  var first = new Date(year, month - 1, 1);
+  var last  = new Date(year, month, 0);
+  return { from:_srIso(first), to:_srIso(last) };
+}
+// As-of tarihini secilen ay sinirlari icine kenetler (bos/gecersizse ay sonu).
+function mtdAsOfClamp(year, month, asOfISO){
+  var r = mtdMonthRange(year, month);
+  var a = (asOfISO && /^\d{4}-\d{2}-\d{2}/.test(String(asOfISO))) ? String(asOfISO).slice(0, 10) : r.to;
+  if(a < r.from) a = r.from;
+  if(a > r.to) a = r.to;
+  return { from:r.from, to:r.to, asOf:a };
+}
+// Bir kismi kapanis olayinin gerceklesen P&L'i — tek kaynak: calcPartialEntryPnl.
+// O da hesaplanamazsa (eski/ice aktarilmis kayit) saklanan pc.pnl'e duser.
+function mtdPartialEventPnl(t, pc){
+  var v = calcPartialEntryPnl(t, pc);
+  if(v !== null) return v;
+  return calcNum(pc && pc.pnl) || 0;
+}
+// t, verilen as-of tarihinde ACIK miydi? (acilmis ve o tarihte henuz kapanmamis)
+function mtdIsOpenAsOf(t, asOfISO){
+  if(!t || !t.opened) return false;
+  var o = String(t.opened).slice(0, 10);
+  if(o > asOfISO) return false;                       // henuz acilmamis
+  if(!calcIsClosedTrade(t)) return true;               // acik / kismen kapali
+  var cd = t.closed ? String(t.closed).slice(0, 10) : null;
+  return !cd || cd > asOfISO;                          // o tarihte henuz kapanmamis
+}
+
+// Ana rapor motoru — SAF fonksiyon: DOM'a, localStorage'a, global mutable
+// duruma dokunmaz. trades = getAllTrades() gibi duz bir dizi.
+function mtdBuildDataset(trades, opts){
+  opts = opts || {};
+  var range = mtdAsOfClamp(opts.year, opts.month, opts.asOf);
+  var from = range.from, to = range.to, asOf = range.asOf;
+  var all = trades || [];
+
+  var openedCount = all.filter(function(t){
+    if(!t.opened) return false;
+    var o = String(t.opened).slice(0, 10);
+    return o >= from && o <= asOf;
+  }).length;
+
+  var closedRows = [], closedTradeObjs = [];
+  all.forEach(function(t){
+    if(!calcIsClosedTrade(t)) return;
+    var cd = t.closed ? String(t.closed).slice(0, 10) : null;
+    if(!cd || cd < from || cd > asOf) return;
+    var pnl = calcTradePnl(t);
+    if(pnl === null) return;                           // veri eksik: ne kapanan ne acik listede uydurulur
+    var roc = calcROCInfo(t);
+    closedTradeObjs.push(t);
+    closedRows.push({
+      id:String(t.id), ticker:String(t.ticker || '?').split(' ')[0].toUpperCase(),
+      type:t.type, strikes:fmtStrikes(t), qty:calcQty(t) || t.q || 1,
+      opened:String(t.opened || '').slice(0, 10), closed:cd,
+      pnl:pnl, credit:calcTradePremium(t),
+      roc:roc.value, rocReason:roc.reason, holdingDays:calcHoldingDays(t),
+      covered:calcIsCoveredTrade(t)
+    });
+  });
+  closedRows.sort(function(a, b){ return a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : (a.opened < b.opened ? 1 : -1); });
+
+  var openRows = [], partialEvents = [];                // partialEvents: {type, date, pnl} — sadece HALA acik pozisyonlarin bu araliktaki kismi kapanislari
+  all.forEach(function(t){
+    if(!mtdIsOpenAsOf(t, asOf)) return;
+    var pcs = calcPartialCloses(t);
+    var closedQty = calcClosedQty(t);
+    var initQty = calcQty(t) || t.q || 1;
+    if(pcs.length){
+      pcs.forEach(function(pc){
+        var d = pc && pc.date ? String(pc.date).slice(0, 10) : null;
+        if(!d || d < from || d > asOf) return;
+        partialEvents.push({ type:t.type, date:d, pnl:mtdPartialEventPnl(t, pc) });
+      });
+    }
+    var tkr = String(t.ticker || '?').split(' ')[0].toUpperCase();
+    openRows.push({
+      id:String(t.id), ticker:tkr, type:t.type, strikes:fmtStrikes(t),
+      qty:initQty - closedQty, initialQty:initQty, closedQty:closedQty,
+      opened:String(t.opened || '').slice(0, 10), dte:calcDTE(t, asOf),
+      credit:calcTradePremium(t),
+      delta:(t.delta !== undefined && t.delta !== null && t.delta !== '') ? calcNum(t.delta) : null,
+      ivr:(t.ivr !== undefined && t.ivr !== null && t.ivr !== '') ? calcNum(t.ivr) : null,
+      stockPrice:(typeof stockPrices !== 'undefined' && stockPrices && stockPrices[tkr] !== undefined) ? stockPrices[tkr] : null,
+      isPartial:closedQty > 0
+    });
+  });
+  openRows.sort(function(a, b){ return (a.dte === null ? 99999 : a.dte) - (b.dte === null ? 99999 : b.dte); });
+
+  var closedPnl  = calcRound2(closedRows.reduce(function(s, r){ return s + r.pnl; }, 0));
+  var partialPnl = calcRound2(partialEvents.reduce(function(s, p){ return s + p.pnl; }, 0));
+  var realizedPnl = calcRound2(closedPnl + partialPnl);
+  var creditTotal = calcRound2(closedRows.reduce(function(s, r){ return s + r.credit; }, 0));
+
+  // Tek kaynak: calcWinStats / calcAggregateROC — orijinal (satira degil
+  // trade nesnesine ait) kayitlar uzerinde, baska hicbir yerde tekrar
+  // hesaplanmiyor.
+  var ws  = calcWinStats(closedTradeObjs);
+  var agg = calcAggregateROC(closedTradeObjs);
+
+  var byType = {};
+  closedRows.forEach(function(r){
+    var b = byType[r.type] = byType[r.type] || { type:r.type, count:0, pnl:0 };
+    b.count++; b.pnl = calcRound2(b.pnl + r.pnl);
+  });
+  partialEvents.forEach(function(p){
+    var b = byType[p.type] = byType[p.type] || { type:p.type, count:0, pnl:0 };
+    b.pnl = calcRound2(b.pnl + p.pnl);
+  });
+  var strategyMix = Object.keys(byType).map(function(k){ return byType[k]; }).sort(function(a, b){ return b.pnl - a.pnl; });
+
+  var byDay = {};
+  closedRows.forEach(function(r){ byDay[r.closed] = calcRound2((byDay[r.closed] || 0) + r.pnl); });
+  partialEvents.forEach(function(p){ byDay[p.date] = calcRound2((byDay[p.date] || 0) + p.pnl); });
+  var days = Object.keys(byDay).sort();
+  var cum = 0;
+  var chart = days.map(function(d){ cum = calcRound2(cum + byDay[d]); return { date:d, pnl:byDay[d], cum:cum }; });
+
+  return {
+    year:opts.year, month:opts.month, from:from, to:to, asOf:asOf,
+    openedCount:openedCount, closedCount:closedRows.length, stillOpenCount:openRows.length,
+    closedRows:closedRows, openRows:openRows,
+    realizedPnl:realizedPnl, closedPnl:closedPnl, partialPnl:partialPnl, creditTotal:creditTotal,
+    wins:ws.wins, losses:ws.losses, breakevens:ws.breakevens,
+    winRate:ws.closedTrades ? Math.round(ws.winRate * 100) : null,
+    avgHoldingDays:closedRows.length ? Math.round(closedRows.reduce(function(s, r){ return s + (r.holdingDays || 0); }, 0) / closedRows.length) : null,
+    rocValue:agg.roc, rocCoveredCount:agg.covered, rocUnavailableCount:agg.unavailable,
+    strategyMix:strategyMix, chart:chart
+  };
+}
+// DOM/uygulama durumuna baglanan sarmalayici — canli uygulamada bu cagrilir.
+function mtdReportData(opts){
+  return mtdBuildDataset(getAllTrades(), opts || {});
+}
+
+// ── Test paketi ──────────────────────────────────────────────────────────
+function runMtdReportTests(){
+  var R = [];
+  var T = function(name, expected, fn){ var a, ok; try { a = fn(); ok = JSON.stringify(a) === JSON.stringify(expected); } catch(e){ a = 'HATA: ' + e.message; ok = false; }
+    R.push({ name:name, expected:expected, actual:a, pass:ok }); };
+  var mk = function(o){ return Object.assign({ id:'t', ticker:'AAA', type:'PCS', q:1, opened:'2026-09-01', openPremium:100, teminat:1000 }, o); };
+
+  // 1-2: ay araligi
+  T('1 Guncel ay MTD araligi', { from:'2026-09-01', to:'2026-09-30' }, function(){ var d = mtdBuildDataset([], { year:2026, month:9 }); return { from:d.from, to:d.to }; });
+  T('2 Gecmis ay MTD araligi (Haziran, 30 gun)', { from:'2026-06-01', to:'2026-06-30' }, function(){ var d = mtdBuildDataset([], { year:2026, month:6 }); return { from:d.from, to:d.to }; });
+
+  // 3-4: ay ici / ay sonu rapor
+  T('3 Ay ortasi rapor: as-of oldugu gibi kalir', '2026-09-19', function(){ return mtdBuildDataset([], { year:2026, month:9, asOf:'2026-09-19' }).asOf; });
+  T('4 Ay sonu rapor: as-of = ay sonu', '2026-09-30', function(){ return mtdBuildDataset([], { year:2026, month:9, asOf:'2026-09-30' }).asOf; });
+
+  // 5: acilis / kapanis tarihi ayrimi — Agustos'ta acilan, Eylul'de kapanan
+  var crossAugSep = mk({ id:'X1', opened:'2026-08-20', closed:'2026-09-05', pnl:150 });
+  T('5 Eylul raporu: Agustos acilan+Eylul kapanan islem Closed listesinde, Opened sayilmaz', { opened:0, closedIds:['X1'] },
+    function(){ var d = mtdBuildDataset([crossAugSep], { year:2026, month:9 }); return { opened:d.openedCount, closedIds:d.closedRows.map(function(r){ return r.id; }) }; });
+
+  // 6: ayni ay icinde acilip kapanan
+  var sameMonth = mk({ id:'S1', opened:'2026-09-03', closed:'2026-09-10', pnl:200 });
+  T('6 Ayni ayda acilip kapanan: hem Opened hem Closed sayilir', { opened:1, closed:1 },
+    function(){ var d = mtdBuildDataset([sameMonth], { year:2026, month:9 }); return { opened:d.openedCount, closed:d.closedCount }; });
+
+  // 7: Eylul'de acilip Ekim'de kapanan — iki ayri MTD raporunda
+  var sepToOct = mk({ id:'Y1', opened:'2026-09-28', closed:'2026-10-03', pnl:75 });
+  T('7a Eylul raporu: Opened +1, Closed 0, P&L bu islemden 0, hala acik', { opened:1, closed:0, pnl:0, stillOpen:1 },
+    function(){ var d = mtdBuildDataset([sepToOct], { year:2026, month:9 }); return { opened:d.openedCount, closed:d.closedCount, pnl:d.realizedPnl, stillOpen:d.stillOpenCount }; });
+  T('7b Ekim raporu: Opened 0, Closed +1, P&L bu islemden gerceklesir', { opened:0, closed:1, pnl:75 },
+    function(){ var d = mtdBuildDataset([sepToOct], { year:2026, month:10 }); return { opened:d.openedCount, closed:d.closedCount, pnl:d.realizedPnl }; });
+
+  // 8: Agustos'ta acilip Eylul'de kapanan (8. senaryo, 5 ile ayni veriyi baska acidan dogrular)
+  T('8 Agustos raporu: Opened +1, Closed 0, hala acik (Eylul asOf oncesi)', { opened:1, closed:0, stillOpen:1 },
+    function(){ var d = mtdBuildDataset([crossAugSep], { year:2026, month:8 }); return { opened:d.openedCount, closed:d.closedCount, stillOpen:d.stillOpenCount }; });
+
+  // 9: acik islemler — uydurma opsiyon fiyati yok, gercek alanlar korunur
+  var openT = mk({ id:'O1', type:'PCS', strike:'495/485', q:5, opened:'2026-09-06', openPremium:801, delta:null, ivr:null });
+  T('9 Acik islem: qty/credit/dte korunur, delta/ivr N/A (0 degil)', { qty:5, credit:801, delta:null, ivr:null },
+    function(){ var r = mtdBuildDataset([openT], { year:2026, month:9, asOf:'2026-09-26' }).openRows[0]; return { qty:r.qty, credit:r.credit, delta:r.delta, ivr:r.ivr }; });
+
+  // 10: kapanan islem yok
+  T('10 Kapanan islem yok: P&L 0 (null degil), winRate null (ornek yok), chart bos', { pnl:0, wr:null, chart:0 },
+    function(){ var d = mtdBuildDataset([openT], { year:2026, month:9, asOf:'2026-09-26' }); return { pnl:d.realizedPnl, wr:d.winRate, chart:d.chart.length }; });
+
+  // 11: acik islem yok
+  T('11 Acik islem yok: stillOpenCount 0', 0, function(){ return mtdBuildDataset([sameMonth], { year:2026, month:9 }).stillOpenCount; });
+
+  // 12: kismi kapanis — tek trade kalir, gerceklesen kismi P&L araliga yaziliyor, kalan adet acik
+  var partial = mk({ id:'P1', q:4, openPremium:800, openCommission:0, opened:'2026-09-02',
+    partialCloses:[{ date:'2026-09-15', qty:2, closePremium:200, closeCommission:0 }] });
+  T('12 Kismi kapanis: tek satir, kalan adet 2, gerceklesen kismi P&L raporda', { rows:1, remainingQty:2, realized:200 },
+    function(){ var d = mtdBuildDataset([partial], { year:2026, month:9, asOf:'2026-09-26' }); return { rows:d.openRows.length, remainingQty:d.openRows[0].qty, realized:d.realizedPnl }; });
+
+  // 13: roll zinciri — iki bacak, ayri kapanis tarihleri, cift sayim yok
+  var rollLeg1 = mk({ id:'R1', opened:'2026-08-01', closed:'2026-09-05', pnl:50 });
+  var rollLeg2 = mk({ id:'R2', opened:'2026-09-05', closed:'2026-10-01', pnl:-20, rollFromId:'R1' });
+  T('13 Roll zinciri: her bacak kendi kapanis ayinda, toplam cift sayilmaz', { sep:50, oct:-20 },
+    function(){ return { sep:mtdBuildDataset([rollLeg1, rollLeg2], { year:2026, month:9 }).realizedPnl,
+                          oct:mtdBuildDataset([rollLeg1, rollLeg2], { year:2026, month:10 }).realizedPnl }; });
+
+  // 14: CC teminat 0
+  var ccT = mk({ id:'CC1', type:'CC', strike:'29', q:1, openPremium:100, opened:'2026-09-01', closed:'2026-09-20', pnl:100 });
+  T('14 CC: closed row roc null (nakit teminat yok), covered=true', { roc:null, covered:true },
+    function(){ var r = mtdBuildDataset([ccT], { year:2026, month:9 }).closedRows[0]; return { roc:r.roc, covered:r.covered }; });
+
+  // 15: PMCC teminat 0
+  var pmccT = mk({ id:'PM1', type:'PMCC', strike:'150', q:1, openPremium:120, opened:'2026-09-01', closed:'2026-09-20', pnl:120 });
+  T('15 PMCC: closed row roc null (nakit teminat yok), covered=true', { roc:null, covered:true },
+    function(){ var r = mtdBuildDataset([pmccT], { year:2026, month:9 }).closedRows[0]; return { roc:r.roc, covered:r.covered }; });
+
+  // 16: CC/PMCC teminat-bazli ROC agregasyonuna girmez
+  var cspT = mk({ id:'CSP1', type:'CSP', strike:'100', q:1, teminat:10000, openPremium:200, opened:'2026-09-01', closed:'2026-09-15', pnl:200 });
+  T('16 CC/PMCC agregat ROC disinda, CSP dahil', { covered:2, rocFromCspOnly:0.02 },
+    function(){ var d = mtdBuildDataset([ccT, pmccT, cspT], { year:2026, month:9 }); return { covered:d.rocCoveredCount, rocFromCspOnly:d.rocValue }; });
+
+  // 17: prim (credit) gerceklesmis P&L ile ayni degil
+  var lossAfterCredit = mk({ id:'L1', type:'PCS', q:1, openPremium:500, openCommission:0, closePremium:380, closeCommission:0, opened:'2026-09-01', closed:'2026-09-10', pnl:120 });
+  T('17 Premium ≠ Realized P&L: ayri alanlar, farkli degerler', { credit:500, pnl:120, equal:false },
+    function(){ var d = mtdBuildDataset([lossAfterCredit], { year:2026, month:9 }); return { credit:d.creditTotal, pnl:d.realizedPnl, equal:d.creditTotal === d.realizedPnl }; });
+
+  // 18-19: eksik delta / IVR acik pozisyonda N/A
+  var noGreeks = mk({ id:'NG1', opened:'2026-09-01' });
+  T('18 Eksik delta: null (0 degil)', null, function(){ return mtdBuildDataset([noGreeks], { year:2026, month:9, asOf:'2026-09-26' }).openRows[0].delta; });
+  T('19 Eksik IVR: null (0 degil)', null, function(){ return mtdBuildDataset([noGreeks], { year:2026, month:9, asOf:'2026-09-26' }).openRows[0].ivr; });
+
+  // 20: eksik teminat (kapanmis, covered olmayan bir tur) — ROC hesaplanamaz
+  var noColl = mk({ id:'NC1', type:'CSP', strike:'0', q:1, teminat:0, openPremium:150, opened:'2026-09-01', closed:'2026-09-12', pnl:150 });
+  T('20 Teminat eksik: roc null, rocUnavailableCount 1', { roc:null, unavail:1 },
+    function(){ var d = mtdBuildDataset([noColl], { year:2026, month:9 }); return { roc:d.closedRows[0].roc, unavail:d.rocUnavailableCount }; });
+
+  // 21: kumulatif grafik — gun bazinda dogru sira ve kumulatif toplam
+  var g1 = mk({ id:'G1', opened:'2026-09-01', closed:'2026-09-05', pnl:100 });
+  var g2 = mk({ id:'G2', opened:'2026-09-01', closed:'2026-09-10', pnl:-40 });
+  var g3 = mk({ id:'G3', opened:'2026-09-01', closed:'2026-09-20', pnl:60 });
+  T('21 Kumulatif grafik: tarih sirali, kumulatif dogru', [100, 60, 120],
+    function(){ return mtdBuildDataset([g1, g2, g3], { year:2026, month:9 }).chart.map(function(x){ return x.cum; }); });
+
+  // 22: strateji dagilimi — turlere gore toplam, hero toplamiyla eslesir
+  T('22 Strateji dagilimi toplami hero P&L ile esit', true,
+    function(){ var d = mtdBuildDataset([ccT, cspT], { year:2026, month:9 }); var sum = d.strategyMix.reduce(function(s, x){ return s + x.pnl; }, 0); return Math.abs(sum - d.realizedPnl) < 0.01; });
+
+  // 23-24: dogru win rate + ornek buyuklugu
+  var w1 = mk({ id:'W1', opened:'2026-09-01', closed:'2026-09-02', pnl:10 });
+  var w2 = mk({ id:'W2', opened:'2026-09-01', closed:'2026-09-02', pnl:10 });
+  var w3 = mk({ id:'W3', opened:'2026-09-01', closed:'2026-09-02', pnl:10 });
+  var l1 = mk({ id:'L2', opened:'2026-09-01', closed:'2026-09-02', pnl:-5 });
+  T('23-24 Win rate %75, 3 kazanan/1 kaybeden ornek boyutuyla birlikte', { wr:75, w:3, l:1 },
+    function(){ var d = mtdBuildDataset([w1, w2, w3, l1], { year:2026, month:9 }); return { wr:d.winRate, w:d.wins, l:d.losses }; });
+
+  // 25-27: NaN / Infinity / undefined uretilmez
+  T('25 Kapanan yokken NaN yok', true, function(){ var d = mtdBuildDataset([openT], { year:2026, month:9, asOf:'2026-09-26' }); return !isNaN(d.realizedPnl) && (d.avgHoldingDays === null || !isNaN(d.avgHoldingDays)); });
+  T('26 Teminati olmayan islemlerde Infinity yok', true, function(){ var d = mtdBuildDataset([noColl], { year:2026, month:9 }); return d.rocValue === null || isFinite(d.rocValue); });
+  T('27 Bos veri setinde hicbir alan undefined degil', true, function(){
+    var d = mtdBuildDataset([], { year:2026, month:9 });
+    var keys = ['from', 'to', 'asOf', 'openedCount', 'closedCount', 'stillOpenCount', 'realizedPnl', 'closedPnl', 'partialPnl', 'creditTotal', 'wins', 'losses', 'winRate', 'rocValue', 'strategyMix', 'chart'];
+    return keys.every(function(k){ return d[k] !== undefined; });
+  });
+
+  var passed = R.filter(function(r){ return r.pass; }).length;
+  return { total:R.length, passed:passed, failed:R.length - passed, results:R };
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════
 // CLOUD SYNC CLIENT (v2) — profil basina belgeler, kayit bazli birlestirme
@@ -10963,6 +11263,394 @@ function _xrCopyTweet(){
   } else if(ok && typeof _backupToast === 'function'){
     _backupToast('📋 Tweet metni kopyalandı', true);
   }
+}
+
+
+// ═══════════════════════ MTD (AY BASINDAN BUGÜNE) PAYLASIM RAPORU ═══════════════════════
+// Amaci sosyal medyada (X vb.) paylasilacak, Apple esintili, acik temali,
+// premium bir "month-to-date" performans goruntusu uretmek. Trading
+// terminali DEGIL — bkz. PHASE 4B — MTD SHARE REPORT ENGINE yorumlari.
+var _mtdYear = null, _mtdMonth = null, _mtdAsOf = null;
+
+function _mtdShortDate(iso){
+  if(!iso) return '—';
+  var MS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var m = parseInt(iso.substring(5,7), 10), d = parseInt(iso.substring(8,10), 10);
+  return MS[m-1] + ' ' + d;
+}
+function _mtdMonthName(year, month){
+  var EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return EN[month-1] + ' ' + year;
+}
+function _mtdData(){
+  return mtdReportData({ year:_mtdYear, month:_mtdMonth, asOf:_mtdAsOf });
+}
+
+// ── Canvas cizimi (Apple-light, paylasima uygun portre format) ──────────
+// Iki gecisli: once uzun bir "olcum" tuvalinde cizilir, gercek icerik
+// yuksekligi bulunur; gercek tuval tam o yukseklikte acilir ve yeniden
+// cizilir. Boylece bolum sayisi/satir sayisi degiskenken hicbir icerik
+// kirpilmaz ya da bosluk birikmez.
+function _mtdPaintCard(c, D, W, PAD){
+  var SURF2='#F2F2F7', TXT='#1D1D1F', MUT='#6E6E73', MUT2='#86868B';
+  var LINE='#E5E5EA', GRN='#1E7E34', RED='#D70015', ACC='#007AFF';
+  var F  = function(px, w){ return (w||'400') + ' ' + px + 'px -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif'; };
+  var MONO = function(px, w){ return (w||'500') + ' ' + px + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; };
+  var CW = W - PAD * 2;
+  var left = PAD;
+  var MAXROWS = 4;
+  var closedShown = D.closedRows.slice(0, MAXROWS);
+  var closedExtra  = D.closedRows.length - closedShown.length;
+  var openShown = D.openRows.slice(0, MAXROWS);
+  var openExtra  = D.openRows.length - openShown.length;
+  var mixShown = D.strategyMix.slice(0, 5);
+  var hasChart = D.chart.length >= 2;
+
+  c.textBaseline = 'alphabetic';
+  var yy = PAD;
+
+  // Ay etiketi
+  c.textAlign = 'left'; c.font = F(22, '700'); c.fillStyle = MUT;
+  c.fillText(_mtdMonthName(D.year, D.month).toUpperCase(), left, yy + 18);
+  yy += 40;
+
+  // Hero: buyuk gerceklesmis P&L
+  var heroColor = D.realizedPnl >= 0 ? GRN : RED;
+  c.font = F(84, '800'); c.fillStyle = heroColor;
+  c.fillText(_srSigned(D.realizedPnl), left, yy + 76);
+  yy += 92;
+  c.font = F(19, '700'); c.fillStyle = MUT2;
+  c.fillText('REALIZED P&L', left, yy + 16);
+  yy += 42;
+
+  // Rozet: "MONTH TO DATE · UPDATED SEP 26"
+  var badge = 'MONTH TO DATE · UPDATED ' + _mtdShortDate(D.asOf).toUpperCase();
+  c.font = F(16, '600');
+  var bw = c.measureText(badge).width + 32;
+  _srRoundRect(c, left, yy, bw, 34, 17);
+  c.fillStyle = SURF2; c.fill();
+  c.fillStyle = TXT; c.textAlign = 'left';
+  c.fillText(badge, left + 16, yy + 22);
+  yy += 44;
+
+  // Ozet satiri
+  c.font = F(19, '500'); c.fillStyle = MUT;
+  var summary = D.closedCount + ' closed · ' + D.stillOpenCount + ' open · ' + (D.closedCount + D.stillOpenCount) + ' positions';
+  c.fillText(summary, left, yy + 16);
+  yy += 34;
+
+  c.strokeStyle = LINE; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(left, yy + 18); c.lineTo(W - PAD, yy + 18); c.stroke();
+  yy += 36;
+
+  // Metrik karo yardimcisi
+  var tile = function(x, ty, w, label, value, sub, color){
+    c.textAlign = 'left';
+    c.font = F(13, '700'); c.fillStyle = MUT2;
+    c.fillText(label.toUpperCase(), x, ty + 14);
+    c.font = F(28, '700'); c.fillStyle = color || TXT;
+    c.fillText(value, x, ty + 50);
+    c.font = F(14, '500'); c.fillStyle = MUT;
+    c.fillText(sub || '', x, ty + 72);
+  };
+  var colW = CW / 3;
+  var perfMetrics = [
+    { l:'Win Rate', v:(D.winRate === null ? '—' : D.winRate + '%'), s:(D.winRate === null ? 'no closed trades yet' : (D.wins + 'W · ' + D.losses + 'L')), c:null },
+    { l:'Avg Hold', v:(D.avgHoldingDays === null ? '—' : D.avgHoldingDays + 'd'), s:'per closed trade', c:null },
+    { l:'Premium Received', v:_srMoney(D.creditTotal), s:'gross credit, not profit', c:null },
+    { l:'Collateral ROC', v:(D.rocValue === null ? 'N/A' : _srPct(D.rocValue)), s:(D.rocCoveredCount ? D.rocCoveredCount + ' covered (no cash coll.)' : 'realized ÷ collateral'), c:(D.rocValue === null ? MUT2 : (D.rocValue >= 0 ? GRN : RED)) },
+    { l:'Portfolio Return', v:(D.portfolioReturn === null || D.portfolioReturn === undefined ? '—' : _srPct(D.portfolioReturn)), s:'realized on portfolio', c:(D.portfolioReturn === null || D.portfolioReturn === undefined ? MUT2 : (D.portfolioReturn >= 0 ? GRN : RED)) }
+  ];
+  var perfRows = Math.ceil(perfMetrics.length / 3);
+  for(var i = 0; i < perfMetrics.length; i++){
+    var col = i % 3, row = Math.floor(i / 3);
+    tile(left + col * colW, yy + row * 118, colW, perfMetrics[i].l, perfMetrics[i].v, perfMetrics[i].s, perfMetrics[i].c);
+  }
+  yy += perfRows * 118 + 32;
+
+  // Sermaye kullanimi
+  var cap = D.capital || {};
+  var capMetrics = [
+    { l:'Current Collateral', v:_srMoney(cap.nowColl || 0) },
+    { l:'Average Collateral', v:_srMoney(cap.avgColl || 0) },
+    { l:'Current Utilization', v:(cap.utilNow === null || cap.utilNow === undefined) ? '—' : Math.round(cap.utilNow * 100) + '%' },
+    { l:'Average Utilization', v:(cap.utilAvg === null || cap.utilAvg === undefined) ? '—' : Math.round(cap.utilAvg * 100) + '%' }
+  ];
+  var col4 = CW / 4;
+  for(var j = 0; j < capMetrics.length; j++) tile(left + j * col4, yy, col4, capMetrics[j].l, capMetrics[j].v, '', null);
+  yy += 118;
+  c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy); c.lineTo(W - PAD, yy); c.stroke();
+  yy += 30;
+
+  // ── Bolum basligi yardimcisi ──
+  var sectionHead = function(title, sub){
+    c.textAlign = 'left'; c.font = F(20, '700'); c.fillStyle = TXT;
+    c.fillText(title, left, yy + 18);
+    if(sub){
+      c.font = F(16, '500'); c.fillStyle = MUT; c.textAlign = 'right';
+      c.fillText(sub, W - PAD, yy + 18);
+      c.textAlign = 'left';
+    }
+    yy += 44;
+  };
+
+  // CLOSED TRADES
+  sectionHead('Closed Trades', D.closedCount + ' position' + (D.closedCount === 1 ? '' : 's') + ' · ' + _srSigned(D.realizedPnl) + ' realized');
+  if(!closedShown.length){
+    c.font = F(16, '500'); c.fillStyle = MUT2;
+    c.fillText(D.stillOpenCount ? 'No realized P&L yet' : 'No trades this month', left, yy + 16);
+    yy += 44;
+  } else {
+    closedShown.forEach(function(r){
+      c.font = F(19, '700'); c.fillStyle = TXT; c.textAlign = 'left';
+      c.fillText(r.ticker + ' · ' + r.type, left, yy + 20);
+      c.font = F(20, '700'); c.fillStyle = r.pnl >= 0 ? GRN : RED; c.textAlign = 'right';
+      c.fillText(_srSigned(r.pnl), W - PAD, yy + 20);
+      c.font = MONO(15, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+      var line2 = r.strikes + '   ·   ' + (r.roc === null ? 'ROC N/A' : _srPct(r.roc)) + '   ·   ' + (r.holdingDays === null ? '—' : r.holdingDays + 'd')
+        + '   ·   ' + _mtdShortDate(r.opened) + ' → ' + _mtdShortDate(r.closed);
+      c.fillText(line2, left, yy + 44);
+      c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy + 60); c.lineTo(W - PAD, yy + 60); c.stroke();
+      yy += 78;
+    });
+    if(closedExtra > 0){
+      c.font = F(15, '600'); c.fillStyle = ACC; c.textAlign = 'center';
+      c.fillText('+ ' + closedExtra + ' more closed trade' + (closedExtra === 1 ? '' : 's') + ' in app', W / 2, yy + 16);
+      yy += 34;
+    }
+  }
+  yy += 24;
+
+  // OPEN TRADES
+  sectionHead('Open Trades', D.stillOpenCount + ' position' + (D.stillOpenCount === 1 ? '' : 's'));
+  if(!openShown.length){
+    c.font = F(16, '500'); c.fillStyle = MUT2;
+    c.fillText('No open positions', left, yy + 16);
+    yy += 44;
+  } else {
+    openShown.forEach(function(r){
+      c.font = F(19, '700'); c.fillStyle = TXT; c.textAlign = 'left';
+      c.fillText(r.ticker + ' · ' + r.type, left, yy + 20);
+      c.font = F(17, '600'); c.fillStyle = MUT; c.textAlign = 'right';
+      c.fillText((r.dte === null ? '—' : r.dte + ' DTE'), W - PAD, yy + 20);
+      c.font = MONO(15, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+      var pieces = [r.strikes, r.qty + (r.qty === 1 ? ' contract' : ' contracts')];
+      if(r.isPartial) pieces.push(r.closedQty + '/' + r.initialQty + ' closed');
+      pieces.push(_srMoney(r.credit) + ' premium');
+      c.fillText(pieces.join('   ·   '), left, yy + 44);
+      c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy + 56); c.lineTo(W - PAD, yy + 56); c.stroke();
+      yy += 70;
+    });
+    if(openExtra > 0){
+      c.font = F(15, '600'); c.fillStyle = ACC; c.textAlign = 'center';
+      c.fillText('+ ' + openExtra + ' more open position' + (openExtra === 1 ? '' : 's') + ' in app', W / 2, yy + 16);
+      yy += 34;
+    }
+  }
+  yy += 24;
+
+  // STRATEGY MIX — kompakt tek satir: en iyi -> en kotu, best/worst sirali
+  if(mixShown.length){
+    sectionHead('Strategy Mix', null);
+    var mixLineH = 30, mixCol = CW / 2;
+    for(var mi = 0; mi < mixShown.length; mi++){
+      var m = mixShown[mi], mx = left + (mi % 2) * mixCol, my = yy + Math.floor(mi / 2) * mixLineH;
+      c.textAlign = 'left'; c.font = F(16, '700'); c.fillStyle = TXT;
+      c.fillText(m.type, mx, my + 16);
+      c.font = F(14, '500'); c.fillStyle = MUT;
+      c.fillText(m.count + ' trade' + (m.count === 1 ? '' : 's'), mx + 76, my + 16);
+      c.font = F(16, '700'); c.fillStyle = m.pnl >= 0 ? GRN : RED; c.textAlign = 'right';
+      c.fillText(_srSigned(m.pnl), mx + mixCol - 20, my + 16);
+    }
+    yy += Math.ceil(mixShown.length / 2) * mixLineH + 24;
+  }
+
+  // KUMULATIF P&L GRAFIGI
+  sectionHead('Cumulative Realized P&L', null);
+  if(!hasChart){
+    c.font = F(16, '500'); c.fillStyle = MUT2; c.textAlign = 'left';
+    c.fillText('No realized P&L data yet', left, yy + 16);
+    yy += 44;
+  } else {
+    var chH = 150, chY = yy;
+    var vals = D.chart.map(function(x){ return x.cum; });
+    var vmin = Math.min(0, Math.min.apply(null, vals)), vmax = Math.max(0, Math.max.apply(null, vals));
+    if(vmax === vmin){ vmax += 1; vmin -= 1; }
+    var chartColor = D.realizedPnl >= 0 ? GRN : RED;
+    var px = function(i){ return left + CW * (D.chart.length === 1 ? 1 : i / (D.chart.length - 1)); };
+    var py = function(v){ return chY + chH - ((v - vmin) / (vmax - vmin)) * chH; };
+    c.strokeStyle = LINE; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(left, py(0)); c.lineTo(W - PAD, py(0)); c.stroke();
+    c.strokeStyle = chartColor; c.lineWidth = 3; c.beginPath();
+    D.chart.forEach(function(pt, i){ var xx = px(i), yv = py(pt.cum); if(i === 0) c.moveTo(xx, yv); else c.lineTo(xx, yv); });
+    c.stroke();
+    D.chart.forEach(function(pt, i){ c.beginPath(); c.arc(px(i), py(pt.cum), 3.5, 0, Math.PI * 2); c.fillStyle = chartColor; c.fill(); });
+    c.font = F(14, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+    c.fillText(_mtdShortDate(D.chart[0].date), left, chY + chH + 22);
+    c.textAlign = 'right';
+    c.fillText(_mtdShortDate(D.chart[D.chart.length - 1].date), W - PAD, chY + chH + 22);
+    yy += chH + 40;
+  }
+
+  // ALT BILGI
+  c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy); c.lineTo(W - PAD, yy); c.stroke();
+  yy += 30;
+  c.font = F(13, '400'); c.fillStyle = MUT2; c.textAlign = 'left';
+  c.fillText('Personal trading log · Not financial advice', left, yy + 4);
+  c.font = F(18, '700'); c.fillStyle = TXT; c.textAlign = 'right';
+  c.fillText('OptionFlow', W - PAD, yy + 8);
+  yy += 40;
+
+  return yy;
+}
+function _drawMtdCard(D, scale){
+  scale = scale || 2;
+  var W = 1080, PAD = 56;
+  var BG = '#F5F5F7';
+  // 1) Olcum gecisi: gercek metin/satir sayisina gore toplam yuksekligi bul.
+  var probe = document.createElement('canvas');
+  probe.width = W; probe.height = 6000;
+  var H = Math.ceil(_mtdPaintCard(probe.getContext('2d'), D, W, PAD));
+  // 2) Gercek tuval — tam olculen yukseklikte, zemin doldurulup yeniden cizilir.
+  var cv = document.createElement('canvas');
+  cv.width = W * scale; cv.height = H * scale;
+  var c = cv.getContext('2d');
+  c.scale(scale, scale);
+  c.fillStyle = BG; c.fillRect(0, 0, W, H);
+  _mtdPaintCard(c, D, W, PAD);
+  return cv;
+}
+
+function _mtdFileName(ext){ return 'mtd-report-' + (_mtdYear || '') + '-' + (_mtdMonth ? String(_mtdMonth).padStart(2, '0') : '') + '.' + ext; }
+
+function downloadMtdPNG(){
+  var cv = _drawMtdCard(_mtdData(), 2);
+  var a = document.createElement('a');
+  a.href = cv.toDataURL('image/png');
+  a.download = _mtdFileName('png');
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function shareMtdPNG(){
+  var D = _mtdData();
+  var cv = _drawMtdCard(D, 2);
+  cv.toBlob(function(blob){
+    if(!blob) return;
+    var file = new File([blob], _mtdFileName('png'), { type:'image/png' });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      navigator.share({ files:[file], title:_mtdMonthName(D.year, D.month) + ' — MTD Report' }).catch(function(){});
+    } else {
+      var a = document.createElement('a');
+      a.href = cv.toDataURL('image/png'); a.download = _mtdFileName('png');
+      document.body.appendChild(a); a.click(); a.remove();
+      if(typeof _backupToast === 'function') _backupToast('Görsel indirildi, X\'te paylaşabilirsin', true);
+    }
+  });
+}
+
+function _mtdMonthOptions(){
+  var seen = {}, opts = [];
+  (typeof getAllTrades === 'function' ? getAllTrades() : []).forEach(function(t){
+    if(!t.opened) return;
+    var k = String(t.opened).slice(0, 7);
+    if(!seen[k]){ seen[k] = 1; opts.push(k); }
+  });
+  var now = new Date(); var curKey = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+  if(!seen[curKey]) opts.push(curKey);
+  opts.sort();
+  return opts.reverse();
+}
+
+function _mtdRefresh(){
+  var D = _mtdData();
+  D.capital = _xrCapital({ from:D.from, to:D.asOf, rocValue:D.rocValue, closedCount:D.closedCount, totPnl:D.realizedPnl });
+  D.portfolioReturn = (D.capital.port > 0) ? (D.realizedPnl / D.capital.port) : null;
+
+  var prev = document.getElementById('mtd_preview');
+  if(prev){
+    prev.innerHTML = '';
+    var cv = _drawMtdCard(D, 1.4);
+    cv.style.cssText = 'width:100%;display:block;border-radius:14px;';
+    prev.appendChild(cv);
+  }
+  var sum = document.getElementById('mtd_summary');
+  if(sum){
+    var cell = function(l, v, col){
+      return '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;">' + l + '</div>'
+           + '<div style="font-size:18px;font-weight:700;font-family:var(--font-mono);color:' + col + ';">' + v + '</div></div>';
+    };
+    sum.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">'
+      + cell('Realized P&L', _srSigned(D.realizedPnl), D.realizedPnl >= 0 ? 'var(--profit)' : 'var(--loss)')
+      + cell('Closed', String(D.closedCount), 'var(--text)')
+      + cell('Open', String(D.stillOpenCount), 'var(--text)')
+      + '</div>';
+  }
+}
+
+function _mtdSetMonth(key){
+  var parts = key.split('-'); _mtdYear = parseInt(parts[0], 10); _mtdMonth = parseInt(parts[1], 10);
+  var r = mtdMonthRange(_mtdYear, _mtdMonth);
+  var today = _srIso(new Date());
+  _mtdAsOf = (today >= r.from && today <= r.to) ? today : r.to;
+  var ai = document.getElementById('mtd_asof'); if(ai){ ai.min = r.from; ai.max = r.to; ai.value = _mtdAsOf; }
+  _mtdRefresh();
+}
+function _mtdSetAsOf(v){ if(v){ _mtdAsOf = v; _mtdRefresh(); } }
+
+function showMtdReport(){
+  var now = new Date();
+  if(!_mtdYear){ _mtdYear = now.getFullYear(); _mtdMonth = now.getMonth() + 1; }
+  var r = mtdMonthRange(_mtdYear, _mtdMonth);
+  var todayIso = _srIso(now);
+  if(!_mtdAsOf) _mtdAsOf = (todayIso >= r.from && todayIso <= r.to) ? todayIso : r.to;
+
+  var old = document.getElementById('mtd-modal'); if(old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'mtd-modal';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);overflow-y:auto;';
+  var box = document.createElement('div');
+  box.style.cssText = 'max-width:560px;margin:24px auto 40px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-md);';
+  ov.appendChild(box);
+
+  var monthOpts = _mtdMonthOptions();
+  var curKey = _mtdYear + '-' + ('0' + _mtdMonth).slice(-2);
+  if(monthOpts.indexOf(curKey) === -1) monthOpts.unshift(curKey);
+
+  var lblCss = 'font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;';
+  var selCss = 'width:100%;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;color:var(--text-primary);font-size:14px;outline:none;font-family:inherit;';
+  var btn = function(label, onclick, extra){ return '<button onclick="' + onclick + '" style="' + (extra||'') + '">' + label + '</button>'; };
+
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border-subtle);">'
+    + '<div><div style="font-size:17px;font-weight:700;color:var(--text-primary);">MTD Share Report</div>'
+    + '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">Month to date · realized performance snapshot</div></div>'
+    + '<button onclick="document.getElementById(\'mtd-modal\').remove()" style="width:30px;height:30px;border-radius:50%;background:var(--surface-secondary);border:none;color:var(--text-secondary);font-size:17px;cursor:pointer;">&times;</button>'
+    + '</div>'
+
+    + '<div style="padding:14px 18px 0;display:flex;gap:8px;">'
+    + '<div style="flex:1;"><div style="' + lblCss + '">Month</div>'
+    +   '<select id="mtd_month" onchange="_mtdSetMonth(this.value)" style="' + selCss + '">'
+    +     monthOpts.map(function(k){ var yy = k.split('-')[0], mm = parseInt(k.split('-')[1], 10);
+           return '<option value="' + k + '"' + (k === curKey ? ' selected' : '') + '>' + _mtdMonthName(parseInt(yy,10), mm) + '</option>'; }).join('')
+    +   '</select></div>'
+    + '<div style="flex:1;"><div style="' + lblCss + '">As of</div>'
+    +   '<input id="mtd_asof" type="date" min="' + r.from + '" max="' + r.to + '" value="' + _mtdAsOf + '" onchange="_mtdSetAsOf(this.value)" style="' + selCss + '"></div>'
+    + '</div>'
+
+    + '<div style="padding:14px 18px 0;">'
+    + '<div id="mtd_summary" style="background:var(--surface-secondary);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
+    + '<div style="' + lblCss + '">Preview</div>'
+    + '<div id="mtd_preview" style="background:var(--bg);border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden;margin-bottom:14px;"></div>'
+    + '</div>'
+
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 18px 18px;">'
+    +   btn('Download PNG', 'downloadMtdPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--success);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('Share Report', 'shareMtdPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    + '</div>';
+
+  document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  _mtdRefresh();
 }
 
 function showXReport(){
