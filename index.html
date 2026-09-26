@@ -10181,7 +10181,11 @@ function _spreadReportData(fromISO, toISO, types, status){
       pnl    : pnl,
       risk   : risk,
       pctMax : (isClosed && credit > 0) ? (pnl / credit) : null,
-      ror    : (isClosed && risk > 0)   ? (pnl / risk)   : null
+      ror    : (isClosed && risk > 0)   ? (pnl / risk)   : null,
+      covered: calcIsCoveredTrade(t),
+      // Ekran gosterimi icin gecirilen kullanici alanlari (hesaba GIRMEZ):
+      delta  : (t.delta !== undefined && t.delta !== null && t.delta !== '') ? calcNum(t.delta) : null,
+      ivr    : (t.ivr   !== undefined && t.ivr   !== null && t.ivr   !== '') ? calcNum(t.ivr)   : null
     });
   });
   // Acilis tarihine gore sirala (filtrenin dayanagi da bu)
@@ -10208,6 +10212,7 @@ function _spreadReportData(fromISO, toISO, types, status){
     winRate: _ws.closedTrades ? Math.round(_ws.winRate * 100) : 0,
     breakevens: _ws.breakevens,
     rocUnavailable: _agg.unavailable,
+    rocCovered: _agg.covered,
     totCredit: totCredit,
     totPnl: totPnl,
     totRisk: totRisk,
@@ -10874,29 +10879,36 @@ function _xrCapital(D){
   };
 }
 
-function _drawXCard(D, scale){
-  scale = scale || 2;
-  // Sosyal medyada okunabilirlik icin genis tuval + iri punto.
-  var W = 1400, PAD = 48;
-  var HEAD = 158, TILEH = 118, THEAD = 52, ROWH = 56, FOOT = 74;
-  var MAXROWS = 12;
-  var CAP = _xrShowCapital ? _xrCapital(D) : null;
-  var TILEROWS = CAP ? 2 : 1;
-  var shown = D.rows.slice(0, MAXROWS);
-  var extra = D.rows.length - shown.length;
-  var bodyH = Math.max(shown.length, 1) * ROWH + (extra > 0 ? 40 : 0);
-  var H = HEAD + TILEH * TILEROWS + 26 + THEAD + bodyH + FOOT;
+// Secilen araligin GERCEK filtresini yansitan etiket. "Month to date"
+// gibi yeni bir anlam KATMAZ — D.from/D.to tam bir takvim ayina denk
+// gelmiyorsa (kullanici ozel bir aralik/hafta secmis olabilir) acik
+// tarihleri gosterir.
+function _xrPeriodLabel(D){
+  var EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var short = function(iso){
+    if(!iso) return null;
+    var m = parseInt(iso.substring(5, 7), 10), d = parseInt(iso.substring(8, 10), 10), y = iso.substring(0, 4);
+    return EN[m - 1] + ' ' + d + ', ' + y;
+  };
+  if(!D.from && !D.to) return 'All time';
+  if(D.from && !D.to) return 'From ' + short(D.from);
+  if(!D.from && D.to) return 'Through ' + short(D.to);
+  var f = new Date(D.from + 'T00:00:00'), fLast = new Date(f.getFullYear(), f.getMonth() + 1, 0);
+  var isFullMonth = (f.getDate() === 1) && (D.to === _srIso(fLast));
+  if(isFullMonth) return _srMonthLabel(D.from, D.to);
+  return short(D.from) + ' – ' + short(D.to);
+}
 
-  var cv = document.createElement('canvas');
-  cv.width = W * scale; cv.height = H * scale;
-  var c = cv.getContext('2d');
-  c.scale(scale, scale);
-
-  var BG='#0D1117', CARD='#161B22', LINE='#2A313B', TXT='#E6EDF3', MUT='#8B949E';
-  var GRN='#3FB950', RED='#F85149', BLU='#58A6FF', AMB='#D29922', PNK='#DB61A2';
-  var F    = function(px, w){ return (w||'600') + ' ' + px + 'px Inter, "Segoe UI", system-ui, sans-serif'; };
-  var MONO = function(px, w){ return (w||'500') + ' ' + px + 'px "JetBrains Mono", ui-monospace, Menlo, monospace'; };
-  // Sutun tasmasina karsi guvenlik: metni verilen genislige sigdir
+// ── X paylasim karti: Apple-acik, premium finans raporu gorunumu ────────
+// ÖNEMLİ: bu fonksiyon YALNIZCA SUNUMU cizer. Hangi trade'lerin rapora
+// girdigini _xrData() / _spreadReportData() / _repFilterTrades() belirler
+// ve bu fazda DEGISTIRILMEDI — bkz. o fonksiyonlarin basindaki yorum.
+function _xrPaintCard(c, D, W, PAD){
+  var BG='#F5F5F7', SURF='#FFFFFF', SURF2='#F2F2F7', TXT='#1D1D1F', MUT='#6E6E73', MUT2='#86868B';
+  var LINE='#E5E5EA', GRN='#1E7E34', RED='#D70015', ACC='#007AFF', AMB='#B25000';
+  var F  = function(px, w){ return (w||'400') + ' ' + px + 'px -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, sans-serif'; };
+  var MONO = function(px, w){ return (w||'500') + ' ' + px + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace'; };
+  var CW = W - PAD * 2, left = PAD;
   var fit = function(txt, maxW){
     txt = String(txt);
     if(c.measureText(txt).width <= maxW) return txt;
@@ -10904,172 +10916,254 @@ function _drawXCard(D, scale){
     return txt + '…';
   };
 
-  c.fillStyle = BG; c.fillRect(0, 0, W, H);
+  var closedRows = D.rows.filter(function(r){ return !r.isOpen; }).slice()
+    .sort(function(a, b){ return a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : 0; });          // en yeni kapanan once
+  var openRows = D.rows.filter(function(r){ return r.isOpen; }).slice()
+    .sort(function(a, b){ return (a.dte === null ? 99999 : a.dte) - (b.dte === null ? 99999 : b.dte); });
+  var MAXROWS = 5;
+  var closedShown = closedRows.slice(0, MAXROWS), closedExtra = closedRows.length - closedShown.length;
+  var openShown = openRows.slice(0, MAXROWS), openExtra = openRows.length - openShown.length;
 
-  // ── Baslik ──
-  var g = c.createLinearGradient(0, 0, W, HEAD);
-  g.addColorStop(0, 'rgba(219,97,162,0.16)'); g.addColorStop(1, 'rgba(88,166,255,0.10)');
-  c.fillStyle = g; c.fillRect(0, 0, W, HEAD);
-  c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, HEAD); c.lineTo(W, HEAD); c.stroke();
+  // Strateji dagilimi — yalnizca sayim, "en iyi/en kotu" yorumu YOK.
+  var byType = {};
+  D.rows.forEach(function(r){ byType[r.type] = (byType[r.type] || 0) + 1; });
+  var mix = Object.keys(byType).map(function(k){ return { type:k, count:byType[k] }; })
+    .sort(function(a, b){ return b.count - a.count; }).slice(0, 6);
+  var maxMix = mix.reduce(function(m, x){ return Math.max(m, x.count); }, 1);
 
-  c.textAlign = 'left';
-  c.font = F(42, '800'); c.fillStyle = TXT;
-  c.fillText(_srMonthLabel(D.from, D.to), PAD, 66);
-  c.font = F(16, '700'); c.fillStyle = PNK;
-  c.fillText(_xrStatusLabel(D.status) + '  ·  OPENED IN PERIOD', PAD, 100);
+  // Kumulatif gerceklesen P&L — yalnizca KAPANMIS satirlar, kendi
+  // kapanis tarihlerine gore. Acik pozisyonlar grafige girmez.
+  var byDay = {};
+  closedRows.forEach(function(r){ byDay[r.closed] = (byDay[r.closed] || 0) + r.pnl; });
+  var chartDays = Object.keys(byDay).sort();
+  var cum = 0;
+  var chart = chartDays.map(function(d){ cum += byDay[d]; return { date:d, cum:Math.round(cum * 100) / 100 }; });
+  var hasChart = chart.length >= 2;
+
+  var CAP = _xrShowCapital ? _xrCapital(D) : null;
+
+  c.textBaseline = 'alphabetic';
+  var yy = PAD;
+
+  // ── Ustbilgi: gercek filtre acikligi ──
+  c.textAlign = 'left'; c.font = F(13, '700'); c.fillStyle = ACC;
+  c.fillText((_xrStatusLabel(D.status) + ' · OPENED IN PERIOD').toUpperCase(), left, yy + 12);
+  yy += 30;
+  c.font = F(28, '700'); c.fillStyle = TXT;
+  c.fillText(_xrPeriodLabel(D), left, yy + 22);
+  yy += 34;
   c.font = F(15, '500'); c.fillStyle = MUT;
-  c.fillText(D.count + (D.count === 1 ? ' position' : ' positions'), PAD, 128);
+  c.fillText('Trading Report', left, yy + 14);
+  yy += 34;
 
+  // ── Hero: gerceklesmis P&L ──
   if(D.closedCount){
-    c.textAlign = 'right';
-    c.font = MONO(48, '800'); c.fillStyle = D.totPnl >= 0 ? GRN : RED;
-    c.fillText(_srSigned(D.totPnl), W - PAD, 76);
-    c.font = F(14, '700'); c.fillStyle = MUT;
-    c.fillText('REALIZED P&L  ·  ' + D.closedCount + ' closed', W - PAD, 106);
+    var heroColor = D.totPnl >= 0 ? GRN : RED;
+    c.font = F(52, '800'); c.fillStyle = heroColor;
+    c.fillText(_srSigned(D.totPnl), left, yy + 46);
+    yy += 58;
+    c.font = F(15, '700'); c.fillStyle = MUT2;
+    c.fillText('REALIZED P&L', left, yy + 13);
+    yy += 32;
+  } else {
+    c.font = F(19, '600'); c.fillStyle = MUT2;
+    c.fillText('No closed trades in this period', left, yy + 16);
+    yy += 40;
   }
+  c.font = F(17, '500'); c.fillStyle = MUT;
+  c.fillText(D.count + (D.count === 1 ? ' position' : ' positions') + ' · ' + D.closedCount + ' closed · ' + D.openCount + ' open', left, yy + 14);
+  yy += 34;
 
-  // ── Ozet kutulari (alt satirli) ──
-  // ROC yalnizca kapanmislarin teminatina bolunur; teminatin DOLAR
-  // tutari paylasim ciktisinda hicbir yerde gosterilmez.
-  var avgRoc = (D.rocValue !== null && D.closedCount) ? _srPct(D.rocValue) : '—';
-  var pctOf = function(x){ return x === null ? '—' : (Math.round(x * 1000) / 10).toFixed(1) + '%'; };
-  var rows1 = [
-    { l:'TRADES',   v: String(D.count),
-      s: D.closedCount + ' closed · ' + D.openCount + ' open', col: TXT },
-    { l:'WIN RATE', v: D.closedCount ? D.winRate + '%' : '—',
-      wl: D.closedCount ? { w: D.wins, l: D.losses } : null,
-      s: D.closedCount ? ('of ' + D.closedCount + ' closed') : 'no closed trades',
-      col: D.winRate >= 50 ? GRN : RED },
-    { l:'CREDIT',   v: _srMoney(D.totCredit), s: 'collected', col: AMB },
-    { l:'AVG HOLD', v: D.avgDays === null ? '—' : D.avgDays + 'd', s: 'per closed trade', col: MUT },
-    { l:'RETURN ON COLLATERAL', v: avgRoc, s: 'realized ÷ collateral', col: BLU }
-  ];
-  var rows2 = CAP ? [
-    { l:'COLLATERAL NOW', v: _srMoney(CAP.nowColl), s: 'open positions', col: PNK },
-    { l:'AVG DAILY COLLATERAL', v: _srMoney(CAP.avgColl),
-      s: CAP.days + '-day average', col: PNK },
-    { l:'UTILIZATION NOW', v: pctOf(CAP.utilNow), s: 'of portfolio', col: CAP.utilNow > 0.6 ? RED : CAP.utilNow > 0.4 ? AMB : GRN },
-    { l:'AVG UTILIZATION', v: pctOf(CAP.utilAvg), s: 'of portfolio', col: CAP.utilAvg > 0.6 ? RED : CAP.utilAvg > 0.4 ? AMB : GRN },
-    { l:'RETURN ON PORTFOLIO', v: CAP.rop === null ? '—' : _srPctFine(CAP.rop),
-      s: 'realized ÷ portfolio', col: (CAP.rop || 0) >= 0 ? GRN : RED }
-  ] : [];
+  c.strokeStyle = LINE; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(left, yy + 18); c.lineTo(W - PAD, yy + 18); c.stroke();
+  yy += 36;
 
-  var tw = (W - PAD*2 - 4*14) / 5, ty0 = HEAD + 22;
-  [rows1, rows2].forEach(function(tiles, rowIdx){
-    if(!tiles.length) return;
-    var ty = ty0 + rowIdx * TILEH;
-    tiles.forEach(function(t, i){
-      var x = PAD + i * (tw + 14);
-      c.fillStyle = CARD; _srRoundRect(c, x, ty, tw, TILEH - 22, 12); c.fill();
-      c.strokeStyle = LINE; c.lineWidth = 1; c.stroke();
-      c.textAlign = 'left';
-      c.font = F(13, '700'); c.fillStyle = MUT;
-      c.fillText(fit(t.l, tw - 32), x + 16, ty + 27);
-      c.font = MONO(31, '800'); c.fillStyle = t.col;
-      c.fillText(fit(t.v, tw - 32), x + 16, ty + 65);
-      // Kazanc/kayip sayisi degerin YANINA, ayni satira. Kutunun sagindaki
-      // genis bosluk bos duruyordu ve alt satirdaki kucuk punto okunmuyordu.
-      if(t.wl){
-        var gx = x + 16 + c.measureText(t.v).width + 16;
-        c.font = MONO(22, '800');
-        var wTxt = t.wl.w + 'W', sep = ' · ', lTxt = t.wl.l + 'L';
-        if(gx + c.measureText(wTxt + sep + lTxt).width <= x + tw - 12){
-          c.fillStyle = GRN; c.fillText(wTxt, gx, ty + 65);
-          gx += c.measureText(wTxt).width;
-          c.fillStyle = MUT; c.fillText(sep, gx, ty + 65);
-          gx += c.measureText(sep).width;
-          c.fillStyle = RED; c.fillText(lTxt, gx, ty + 65);
-        }
-      }
-      c.font = F(13, '600'); c.fillStyle = MUT;
-      c.fillText(fit(t.s, tw - 32), x + 16, ty + 86);
-    });
-  });
-  var ty = ty0 + (TILEROWS - 1) * TILEH;
-
-  // ── Tablo ──
-  // Tarih/sure ayri sutunlara bolundu: eskiden "2026-09-01 → open"
-  // tek hucrede yazilip saga hizali HELD sutununun uzerine biniyordu.
-  // Saga hizali sutunlarin ARALARINDA en genis olasi metin kadar bosluk
-  // birakildi (orn. P&L "-$9,100", CREDIT "$12,691"), yoksa P&L ile ROC
-  // "+$366+7%" seklinde bitisik cikiyordu.
-  var COLS = [
-    { l:'TICKER', x: PAD,       a:'left',  w: 130 },
-    { l:'TYPE',   x: PAD+144,   a:'left',  w: 100 },
-    { l:'STRIKE', x: PAD+252,   a:'left',  w: 280 },   // IC: "725/715P · 790/800C"
-    { l:'OPENED', x: PAD+552,   a:'left',  w: 80  },
-    { l:'CLOSED', x: PAD+647,   a:'left',  w: 80  },
-    { l:'HELD',   x: PAD+812,   a:'right', w: 110 },
-    { l:'QTY',    x: PAD+872,   a:'right', w: 50  },
-    { l:'CREDIT', x: PAD+1017,  a:'right', w: 140 },
-    { l:'P&L',    x: PAD+1177,  a:'right', w: 150 },
-    { l:'ROC',    x: PAD+1304,  a:'right', w: 100 }
-  ];
-  var tt = ty + (TILEH - 22) + 26;
-  c.fillStyle = '#1C2128'; c.fillRect(0, tt, W, THEAD);
-  c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, tt + THEAD); c.lineTo(W, tt + THEAD); c.stroke();
-  c.font = F(14, '700'); c.fillStyle = MUT;
-  COLS.forEach(function(col){ c.textAlign = col.a; c.fillText(col.l, col.x, tt + 33); });
-
-  var y = tt + THEAD;
-  if(!shown.length){
-    c.textAlign = 'center'; c.font = F(19, '500'); c.fillStyle = MUT;
-    c.fillText('No positions opened in this range', W/2, y + 38);
-    y += ROWH;
-  }
-  shown.forEach(function(r, i){
-    if(i % 2 === 1){ c.fillStyle = '#12171E'; c.fillRect(0, y, W, ROWH); }
-    c.fillStyle = r.isOpen ? AMB : (r.pnl >= 0 ? GRN : RED);
-    c.fillRect(0, y, 5, ROWH);
-    var mid = y + 36;
-
-    c.textAlign = 'left'; c.font = F(23, '800'); c.fillStyle = TXT;
-    c.fillText(fit('$' + r.ticker, COLS[0].w), COLS[0].x, mid);
-
-    var tCol = r.type === 'PCS' ? GRN : r.type === 'BCS' ? BLU : r.type === 'IC' ? PNK : AMB;
-    c.font = F(13, '700');
-    var bw = Math.min(c.measureText(r.type).width + 22, COLS[1].w);
-    c.fillStyle = 'rgba(255,255,255,0.07)';
-    _srRoundRect(c, COLS[1].x, y + 16, bw, 26, 6); c.fill();
-    c.fillStyle = tCol; c.textAlign = 'center';
-    c.fillText(r.type, COLS[1].x + bw/2, y + 34);
-
+  // ── Performans metrikleri (kompakt karo grid) ──
+  var tile = function(x, ty, w, label, value, sub, color){
     c.textAlign = 'left';
-    c.font = MONO(20, '700'); c.fillStyle = TXT;
-    c.fillText(fit(r.strike || '—', COLS[2].w), COLS[2].x, mid);
+    c.font = F(12, '700'); c.fillStyle = MUT2;
+    c.fillText(fit(label.toUpperCase(), w - 8), x, ty + 13);
+    c.font = F(24, '700'); c.fillStyle = color || TXT;
+    c.fillText(fit(value, w - 8), x, ty + 45);
+    c.font = F(13, '500'); c.fillStyle = MUT;
+    c.fillText(fit(sub || '', w - 8), x, ty + 65);
+  };
+  var avgRoc = (D.rocValue !== null && D.closedCount) ? _srPct(D.rocValue) : 'N/A';
+  var rocSub = D.rocCovered ? (D.rocCovered + ' covered (no cash coll.)') : 'realized ÷ collateral';
+  var perf = [
+    { l:'Win Rate', v:D.closedCount ? D.winRate + '%' : '—', s:D.closedCount ? (D.wins + 'W · ' + D.losses + 'L') : 'no closed trades', c:D.closedCount ? (D.winRate >= 50 ? GRN : RED) : MUT2 },
+    { l:'Avg Hold', v:D.avgDays === null ? '—' : D.avgDays + 'd', s:'per closed trade', c:null },
+    { l:'Premium Received', v:_srMoney(D.totCredit), s:'gross credit, not profit', c:null },
+    { l:'Collateral ROC', v:avgRoc, s:rocSub, c:(D.rocValue === null || !D.closedCount) ? MUT2 : (D.rocValue >= 0 ? GRN : RED) }
+  ];
+  if(CAP && CAP.rop !== null) perf.push({ l:'Portfolio Return', v:_srPctFine(CAP.rop), s:'realized ÷ portfolio', c:CAP.rop >= 0 ? GRN : RED });
+  var pCol = CW / 3, pRows = Math.ceil(perf.length / 3);
+  perf.forEach(function(m, i){ tile(left + (i % 3) * pCol, yy + Math.floor(i / 3) * 92, pCol, m.l, m.v, m.s, m.c); });
+  yy += pRows * 92 + 20;
 
-    c.font = MONO(17, '400'); c.fillStyle = MUT;
-    c.fillText(r.opened.substring(5), COLS[3].x, mid);
-    if(r.isOpen){ c.fillStyle = AMB; c.fillText('open', COLS[4].x, mid); }
-    else { c.fillStyle = MUT; c.fillText(r.closed.substring(5), COLS[4].x, mid); }
+  if(CAP){
+    var capMetrics = [
+      { l:'Current Collateral', v:_srMoney(CAP.nowColl) },
+      { l:'Average Collateral', v:_srMoney(CAP.avgColl) },
+      { l:'Current Utilization', v:CAP.utilNow === null ? '—' : Math.round(CAP.utilNow * 100) + '%' },
+      { l:'Avg Utilization', v:CAP.utilAvg === null ? '—' : Math.round(CAP.utilAvg * 100) + '%' }
+    ];
+    var cCol = CW / 4;
+    capMetrics.forEach(function(m, i){ tile(left + i * cCol, yy, cCol, m.l, m.v, '', null); });
+    yy += 92;
+  }
+  c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy); c.lineTo(W - PAD, yy); c.stroke();
+  yy += 30;
 
-    c.textAlign = 'right'; c.font = MONO(17, '500'); c.fillStyle = MUT;
-    c.fillText(r.isOpen ? (r.dte === null ? '—' : r.dte + ' DTE') : (r.days === null ? '—' : r.days + 'd'), COLS[5].x, mid);
-    c.font = MONO(18, '500');
-    c.fillText(String(r.qty), COLS[6].x, mid);
-    c.font = MONO(19, '600'); c.fillStyle = AMB;
-    c.fillText(_srMoney(r.credit), COLS[7].x, mid);
-    c.font = MONO(21, '800');
-    if(r.isOpen){ c.fillStyle = MUT; c.fillText('open', COLS[8].x, mid); }
-    else { c.fillStyle = r.pnl >= 0 ? GRN : RED; c.fillText(_srSigned(r.pnl), COLS[8].x, mid); }
-    c.font = MONO(19, '700'); c.fillStyle = r.ror === null ? MUT : (r.ror >= 0 ? GRN : RED);
-    c.fillText(_srPct(r.ror), COLS[9].x, mid);
+  var sectionHead = function(title, sub){
+    c.textAlign = 'left'; c.font = F(19, '700'); c.fillStyle = TXT;
+    c.fillText(title, left, yy + 17);
+    if(sub){
+      c.font = F(15, '500'); c.fillStyle = MUT; c.textAlign = 'right';
+      c.fillText(sub, W - PAD, yy + 17);
+      c.textAlign = 'left';
+    }
+    yy += 40;
+  };
 
+  // ── Kumulatif gerceklesen P&L grafigi ──
+  sectionHead('Realized P&L', null);
+  if(!hasChart){
+    c.font = F(15, '500'); c.fillStyle = MUT2; c.textAlign = 'left';
+    c.fillText('No closed trades in this period', left, yy + 14);
+    yy += 40;
+  } else {
+    var chH = 140, chY = yy;
+    var vals = chart.map(function(x){ return x.cum; });
+    var vmin = Math.min(0, Math.min.apply(null, vals)), vmax = Math.max(0, Math.max.apply(null, vals));
+    if(vmax === vmin){ vmax += 1; vmin -= 1; }
+    var lineColor = D.totPnl >= 0 ? GRN : RED;
+    var px = function(i){ return left + CW * (chart.length === 1 ? 1 : i / (chart.length - 1)); };
+    var py = function(v){ return chY + chH - ((v - vmin) / (vmax - vmin)) * chH; };
     c.strokeStyle = LINE; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(0, y + ROWH); c.lineTo(W, y + ROWH); c.stroke();
-    y += ROWH;
-  });
-  if(extra > 0){
-    c.textAlign = 'center'; c.font = F(15, '600'); c.fillStyle = MUT;
-    c.fillText('+ ' + extra + ' more position' + (extra === 1 ? '' : 's'), W/2, y + 26);
-    y += 40;
+    c.beginPath(); c.moveTo(left, py(0)); c.lineTo(W - PAD, py(0)); c.stroke();
+    // ince, yumusak dolgu
+    c.beginPath(); c.moveTo(left, chY + chH);
+    chart.forEach(function(pt, i){ c.lineTo(px(i), py(pt.cum)); });
+    c.lineTo(px(chart.length - 1), chY + chH); c.closePath();
+    c.fillStyle = (D.totPnl >= 0 ? 'rgba(30,126,52,0.08)' : 'rgba(215,0,21,0.08)'); c.fill();
+    c.strokeStyle = lineColor; c.lineWidth = 2.5; c.beginPath();
+    chart.forEach(function(pt, i){ var xx = px(i), yv = py(pt.cum); if(i === 0) c.moveTo(xx, yv); else c.lineTo(xx, yv); });
+    c.stroke();
+    var lastX = px(chart.length - 1), lastY = py(chart[chart.length - 1].cum);
+    c.beginPath(); c.arc(lastX, lastY, 4, 0, Math.PI * 2); c.fillStyle = lineColor; c.fill();
+    c.font = F(13, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+    c.fillText(chart[0].date.slice(5), left, chY + chH + 20);
+    c.textAlign = 'right';
+    c.fillText(chart[chart.length - 1].date.slice(5), W - PAD, chY + chH + 20);
+    yy += chH + 36;
+  }
+  c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy); c.lineTo(W - PAD, yy); c.stroke();
+  yy += 30;
+
+  // ── Kapanmis islemler ──
+  sectionHead('Closed Trades', closedRows.length + ' position' + (closedRows.length === 1 ? '' : 's') + (D.closedCount ? ' · ' + _srSigned(D.totPnl) : ''));
+  if(!closedShown.length){
+    c.font = F(15, '500'); c.fillStyle = MUT2; c.textAlign = 'left';
+    c.fillText('No closed trades in this period', left, yy + 14);
+    yy += 36;
+  } else {
+    closedShown.forEach(function(r){
+      c.font = F(17, '600'); c.fillStyle = TXT; c.textAlign = 'left';
+      c.fillText(r.ticker + ' · ' + r.type, left, yy + 18);
+      c.font = F(19, '700'); c.fillStyle = r.pnl >= 0 ? GRN : RED; c.textAlign = 'right';
+      c.fillText(_srSigned(r.pnl), W - PAD, yy + 18);
+      c.font = MONO(13, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+      var rocTxt = r.ror === null ? (r.covered ? 'ROC N/A (no cash coll.)' : 'ROC N/A') : _srPct(r.ror);
+      c.fillText(fit(r.strike, CW * 0.42) + '   ·   ' + rocTxt + '   ·   ' + (r.days === null ? '—' : r.days + 'd'), left, yy + 38);
+      c.textAlign = 'right';
+      c.fillText(r.opened.slice(5) + ' → ' + r.closed.slice(5), W - PAD, yy + 38);
+      c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy + 52); c.lineTo(W - PAD, yy + 52); c.stroke();
+      yy += 68;
+    });
+    if(closedExtra > 0){
+      c.font = F(14, '600'); c.fillStyle = ACC; c.textAlign = 'center';
+      c.fillText('+ ' + closedExtra + ' more closed trade' + (closedExtra === 1 ? '' : 's'), W / 2, yy + 14);
+      yy += 30;
+    }
+  }
+  yy += 20;
+
+  // ── Acik pozisyonlar (hafif farkli yuzey ile ayristi) ──
+  var openTop = yy;
+  sectionHead('Open Trades', openRows.length + ' position' + (openRows.length === 1 ? '' : 's'));
+  if(!openShown.length){
+    c.font = F(15, '500'); c.fillStyle = MUT2; c.textAlign = 'left';
+    c.fillText('No open positions', left, yy + 14);
+    yy += 36;
+  } else {
+    openShown.forEach(function(r){
+      c.font = F(17, '600'); c.fillStyle = TXT; c.textAlign = 'left';
+      c.fillText(r.ticker + ' · ' + r.type, left, yy + 18);
+      c.font = F(15, '600'); c.fillStyle = MUT; c.textAlign = 'right';
+      c.fillText((r.dte === null ? '—' : r.dte + ' DTE'), W - PAD, yy + 18);
+      c.font = MONO(13, '500'); c.fillStyle = MUT; c.textAlign = 'left';
+      var bits = [fit(r.strike, CW * 0.32), r.qty + (r.qty === 1 ? ' contract' : ' contracts'), _srMoney(r.credit) + ' premium'];
+      if(r.delta !== null) bits.push('Δ ' + r.delta.toFixed(2)); else bits.push('Δ N/A');
+      if(r.ivr !== null) bits.push('IVR ' + Math.round(r.ivr) + '%');
+      c.fillText(bits.join('   ·   '), left, yy + 38);
+      c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy + 52); c.lineTo(W - PAD, yy + 52); c.stroke();
+      yy += 68;
+    });
+    if(openExtra > 0){
+      c.font = F(14, '600'); c.fillStyle = ACC; c.textAlign = 'center';
+      c.fillText('+ ' + openExtra + ' more open position' + (openExtra === 1 ? '' : 's'), W / 2, yy + 14);
+      yy += 30;
+    }
+  }
+  // Acik bolumu icin hafifce farkli zemin (yalnizca bu bolumun arkasi)
+  c.save();
+  c.globalCompositeOperation = 'destination-over';
+  c.fillStyle = SURF2; c.fillRect(0, openTop - 10, W, (yy - openTop) + 20);
+  c.restore();
+  yy += 20;
+
+  // ── Strateji dagilimi (yalnizca sayim — yorum yok) ──
+  if(mix.length){
+    sectionHead('Strategy Mix', null);
+    var barMaxW = CW - 220;
+    mix.forEach(function(m){
+      c.font = F(15, '700'); c.fillStyle = TXT; c.textAlign = 'left';
+      c.fillText(m.type, left, yy + 16);
+      var bx = left + 130, bw = Math.max(6, (m.count / maxMix) * barMaxW);
+      c.fillStyle = SURF2; _srRoundRect(c, bx, yy + 4, barMaxW, 14, 7); c.fill();
+      c.fillStyle = ACC; _srRoundRect(c, bx, yy + 4, bw, 14, 7); c.fill();
+      c.font = F(14, '600'); c.fillStyle = MUT; c.textAlign = 'right';
+      c.fillText(m.count + (m.count === 1 ? ' trade' : ' trades'), W - PAD, yy + 16);
+      yy += 28;
+    });
+    yy += 16;
   }
 
   // ── Alt bilgi ──
-  c.fillStyle = CARD; c.fillRect(0, y, W, FOOT);
-  c.strokeStyle = LINE; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke();
-  c.textAlign = 'left'; c.font = F(15, '600'); c.fillStyle = MUT;
-  c.fillText('Positions opened in period  ·  ROC = return on collateral  ·  personal log, not financial advice', PAD, y + 44);
+  c.strokeStyle = LINE; c.beginPath(); c.moveTo(left, yy); c.lineTo(W - PAD, yy); c.stroke();
+  yy += 28;
+  c.font = F(12, '400'); c.fillStyle = MUT2; c.textAlign = 'left';
+  c.fillText('Positions opened in period · ROC = return on collateral · personal log, not financial advice', left, yy + 4);
+  yy += 34;
+
+  return yy;
+}
+
+function _drawXCard(D, scale){
+  scale = scale || 2;
+  var W = 1080, PAD = 56;
+  var BG = '#F5F5F7';
+  // Olcum gecisi: gercek satir/bolum sayisina gore toplam yuksekligi bul.
+  var probe = document.createElement('canvas');
+  probe.width = W; probe.height = 8000;
+  var H = Math.ceil(_xrPaintCard(probe.getContext('2d'), D, W, PAD));
+  var cv = document.createElement('canvas');
+  cv.width = W * scale; cv.height = H * scale;
+  var c = cv.getContext('2d');
+  c.scale(scale, scale);
+  c.fillStyle = BG; c.fillRect(0, 0, W, H);
+  _xrPaintCard(c, D, W, PAD);
   return cv;
 }
 
@@ -11169,38 +11263,38 @@ function _xrRefresh(){
     var b = document.getElementById('xr_st_' + v);
     if(!b) return;
     var on = (_xrStatus === v);
-    b.style.background  = on ? 'rgba(29,155,240,0.20)' : 'rgba(255,255,255,0.05)';
-    b.style.borderColor = on ? 'rgba(29,155,240,0.55)' : 'transparent';
-    b.style.color       = on ? '#1D9BF0' : 'var(--text-3)';
+    b.style.background  = on ? 'var(--accent-soft)' : 'var(--surface-secondary)';
+    b.style.borderColor = on ? 'var(--accent)' : 'transparent';
+    b.style.color       = on ? 'var(--accent)' : 'var(--text-tertiary)';
   });
   var allBtn = document.getElementById('xr_ty_ALL');
   if(allBtn){
     var allOn = !_xrTypes;
-    allBtn.style.background  = allOn ? 'rgba(29,155,240,0.20)' : 'rgba(255,255,255,0.05)';
-    allBtn.style.borderColor = allOn ? 'rgba(29,155,240,0.55)' : 'transparent';
-    allBtn.style.color       = allOn ? '#1D9BF0' : 'var(--text-3)';
+    allBtn.style.background  = allOn ? 'var(--accent-soft)' : 'var(--surface-secondary)';
+    allBtn.style.borderColor = allOn ? 'var(--accent)' : 'transparent';
+    allBtn.style.color       = allOn ? 'var(--accent)' : 'var(--text-tertiary)';
   }
   (typeof ALL_TRADE_TYPES !== 'undefined' ? ALL_TRADE_TYPES : []).forEach(function(t){
     var b = document.getElementById('xr_ty_' + t.replace(/\s/g,'_'));
     if(!b) return;
     var on = !!(_xrTypes && _xrTypes.indexOf(t) >= 0);
-    b.style.background  = on ? 'rgba(29,155,240,0.20)' : 'rgba(255,255,255,0.05)';
-    b.style.borderColor = on ? 'rgba(29,155,240,0.55)' : 'transparent';
-    b.style.color       = on ? '#1D9BF0' : 'var(--text-3)';
+    b.style.background  = on ? 'var(--accent-soft)' : 'var(--surface-secondary)';
+    b.style.borderColor = on ? 'var(--accent)' : 'transparent';
+    b.style.color       = on ? 'var(--accent)' : 'var(--text-tertiary)';
   });
 
   var D = _xrData();
   var sum = document.getElementById('xr_summary');
   if(sum){
     var cell = function(l, v, col){
-      return '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;">' + l + '</div>'
+      return '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.4px;">' + l + '</div>'
            + '<div style="font-size:19px;font-weight:700;font-family:var(--font-mono);color:' + col + ';">' + v + '</div></div>';
     };
     sum.innerHTML = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">'
-      + cell('Açılan', String(D.count), 'var(--text)')
-      + cell('Kapanmış', String(D.closedCount), 'var(--text-2)')
-      + cell('Win Rate', D.closedCount ? D.winRate + '%' : '—', D.winRate >= 50 ? 'var(--profit)' : 'var(--loss)')
-      + cell('P&L', D.closedCount ? _srSigned(D.totPnl) : '—', D.totPnl >= 0 ? 'var(--profit)' : 'var(--loss)')
+      + cell('Positions', String(D.count), 'var(--text-primary)')
+      + cell('Closed', String(D.closedCount), 'var(--text-secondary)')
+      + cell('Win Rate', D.closedCount ? D.winRate + '%' : '—', D.winRate >= 50 ? 'var(--success)' : 'var(--danger)')
+      + cell('P&L', D.closedCount ? _srSigned(D.totPnl) : '—', D.totPnl >= 0 ? 'var(--success)' : 'var(--danger)')
       + '</div>';
   }
 
@@ -11258,10 +11352,10 @@ function _xrCopyTweet(){
   try { ok = document.execCommand('copy'); } catch(e){}
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(ta.value).then(function(){
-      if(typeof _backupToast === 'function') _backupToast('📋 Tweet metni kopyalandı', true);
+      if(typeof _backupToast === 'function') _backupToast('Tweet text copied', true);
     }).catch(function(){});
   } else if(ok && typeof _backupToast === 'function'){
-    _backupToast('📋 Tweet metni kopyalandı', true);
+    _backupToast('Tweet text copied', true);
   }
 }
 
@@ -11660,86 +11754,86 @@ function showXReport(){
   var old = document.getElementById('xr-modal'); if(old) old.remove();
   var ov = document.createElement('div');
   ov.id = 'xr-modal';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);overflow-y:auto;';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.45);overflow-y:auto;';
   var box = document.createElement('div');
-  box.style.cssText = 'max-width:560px;margin:24px auto 40px;background:var(--bg2);border:1px solid var(--border-bright);border-radius:18px;overflow:hidden;';
+  box.style.cssText = 'max-width:560px;margin:24px auto 40px;background:var(--surface);border:1px solid var(--border-subtle);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-md);';
   ov.appendChild(box);
 
   var btn = function(id, label, onclick, extra){
     return '<button id="' + (id||'') + '" onclick="' + onclick + '" style="' + (extra||'') + '">' + label + '</button>';
   };
-  var pill = 'flex:1;min-width:74px;padding:8px 6px;border-radius:9px;border:1.5px solid transparent;background:rgba(255,255,255,0.05);color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;';
-  var tiny = 'padding:6px 10px;border-radius:8px;border:1.5px solid transparent;background:rgba(255,255,255,0.05);color:var(--text-3);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;';
-  var lblCss = 'font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;';
-  var dateCss = 'width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--border-bright);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;outline:none;font-family:inherit;';
+  var pill = 'flex:1;min-width:74px;padding:8px 6px;border-radius:9px;border:1.5px solid transparent;background:var(--surface-secondary);color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;';
+  var tiny = 'padding:6px 10px;border-radius:8px;border:1.5px solid transparent;background:var(--surface-secondary);color:var(--text-tertiary);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;';
+  var lblCss = 'font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;';
+  var dateCss = 'width:100%;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:8px;padding:9px 10px;color:var(--text-primary);font-size:13px;outline:none;font-family:inherit;';
 
-  var typePills = btn('xr_ty_ALL', 'Tümü', '_xrToggleType(null)', tiny)
+  var typePills = btn('xr_ty_ALL', 'All', '_xrToggleType(null)', tiny)
     + (typeof ALL_TRADE_TYPES !== 'undefined' ? ALL_TRADE_TYPES : []).map(function(t){
         return btn('xr_ty_' + t.replace(/\s/g,'_'), t, "_xrToggleType('" + t + "')", tiny);
       }).join('');
 
   box.innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(29,155,240,0.16),rgba(139,92,246,0.08));">'
-    + '<div><div style="font-size:17px;font-weight:700;font-family:var(--font-head);color:var(--text);">𝕏 Paylaşım Raporu</div>'
-    + '<div style="font-size:11px;color:var(--text-3);margin-top:2px;">Tarih aralığı <b>açılış</b> tarihine göre · görsel + tweet metni</div></div>'
-    + '<button onclick="document.getElementById(\'xr-modal\').remove()" style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.08);border:none;color:var(--text-2);font-size:17px;cursor:pointer;">&times;</button>'
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border-subtle);">'
+    + '<div><div style="font-size:17px;font-weight:700;color:var(--text-primary);">X Share Report</div>'
+    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Date range by <b>open</b> date · image + tweet text</div></div>'
+    + '<button onclick="document.getElementById(\'xr-modal\').remove()" style="width:30px;height:30px;border-radius:50%;background:var(--surface-secondary);border:none;color:var(--text-secondary);font-size:17px;cursor:pointer;">&times;</button>'
     + '</div>'
 
     + '<div style="padding:14px 18px 0;">'
-    + '<div style="' + lblCss + '">Dönem</div>'
+    + '<div style="' + lblCss + '">Period</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'
-    +   btn('', 'Bu Ay', "_xrPreset('thisMonth')", pill)
-    +   btn('', 'Geçen Ay', "_xrPreset('lastMonth')", pill)
-    +   btn('', 'Bu Hafta', "_xrPreset('thisWeek')", pill)
-    +   btn('', 'Geçen Hafta', "_xrPreset('lastWeek')", pill)
-    +   btn('', 'Son 30 Gün', "_xrPreset('last30')", pill)
-    +   btn('', 'Yıl Başı', "_xrPreset('ytd')", pill)
+    +   btn('', 'This month', "_xrPreset('thisMonth')", pill)
+    +   btn('', 'Last month', "_xrPreset('lastMonth')", pill)
+    +   btn('', 'This week', "_xrPreset('thisWeek')", pill)
+    +   btn('', 'Last week', "_xrPreset('lastWeek')", pill)
+    +   btn('', 'Last 30 days', "_xrPreset('last30')", pill)
+    +   btn('', 'Year to date', "_xrPreset('ytd')", pill)
     + '</div>'
 
     + '<div style="display:flex;gap:8px;margin-bottom:12px;">'
-    + '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">Başlangıç</div>'
+    + '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">Start</div>'
     +   '<input id="xr_from" type="date" value="' + _xrFrom + '" onchange="_xrRefresh()" style="' + dateCss + '"></div>'
-    + '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">Bitiş</div>'
+    + '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">End</div>'
     +   '<input id="xr_to" type="date" value="' + _xrTo + '" onchange="_xrRefresh()" style="' + dateCss + '"></div>'
     + '</div>'
 
-    + '<div style="' + lblCss + '">Durum</div>'
+    + '<div style="' + lblCss + '">Status</div>'
     + '<div style="display:flex;gap:6px;margin-bottom:12px;">'
-    +   btn('xr_st_closed', 'Kapanmış', "_xrSetStatus('closed')", pill)
-    +   btn('xr_st_open',   'Açık',     "_xrSetStatus('open')",   pill)
-    +   btn('xr_st_all',    'Tümü',     "_xrSetStatus('all')",    pill)
+    +   btn('xr_st_closed', 'Closed', "_xrSetStatus('closed')", pill)
+    +   btn('xr_st_open',   'Open',   "_xrSetStatus('open')",   pill)
+    +   btn('xr_st_all',    'All',    "_xrSetStatus('all')",    pill)
     + '</div>'
 
-    + '<div style="' + lblCss + '">İşlem Türü</div>'
+    + '<div style="' + lblCss + '">Trade Type</div>'
     + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">' + typePills + '</div>'
 
-    + '<div style="' + lblCss + '">Teminat &amp; Portföy</div>'
-    + '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 11px;margin-bottom:6px;background:var(--row-alt);border-radius:9px;cursor:pointer;">'
-    +   '<input type="checkbox" id="xr_cap"' + (_xrShowCapital ? ' checked' : '') + ' onchange="_xrToggleCapital(this.checked)" style="width:16px;height:16px;accent-color:#1D9BF0;margin-top:1px;">'
-    +   '<span style="font-size:11px;color:var(--text-2);line-height:1.5;">Teminat ve portföy metriklerini göster'
-    +     '<span style="display:block;color:var(--text-3);margin-top:2px;">Anlık teminat, günlük ortalama teminat, kullanım oranı ve P&amp;L\'in portföye oranı.</span></span>'
+    + '<div style="' + lblCss + '">Collateral &amp; Portfolio</div>'
+    + '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 11px;margin-bottom:6px;background:var(--surface-secondary);border-radius:9px;cursor:pointer;">'
+    +   '<input type="checkbox" id="xr_cap"' + (_xrShowCapital ? ' checked' : '') + ' onchange="_xrToggleCapital(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);margin-top:1px;">'
+    +   '<span style="font-size:11px;color:var(--text-secondary);line-height:1.5;">Show collateral &amp; portfolio metrics'
+    +     '<span style="display:block;color:var(--text-tertiary);margin-top:2px;">Current collateral, average daily collateral, utilization and P&amp;L on portfolio.</span></span>'
     + '</label>'
-    + '<div id="xr_cap_warn" style="font-size:10px;color:var(--warn);background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.28);border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.5;display:' + (_xrShowCapital ? 'block' : 'none') + ';">'
-    +   '⚠️ Teminat hem dolar hem yüzde gösterildiği için <b>portföy büyüklüğün hesaplanabilir</b> (teminat $ ÷ kullanım % = portföy). Paylaşmak istemezsen bu kutuyu kapat.'
+    + '<div id="xr_cap_warn" style="font-size:10px;color:var(--warning-text);background:var(--accent-soft);border:1px solid var(--border-subtle);border-radius:8px;padding:8px 10px;margin-bottom:12px;line-height:1.5;display:' + (_xrShowCapital ? 'block' : 'none') + ';">'
+    +   'Collateral is shown as both a dollar amount and a percentage, so your portfolio size can be derived from the two ($ ÷ % = portfolio). Turn this off if you\'d rather not share that.'
     + '</div>'
 
-    + '<div id="xr_summary" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
+    + '<div id="xr_summary" style="background:var(--surface-secondary);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
     + '</div>'
 
     + '<div style="padding:0 18px 14px;">'
-    + '<div style="' + lblCss + '">Görsel Önizleme</div>'
-    + '<div id="xr_preview" style="background:#0D1117;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px;"></div>'
+    + '<div style="' + lblCss + '">Preview</div>'
+    + '<div id="xr_preview" style="background:var(--bg);border:1px solid var(--border-subtle);border-radius:14px;overflow:hidden;margin-bottom:14px;"></div>'
     + '<div style="display:flex;align-items:baseline;justify-content:space-between;">'
-    +   '<div style="' + lblCss + '">Tweet Metni</div>'
-    +   '<div id="xr_count" style="font-size:11px;font-family:var(--font-mono);color:var(--text-3);"></div>'
+    +   '<div style="' + lblCss + '">Tweet Text</div>'
+    +   '<div id="xr_count" style="font-size:11px;font-family:var(--font-mono);color:var(--text-tertiary);"></div>'
     + '</div>'
-    + '<textarea id="xr_tweet" rows="8" oninput="(function(){var t=document.getElementById(\'xr_tweet\'),c=document.getElementById(\'xr_count\');var n=t.value.length;c.textContent=n+\' / 280\';c.style.color=n>280?\'var(--loss)\':n>250?\'var(--warn)\':\'var(--text-3)\';})()" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:10px;padding:11px;color:var(--text);font-size:13px;line-height:1.55;outline:none;font-family:var(--font-mono);resize:vertical;"></textarea>'
+    + '<textarea id="xr_tweet" rows="8" oninput="(function(){var t=document.getElementById(\'xr_tweet\'),c=document.getElementById(\'xr_count\');var n=t.value.length;c.textContent=n+\' / 280\';c.style.color=n>280?\'var(--danger-text)\':n>250?\'var(--warning-text)\':\'var(--text-tertiary)\';})()" style="width:100%;box-sizing:border-box;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:10px;padding:11px;color:var(--text-primary);font-size:13px;line-height:1.55;outline:none;font-family:var(--font-mono);resize:vertical;"></textarea>'
     + '</div>'
 
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 18px 18px;">'
-    +   btn('', '🖼️ PNG İndir', 'downloadXPNG()', 'padding:13px;border-radius:11px;border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.14);color:#22C55E;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
-    +   btn('', '📤 Görsel + Metin Paylaş', 'shareXPNG()', 'padding:13px;border-radius:11px;border:1px solid rgba(29,155,240,.4);background:rgba(29,155,240,.16);color:#1D9BF0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
-    +   btn('', '📋 Tweet Metnini Kopyala', '_xrCopyTweet()', 'grid-column:1/-1;padding:13px;border-radius:11px;border:1px solid rgba(139,92,246,.35);background:rgba(139,92,246,.14);color:#A78BFA;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', 'Download PNG', 'downloadXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--success);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', 'Share Image + Text', 'shareXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('', 'Copy Tweet Text', '_xrCopyTweet()', 'grid-column:1/-1;padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--surface-secondary);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     + '</div>';
 
   document.body.appendChild(ov);
