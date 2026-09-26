@@ -12,6 +12,15 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+  // Offline ve Chart.js hic yuklenemediyse: grafikler bos kalir, ekranlar calismaya devam eder.
+  if (typeof Chart === 'undefined') {
+    window.Chart = function(){ return { destroy:function(){}, update:function(){}, resize:function(){}, data:{ labels:[], datasets:[] }, options:{} }; };
+    window.Chart.defaults = { font:{}, plugins:{} };
+    window.Chart.register = function(){};
+    window.OF_CHART_UNAVAILABLE = true;
+  }
+</script>
 <style>
   :root {
     /* ═══ OPTIONFLOW DESIGN TOKENS (Phase 4) ═══
@@ -6916,7 +6925,7 @@ function applyChartDefaults(){
   var C = chartTheme();
   Chart.defaults.color = C.tick;              // eksen/legend varsayilan yazi
   Chart.defaults.borderColor = C.gridSoft;
-  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif";
   Chart.defaults.font.size = 11;
 }
 applyChartDefaults();
