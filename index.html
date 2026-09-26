@@ -12,6 +12,15 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+  // Offline ve Chart.js hic yuklenemediyse: grafikler bos kalir, ekranlar calismaya devam eder.
+  if (typeof Chart === 'undefined') {
+    window.Chart = function(){ return { destroy:function(){}, update:function(){}, resize:function(){}, data:{ labels:[], datasets:[] }, options:{} }; };
+    window.Chart.defaults = { font:{}, plugins:{} };
+    window.Chart.register = function(){};
+    window.OF_CHART_UNAVAILABLE = true;
+  }
+</script>
 <style>
   :root {
     /* ═══ OPTIONFLOW DESIGN TOKENS (Phase 4) ═══
@@ -2240,6 +2249,7 @@ function calcDefaultCollateral(t){
   var q = calcQty(t);
   if(!d || !q) return null;
   if(calcIsLongTrade(t)) return 0;                       // alinmis opsiyon: teminat yok
+  if(calcIsCoveredTrade(t)) return 0;                     // CC/PMCC: kapsama hisse/LEAPS, nakit teminat yok
   var L = calcLegs(t);
   if(d.structure === 'vertical'){
     var w = d.opt === 'put' ? L.width.put : L.width.call;
@@ -2250,16 +2260,32 @@ function calcDefaultCollateral(t){
     var wm = Math.max(L.width.put || 0, L.width.call || 0);
     return wm > 0 ? wm * 100 * q : null;
   }
-  // CSP, CC, PMCC, COLLAR CALL: strike x 100 x adet (uygulama konvansiyonu —
-  // CC/PMCC'de dayanak hisse degerinin vekili)
+  // CSP, COLLAR PUT, COLLAR CALL: strike x 100 x adet
   var k = calcPrimaryStrike(t);
   return (k !== null && k > 0) ? k * 100 * q : null;
 }
 // { value, source:'override'|'stored'|'calculated'|'none', expected, warning }
 // Oncelik: collateralOverride > kayitli teminat (>0) > hesaplanan varsayilan.
+// Nakit teminat baglamayan turler: CC (hisse karsilar), PMCC (long LEAPS karsilar).
+// Teminat = opsiyon yukumlulugu icin baglanan nakit/marjin. Yatirilan sermaye,
+// piyasa degeri, maliyet ya da max loss DEGILDIR; teminat 0 risk 0 demek degildir.
+var CALC_NO_CASH_COLLATERAL_TYPES = ['CC', 'PMCC'];
+function calcIsCoveredTrade(t){ return !!t && CALC_NO_CASH_COLLATERAL_TYPES.indexOf(String(t.type || '').trim()) !== -1; }
+// Covered pozisyonda dayanak hisse degerinin vekili (yalnizca max loss icin):
+// kayitli teminat varsa o, yoksa strike x 100 x adet. Teminat DEGILDIR.
+function calcCoveredStockBasis(t){
+  var ov = calcNum(t.collateralOverride), st = calcNum(t.teminat);
+  if(ov !== null && ov > 0) return ov;
+  if(st !== null && st > 0) return st;
+  var k = calcPrimaryStrike(t), q = calcQty(t);
+  return (k !== null && k > 0 && q) ? k * 100 * q : null;
+}
 function calcCollateral(t){
   var res = { value:0, source:'none', expected:false, calculated:null, warning:null };
   if(!t) return res;
+  // CC (hisse) ve PMCC (long LEAPS) nakit teminat baglamaz: teminat 0.
+  // Kayitli teminat yok sayilir; hisse/LEAPS degeri portfoy teminatina eklenmez.
+  if(calcIsCoveredTrade(t)){ res.source = 'covered'; res.calculated = 0; return res; }
   res.calculated = calcDefaultCollateral(t);
   res.expected = !calcIsLongTrade(t);
   var ov = calcNum(t.collateralOverride);
@@ -2308,11 +2334,11 @@ function calcMaxLoss(t){
     if(k !== null){ res.value = calcRound2(k * 100 * q - P); res.basis = 'strike x 100 x adet - prim (hisse 0)'; }
     return res;
   }
-  // Covered call / PMCC / collar call: risk dayanak hisse pozisyonudur.
-  // Hisse maliyeti kayitta olmadigindan konvansiyon: teminat (hisse degeri
-  // vekili) - alinan prim.
-  var coll = calcCollateral(t).value;
-  if(coll > 0){ res.value = calcRound2(coll - P); res.basis = 'dayanak hisse degeri (teminat konvansiyonu) - prim'; }
+  // Covered call / PMCC / collar call: risk dayanak hisse (PMCC'de LEAPS) pozisyonudur.
+  // Maliyet kayitta olmadigindan vekil: kayitli deger ya da strike x 100 x adet,
+  // eksi alinan prim. CC/PMCC teminati 0 olsa da max loss anlamli kalir.
+  var coll = calcCoveredStockBasis(t);
+  if(coll > 0){ res.value = calcRound2(coll - P); res.basis = 'dayanak hisse degeri (strike/kayit vekili) - prim'; }
   else res.basis = 'dayanak degeri bilinmiyor';
   return res;
 }
@@ -2357,6 +2383,7 @@ function calcROCInfo(t){
   if(!calcIsClosedTrade(t)){ res.reason = 'Pozisyon kapanmadi'; return res; }
   var pnl = calcTradePnl(t);
   if(pnl === null){ res.reason = 'P&L yok'; return res; }
+  if(calcIsCoveredTrade(t)){ res.reason = 'ROC N/A — no cash collateral'; return res; }
   var capital = calcIsLongTrade(t) ? calcTradePremium(t) : calcCollateral(t).value;
   if(!(capital > 0)){ res.reason = 'ROC unavailable — collateral missing'; return res; }
   res.value = pnl / capital;
@@ -2369,10 +2396,11 @@ function calcAnnualizedROC(t){ return calcROCInfo(t).annualized; }
 // Coklu islem: toplam P&L / toplam kullanilan sermaye (yalnizca kapananlar).
 // ROC'u hesaplanamayan islemler SAYILIR ve raporlanir, sessizce dusmez.
 function calcAggregateROC(trades){
-  var res = { roc:null, pnl:0, capital:0, counted:0, unavailable:0, unavailableIds:[] };
+  var res = { roc:null, pnl:0, capital:0, counted:0, unavailable:0, unavailableIds:[], covered:0 };
   (trades || []).forEach(function(t){
     if(!calcIsClosedTrade(t)) return;
     var pnl = calcTradePnl(t); if(pnl === null) return;
+    if(calcIsCoveredTrade(t)){ res.covered++; return; }   // nakit teminat yok: ROC paydasina girmez
     var capital = calcIsLongTrade(t) ? calcTradePremium(t) : calcCollateral(t).value;
     if(!(capital > 0)){ res.unavailable++; res.unavailableIds.push(t.id); return; }
     res.pnl += pnl; res.capital += capital; res.counted++;
@@ -3481,7 +3509,7 @@ function anNormalizeTrade(t, ctx){
     closeYM:t.closed ? String(t.closed).slice(0, 7) : null,
     pnl:closed ? pnl : null, roc:rocI.value, annRoc:rocI.annualized, holdingDays:hd,
     entryDte:entryDte, entryDelta:ccNormalizedDelta(t), ivr:calcNum(t.ivr),
-    collateral:col.value > 0 ? col.value : null, maxProfit:(mp.unlimited || mp.value === null || !isFinite(mp.value)) ? null : mp.value,
+    collateral:col.value > 0 ? col.value : null, coveredNoCash:col.source === 'covered', maxProfit:(mp.unlimited || mp.value === null || !isFinite(mp.value)) ? null : mp.value,
     maxLoss:(ml.unlimited || ml.value === null || !isFinite(ml.value)) ? null : ml.value,
     capture:capture, exit:null,
     rollChainId:t.rollChainId || null, rolledFrom:t.rolledFrom || null, rollKind:t.rollKind || null,
@@ -3533,7 +3561,7 @@ function getAnalyticsDataset(trades, filters, ctx){
   var q = { closedAnalyzed:closed.length, totalTrades:rows.length,
             missingDelta:closed.filter(function(r){ return r.entryDelta === null; }).length,
             missingIvr:closed.filter(function(r){ return r.ivr === null; }).length,
-            missingCollateral:closed.filter(function(r){ return r.collateral === null && r.direction === 'short'; }).length,
+            missingCollateral:closed.filter(function(r){ return r.collateral === null && r.direction === 'short' && !r.coveredNoCash; }).length,
             missingMaxProfit:closed.filter(function(r){ return r.maxProfit === null; }).length,
             missingHolding:closed.filter(function(r){ return r.holdingDays === null; }).length,
             missingEntryDte:closed.filter(function(r){ return r.entryDte === null; }).length,
@@ -4965,7 +4993,10 @@ function runCalculationTests(){
   T('10b Teminat yok: ROC null + neden', 'ROC unavailable — collateral missing', function(){ return calcROCInfo(noColl).reason; });
   T('10c Toplu ROC: teminatsiz islem sayilir, sessizce dusmez', { unavailable:1, counted:1 }, function(){
     var a = calcAggregateROC([noColl, closedT({ type:'CSP', strike:'10', pnl:10, teminat:1000 })]); return { unavailable:a.unavailable, counted:a.counted }; });
-  T('10d CC teminat 0 ise strike x 100 x adet varsayilir', 2900, function(){ return calcCollateral({ type:'CC', strike:'29', q:1, teminat:0 }).value; });
+  T('10d CC teminat her zaman 0 (hisse ile karsilanir)', 0, function(){ return calcCollateral({ type:'CC', strike:'29', q:1, teminat:2900 }).value; });
+  T('10e PMCC teminat 0, uyari yok', true, function(){ var c = calcCollateral({ type:'PMCC', strike:'150', q:1, teminat:15000 }); return c.value === 0 && !c.warning && c.source === 'covered'; });
+  T('10f CC max loss hisse vekiliyle korunur', 2800, function(){ return calcMaxLoss({ type:'CC', strike:'29', q:1, premium:100 }).value; });
+  T('10g CC ROC yok (nakit teminat yok)', null, function(){ return calcROC({ type:'CC', strike:'29', q:1, teminat:2900, premium:100, pnl:100, opened:'2026-01-02', closed:'2026-01-20', status:'closed' }); });
   // 11. Karma win istatistigi
   T('11 Win/Loss/BE + profit factor + expectancy', { closedTrades:3, wins:1, losses:1, breakevens:1, winRate:0.3333, profitFactor:2, expectancy:16.67 }, function(){
     var w = calcWinStats([closedT({ pnl:100 }), closedT({ pnl:-50 }), closedT({ pnl:0 })]);
@@ -6045,8 +6076,8 @@ function renderPositionDetail(){
     + ofMetric('Current underlying', spot ? '$' + spot : nd, spot ? 'stock price' : 'no price loaded', 'sm')
     + ofMetric('Max profit', mp.unlimited ? 'Unlimited' : (mp.value === null ? nd : '<span class="privacy-val">' + ccMoney(mp.value) + '</span>'), '', 'sm')
     + ofMetric('Max loss', ml.unlimited ? 'Unlimited' : (ml.value === null ? nd : '<span class="privacy-val">' + ccMoney(ml.value) + '</span>'), 'not collateral', 'sm')
-    + ofMetric('Collateral', coll.value > 0 ? '<span class="privacy-val">' + ccMoney(coll.value) + '</span>' : '<span class="of-na">Not provided</span>', coll.source === 'calculated' ? 'derived from strike' : '', 'sm')
-    + ofMetric('ROC', roc.value !== null ? ccPct(roc.value, 2) : nd, roc.annualized !== null ? ccPct(roc.annualized, 1) + ' annualized' : '', 'sm')
+    + ofMetric('Collateral', coll.source === 'covered' ? '$0' : coll.value > 0 ? '<span class="privacy-val">' + ccMoney(coll.value) + '</span>' : '<span class="of-na">Not provided</span>', coll.source === 'covered' ? 'covered by shares / LEAPS' : coll.source === 'calculated' ? 'derived from strike' : '', 'sm')
+    + ofMetric('ROC', roc.value !== null ? ccPct(roc.value, 2) : calcIsCoveredTrade(t) ? '<span class="of-na">N/A</span>' : nd, roc.annualized !== null ? ccPct(roc.annualized, 1) + ' annualized' : calcIsCoveredTrade(t) ? 'ROC N/A — no cash collateral' : '', 'sm')
     + ofMetric('DTE', dte === null ? nd : String(dte), t.expiry ? E(t.expiry) : '', 'sm')
     + ofMetric('Delta', dl === null ? nd : dl.toFixed(2), dl === null ? '' : 'at entry', 'sm')
     + ofMetric('IVR', t.ivr != null && t.ivr !== '' ? E(String(t.ivr)) : nd, t.ivr != null && t.ivr !== '' ? 'at entry' : '', 'sm')
@@ -6536,13 +6567,13 @@ function renderPositions(){
   var rows = open.map(function(t){
     var id = String(t.id), dte = calcDTE(t), known = ccKnownPnl(t), mp = calcMaxProfit(t), dl = ccNormalizedDelta(t), c = calcCollateral(t), st = calcTradeStatus(t), a = firstAlert[id];
     var pct = (known !== null && mp.value > 0 && isFinite(mp.value)) ? known / mp.value : null;
-    return { t:t, id:id, dte:dte, known:known, pct:pct, dl:dl, coll:c.value > 0 ? c.value : null, st:st, a:a };
+    return { t:t, id:id, dte:dte, known:known, pct:pct, dl:dl, coll:c.value > 0 ? c.value : null, cov:c.source === 'covered', st:st, a:a };
   });
   var q = function(id){ return E(id).replace(/'/g, '&#39;'); };
   var h = '<div class="cc-sec of-pos-mobile">' + rows.map(function(r){
     return '<div class="cc-row" tabindex="0" role="button" aria-label="' + E(calcTickerRoot(r.t)) + ' pozisyonunu görüntüle" onclick="openPositionDetail(\'' + q(r.id) + '\')" style="grid-template-columns:minmax(0,1fr) auto auto">'
       + '<div><div class="cc-row-t">' + E(calcTickerRoot(r.t)) + ' <span class="cc-row-s" style="display:inline">' + E(ofStrategyName(r.t.type)) + '</span></div>'
-      + '<div class="cc-row-s">' + (r.dte === null ? 'No expiry' : r.dte + ' DTE') + ' · Δ ' + (r.dl === null ? 'N/A' : r.dl.toFixed(2)) + ' · ' + (r.coll === null ? 'Collateral not provided' : '<span class="privacy-val">' + ccMoney(r.coll) + '</span>')
+      + '<div class="cc-row-s">' + (r.dte === null ? 'No expiry' : r.dte + ' DTE') + ' · Δ ' + (r.dl === null ? 'N/A' : r.dl.toFixed(2)) + ' · ' + (r.cov ? 'Covered · $0 collateral' : r.coll === null ? 'Collateral not provided' : '<span class="privacy-val">' + ccMoney(r.coll) + '</span>')
       + (r.a ? ' · <span class="of-dot sev-' + r.a.severity + '" style="width:6px;height:6px"></span> ' + E(ofAlertTitle(r.a)) : '') + '</div></div>'
       + '<div class="cc-row-m privacy-val ' + ofMoneyCls(r.known) + '">' + (r.known === null ? 'N/A' : ccMoney(r.known, true)) + '</div><span class="of-chev" aria-hidden="true">›</span></div>';
   }).join('') + '</div>';
@@ -6551,7 +6582,7 @@ function renderPositions(){
       return '<tr data-tid="' + E(r.id) + '" tabindex="0" onclick="openPositionDetail(\'' + q(r.id) + '\')"><td class="tk">' + E(calcTickerRoot(r.t)) + '</td><td>' + E(ofStrategyName(r.t.type)) + '</td>'
         + '<td class="n">' + (r.dte === null ? ofNA() : r.dte) + '</td><td class="n privacy-val ' + ofMoneyCls(r.known) + '">' + (r.known === null ? ofNA() : ccMoney(r.known, true)) + '</td>'
         + '<td class="n">' + (r.pct === null ? ofNA() : ccPct(r.pct, 0)) + '</td><td class="n">' + (r.dl === null ? ofNA() : r.dl.toFixed(2)) + '</td>'
-        + '<td class="n privacy-val">' + (r.coll === null ? '<span class="of-na">Not provided</span>' : ccMoney(r.coll)) + '</td>'
+        + '<td class="n privacy-val">' + (r.cov ? '<span class="of-na">$0 · covered</span>' : r.coll === null ? '<span class="of-na">Not provided</span>' : ccMoney(r.coll)) + '</td>'
         + '<td><span class="of-pill">' + E(OF_STATUS_LABEL[r.st] || r.st) + '</span></td>'
         + '<td style="color:var(--text-secondary)">' + (r.a ? '<span class="of-dot sev-' + r.a.severity + '" style="width:6px;height:6px"></span> ' + E(ofAlertTitle(r.a)) : '') + '</td></tr>';
     }).join('') + '</tbody></table><div class="cc-note" style="margin-top:12px">Current P&L ve Profit % yalnızca kısmi kapanışlardan gerçekleşen kısmı gösterir; opsiyon fiyatları tutulmadığı için açık kısım N/A.</div></div>';
@@ -6916,7 +6947,7 @@ function applyChartDefaults(){
   var C = chartTheme();
   Chart.defaults.color = C.tick;              // eksen/legend varsayilan yazi
   Chart.defaults.borderColor = C.gridSoft;
-  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif";
   Chart.defaults.font.size = 11;
 }
 applyChartDefaults();
@@ -7808,7 +7839,7 @@ function renderTradeList(filter, month){
         '<div><div class="trade-metric-lbl">Qty</div><div class="trade-metric-val">'+(_partlyOpen?(_remainingQty+'/'+t.q):t.q)+' × 100</div></div>'+
         '<div><div class="trade-metric-lbl">Delta</div><div class="trade-metric-val" style="color:'+(t.delta&&t.delta>35?'var(--loss)':'var(--info)')+'">'+(t.delta!=null?t.delta:'—')+'</div></div>'+
         '<div><div class="trade-metric-lbl">IVR</div><div class="trade-metric-val" style="color:'+(t.ivr&&t.ivr>50?'var(--profit)':t.ivr>30?'var(--warn)':'var(--text-3)')+'">'+(t.ivr||'—')+'</div></div>'+
-        '<div><div class="trade-metric-lbl">Collateral</div><div class="trade-metric-val">'+(function(){var _c=calcCollateral(t);return _c.value>0?fmtA$(_c.value)+(_c.source==='calculated'?'*':''):(_c.expected?'⚠ missing':'—');})()+'</div></div></div>'+
+        '<div><div class="trade-metric-lbl">Collateral</div><div class="trade-metric-val">'+(function(){var _c=calcCollateral(t);return _c.source==='covered'?'$0 · covered':_c.value>0?fmtA$(_c.value)+(_c.source==='calculated'?'*':''):(_c.expected?'⚠ missing':'—');})()+'</div></div></div>'+
       partialSummaryHtml+
       '<div class="trade-card-foot"><div class="dte-bar-wrap">'+
         '<div class="dte-label"><span>'+(isOpen?'Time elapsed':'Result')+'</span>'+
@@ -13449,7 +13480,7 @@ function showAddTrade(existingTrade, prefill){
       if(!isEdit && !trade.createdAt) trade.createdAt = new Date().toISOString();
       trade.pct = (trade.pnl != null && calcTradePremium(trade) > 0) ? trade.pnl / calcTradePremium(trade) : null;
       // Girilen teminat turden hesaplanan varsayilandan farkliysa override olarak isaretle
-      var _defColl = calcDefaultCollateral(trade);
+      var _defColl = calcIsCoveredTrade(trade) ? null : calcDefaultCollateral(trade);
       if(trade.teminat > 0 && _defColl !== null && Math.abs(trade.teminat - _defColl) > 0.5){
         trade.collateralOverride = trade.teminat; trade.collateralOverrideReason = 'user-entered';
       } else if(trade.teminat > 0 && _defColl !== null){

@@ -6,7 +6,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // bunu register ediyor). Depodaki sw.js hicbir yerde kayitli degil —
 // oradaki CACHE surumunu artirmak hicbir sey yapmaz.
 // Yeni surum yayinlarken CACHE degerini burada artirin.
-var CACHE = 'optflow-v53';
+var CACHE = 'optflow-v55';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -32,7 +32,11 @@ self.addEventListener('activate', function(e) {
 self.addEventListener('fetch', function(e) {
   if (e.request.method !== 'GET') return;
   var url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return;
+  // Harici kutuphaneler (Chart.js, Firebase SDK) de onbellege alinir; aksi
+  // halde uygulama offline acildiginda grafikler ve Analytics calismaz.
+  var isLib = (url.hostname === 'cdnjs.cloudflare.com') ||
+              (url.hostname === 'www.gstatic.com' && url.pathname.indexOf('/firebasejs/') === 0);
+  if (url.origin !== self.location.origin && !isLib) return;
 
   // Kur tablosu her zaman taze olmali — cache'e hic dokunma.
   // (Cache-bust query'si yuzunden onbellegi de sisirirdi.)
@@ -47,7 +51,7 @@ self.addEventListener('fetch', function(e) {
         ? new Request(e.request.url, { cache: 'reload', credentials: 'same-origin' })
         : e.request;
       return fetch(req).then(function(response) {
-        if (response && response.status === 200) {
+        if (response && (response.status === 200 || (isLib && response.type === 'opaque'))) {
           var clone = response.clone();
           caches.open(CACHE).then(function(c) { c.put(e.request, clone); });
         }
