@@ -11253,14 +11253,23 @@ function _xrPaintCard(c, D, W){
   // ── Zemin + cok hafif atmosferik isilti (en arkaya) ──
   c.save();
   c.globalCompositeOperation = 'destination-over';
-  var glow = function(x, y, r, rgba){
+  // Isilti: merkez -> orta durak -> seffaf. Orta durak, beyazdan renge
+  // gecisi daha belirgin ama yine yumusak yapar.
+  var glow = function(x, y, r, rgbCore, aCore, aMid){
     var rg = c.createRadialGradient(x, y, 0, x, y, r);
-    rg.addColorStop(0, rgba); rg.addColorStop(1, 'rgba(245,245,247,0)');
+    rg.addColorStop(0, 'rgba(' + rgbCore + ',' + aCore + ')');
+    rg.addColorStop(0.45, 'rgba(' + rgbCore + ',' + aMid + ')');
+    rg.addColorStop(1, 'rgba(' + rgbCore + ',0)');
     c.fillStyle = rg; c.fillRect(0, 0, W, Math.min(yy, heroY + r * 1.4));
   };
-  glow(W / 2, heroMid, 260, pos ? 'rgba(52,199,89,0.16)' : 'rgba(255,59,48,0.12)');
-  glow(W * 0.18, heroY - 10, 230, 'rgba(0,122,255,0.09)');
-  glow(W * 0.86, heroMid + 30, 220, 'rgba(175,82,222,0.07)');
+  var heroRGB = pos ? '52,199,89' : '255,59,48';
+  // cekirdek: P&L'in hemen arkasinda yogun ton
+  glow(W / 2, heroMid, 170, heroRGB, pos ? 0.34 : 0.26, pos ? 0.16 : 0.12);
+  // genis yayilim: tum ust bolumu hafifce renklendirir
+  glow(W / 2, heroMid + 10, 330, heroRGB, pos ? 0.20 : 0.15, pos ? 0.10 : 0.07);
+  // yardimci tonlar geri planda, yesili bastirmasin
+  glow(W * 0.16, heroY - 10, 210, '0,122,255', 0.06, 0.03);
+  glow(W * 0.88, heroMid + 30, 200, '175,82,222', 0.05, 0.02);
   c.fillStyle = BG; c.fillRect(0, 0, W, yy);
   c.restore();
 
