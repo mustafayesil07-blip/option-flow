@@ -4116,20 +4116,35 @@ function _fetchBulkQuotes(tickers){
 
 function fetchOptionPrices(){
   if(_pricesFetching) return;
-  // Açık pozisyonlardan unique ticker'ları çıkar
-  var open = getOpenTrades();
-  var tickers = [];
-  open.forEach(function(t){
-    var tk = t.ticker.split(' ')[0].toUpperCase();
-    if(tk && tickers.indexOf(tk) < 0) tickers.push(tk);
-  });
-  if(!tickers.length){ _setPriceBtn('📡 Fiyat', '#10D48E', false); return; }
+  try {
+    // Açık pozisyonlardan unique ticker'ları çıkar. Ticker eksik/bozuksa
+    // (bkz. veri kalitesi: 'missing-ticker') o kayit sessizce atlanir —
+    // .split() eskiden burada koruma olmadan cagriliyordu ve boyle bir
+    // kayitta TUM tiklama, hicbir hata/geri bildirim gostermeden,
+    // sessizce cokuyordu.
+    var open = getOpenTrades();
+    var tickers = [];
+    open.forEach(function(t){
+      var tk = String(t && t.ticker || '').split(' ')[0].toUpperCase();
+      if(tk && tickers.indexOf(tk) < 0) tickers.push(tk);
+    });
+    if(!tickers.length){ _setPriceBtn('📡 Fiyat', '#10D48E', false); return; }
 
-  _pricesFetching = true;
-  _setPriceBtn('⟳ Updating...', '#FFB020', true);
+    _pricesFetching = true;
+    _setPriceBtn('⟳ Updating...', '#FFB020', true);
+    // Ag istegi asla sonuclanmazsa (proxy takilirsa) dugme sonsuza kadar
+    // "Updating..." da kalmasin — 20 sn sonra hata olarak isaretle.
+    var _timedOut = false;
+    var _watchdog = setTimeout(function(){
+      _timedOut = true; _pricesFetching = false;
+      _setPriceBtn('✗ Timeout', '#FF4F7B', false);
+      setTimeout(function(){ _setPriceBtn('📡 Fiyat', '#10D48E', false); }, 5000);
+    }, 20000);
 
   _fetchBulkQuotes(tickers)
     .then(function(map){
+      if(_timedOut) return;                        // watchdog zaten mesaji gosterdi
+      clearTimeout(_watchdog);
       var updated = 0;
       Object.keys(map).forEach(function(tk){
         var q = map[tk];
@@ -4188,11 +4203,21 @@ function fetchOptionPrices(){
       setTimeout(function(){ _setPriceBtn('📡 Fiyat', '#10D48E', false); }, 5000);
     })
     .catch(function(err){
+      if(_timedOut) return;
+      clearTimeout(_watchdog);
       _pricesFetching = false;
       console.error('[optflow] fetchOptionPrices error:', err);
       _setPriceBtn('✗ Hata', '#FF4F7B', false);
       setTimeout(function(){ _setPriceBtn('📡 Fiyat', '#10D48E', false); }, 5000);
     });
+  } catch(e){
+    // Beklenmeyen senkron hata (ör. bozuk bir kayit): sessizce cokme —
+    // gorunur bir hata durumuna dus.
+    console.error('[optflow] fetchOptionPrices sync error:', e);
+    _pricesFetching = false;
+    _setPriceBtn('✗ Hata', '#FF4F7B', false);
+    setTimeout(function(){ _setPriceBtn('📡 Fiyat', '#10D48E', false); }, 5000);
+  }
 }
 // ═══════════════════════════════════════════════════════
 
