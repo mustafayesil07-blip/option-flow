@@ -9106,96 +9106,217 @@ function showWhatIfCalc(trade){
 }
 
 // ═══════════════════ ROLL TRADE (ZİNCİR POZİSYON) ═══════════════════
+// ═══════════════════ ORTAK KAPANIS + ROLL BAGLAMA ═══════════════════
+// Trade detayindaki "Kapat" ile AYNI kural: her kapanis partialCloses'a bir
+// girdi olarak eklenir; tum adet kapaninca pozisyon kapanir ve toplam P&L
+// kaynak alanlardan (calcTradePnlFromSource) hesaplanir. Roll ekrani ve
+// ekran goruntusu kapanisi eskiden pozisyona dogrudan closed/pnl yaziyordu:
+// onceden kismen kapanmis bir pozisyonda P&L o kismi yok sayiyor, vergi
+// hesabi da (partialCloses'tan okudugu icin) son kapanisi hic gormuyordu.
+//   c = { date, qty (bos = kalan tum adet), closePremium, closeCommission, pnl }
+// closePremium bos ve yalnizca pnl verilmisse kapanis tutari P&L'den geri
+// hesaplanir — vergi her girdinin closePremium'una dayanir; bos kalirsa
+// kapanis $0 sayilir ve kazanc oldugundan buyuk cikar.
+function applyCloseToTrade(t, c){
+  if(!t) return { ok:false, reason:'İşlem bulunamadı' };
+  var total = calcQty(t) || 1;
+  var remaining = Math.max(0, total - calcClosedQty(t));
+  if(remaining <= 0 || t.closed) return { ok:false, reason:'Pozisyonda kapatılacak kontrat kalmadı' };
+  var qty = Math.min(parseInt(c.qty, 10) || remaining, remaining);
+  var ck = calcRound2(calcNum(c.closeCommission) || 0);
+  var cpIn = calcNum(c.closePremium), manual = calcNum(c.pnl), cp = cpIn;
+  if(cp === null){
+    if(manual === null) return { ok:false, reason:'Kapanış tutarı ya da P&L gerekli' };
+    var P = calcTradePremium(t), ok = calcNum(t.openCommission) || 0, f = qty / total;
+    cp = calcIsLongTrade(t) ? (manual + ck + (P + ok) * f) : ((P - ok) * f - ck - manual);
+    if(cp < 0) cp = 0;
+  }
+  cp = calcRound2(cp);
+  var entry = { date:c.date, qty:qty, closePremium:cp, closeCommission:ck };
+  var ep = calcPartialEntryPnl(t, entry);
+  entry.pnl = (cpIn === null && manual !== null) ? calcRound2(manual) : (ep === null ? 0 : ep);
+  if(!Array.isArray(t.partialCloses)) t.partialCloses = [];
+  t.partialCloses.push(entry);
+  var full = calcClosedQty(t) >= total;
+  if(full){
+    t.closed = c.date; t.status = 'closed';
+    t.closePremium = cp; t.closeCommission = ck;          // trade detayindaki "Kapat" ile ayni: son girdi
+    var tp = calcTradePnlFromSource(Object.assign({}, t, { pnl:null }));
+    t.pnl = calcRound2(tp === null ? t.partialCloses.reduce(function(s, x){ return s + (calcNum(x.pnl) || 0); }, 0) : tp);
+    t.pnlSource = (cpIn === null) ? 'manual' : 'calculated';
+    t.calculationVersion = CALC_VERSION;
+    t.pct = calcTradePremium(t) ? t.pnl / calcTradePremium(t) : null;
+  }
+  return { ok:true, full:full, qty:qty, entryPnl:entry.pnl, totalPnl:full ? t.pnl : null, closePremium:cp };
+}
+
+// Yeni pozisyonu kapanan pozisyonun roll devami olarak zincire baglar.
+// pool: KAYITLI nesneler (getAllTrades kopyalari degil) — zincir kimligi
+// eksik uyelere de yazilir ki zincir bolunmesin.
+function linkRollTrades(newT, oldT, pool){
+  var cid = oldT.rollChainId;
+  if(!cid){
+    var chain = getRollChainTrades(oldT, pool || [oldT]);
+    var withId = chain.filter(function(x){ return x.rollChainId; })[0];
+    cid = withId ? withId.rollChainId : ('rc_' + String((chain[0] || oldT).id));
+    chain.concat([oldT]).forEach(function(x){ if(!x.rollChainId) x.rollChainId = cid; });
+  }
+  newT.rolledFrom = String(oldT.id);
+  newT.rollChainId = cid;
+  newT.rollKind = 'roll';
+  return cid;
+}
+
+// Kurus hassasiyetinde para (kapanis/roll P&L'i yuvarlanmadan gosterilir)
+function money2(v, signed){
+  if(v === null || v === undefined || !isFinite(v)) return '—';
+  var s = '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  return (v < 0 ? '-' : (signed && v > 0 ? '+' : '')) + s;
+}
+// Bir tarihin uygulama ay kovasi ('Ekim' gibi). Islem ACILDIGI aya aittir.
+function appMonthBucket(iso){
+  var names = ['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+  var d = calcParseDate(iso) || new Date();
+  return names[d.getMonth()];
+}
+// Aktif profilin kayitli islem nesneleri (duz liste)
+function _storedTradesFlat(data){
+  var out = [];
+  Object.keys(data || {}).forEach(function(m){ (data[m] || []).forEach(function(t){ if(t) out.push(t); }); });
+  return out;
+}
+
 function showRollTrade(oldTrade){
+  // Kayitli nesne (getAllTrades kopyasi degil) — kapanis ona yazilir.
+  var stored = null;
+  Object.keys(tradesData).forEach(function(m){ (tradesData[m] || []).forEach(function(t){ if(t && String(t.id) === String(oldTrade.id)) stored = t; }); });
+  if(!stored){ alert('İşlem bulunamadı.'); return; }
+  var d0 = calcTypeDef(stored.type) || { structure:'single', opt:'put' };
+  var lng = calcIsLongTrade(stored);
+  var remaining = Math.max(0, (calcQty(stored) || 1) - calcClosedQty(stored));
+  if(remaining < 1 || stored.closed){ alert('Bu pozisyonda roll edilecek açık kontrat yok.'); return; }
+  var L0 = calcLegs(stored);
+
   var ov=document.createElement('div'); ov.className='overlay';
   var sh=document.createElement('div'); sh.className='modal-sheet';
   ov.appendChild(sh); document.body.appendChild(ov);
   ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
-
-  var handle=document.createElement('div'); handle.className='modal-handle'; sh.appendChild(handle);
-  var ttl=document.createElement('div');
-  ttl.style.cssText='font-family:var(--font-head);font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px;';
-  ttl.textContent='Roll Trade — '+oldTrade.ticker+' ('+oldTrade.type+')';
-  sh.appendChild(ttl);
-  var sub=document.createElement('div');
-  sub.style.cssText='font-size:12px;color:var(--text-3);margin-bottom:16px;';
-  sub.textContent='Bu trade kapatılır ve yeni bir "rolled" pozisyon açılır.';
-  sh.appendChild(sub);
-
-  function field(lbl, id, type, placeholder, val){
-    var wrap=document.createElement('div');wrap.style.cssText='margin-bottom:12px;';
-    var l=document.createElement('div');l.style.cssText='font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;';l.textContent=lbl;
-    var inp=document.createElement('input');
-    inp.id=id; inp.type=type||'text'; inp.placeholder=placeholder||'';
-    if(val!=null)inp.value=val;
-    inp.style.cssText='width:100%;background:rgba(255,255,255,0.06);border:1.5px solid var(--border-bright);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;font-family:var(--font-mono);outline:none;box-sizing:border-box;';
-    wrap.appendChild(l); wrap.appendChild(inp); return wrap;
+  var E = escHtml;
+  var inp = 'width:100%;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;color:var(--text-primary);font-size:14px;outline:none;box-sizing:border-box;font-variant-numeric:tabular-nums;';
+  var lbl = 'font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;';
+  var f = function(label, id, type, val, ph, extra){
+    return '<div style="margin-bottom:10px;' + (extra || '') + '"><div style="' + lbl + '">' + label + '</div>'
+      + '<input id="' + id + '" type="' + (type || 'number') + '"' + (type === 'number' || !type ? ' step="0.01"' : '')
+      + ' value="' + (val == null ? '' : E(String(val))) + '" placeholder="' + E(ph || '') + '" style="' + inp + '"></div>';
+  };
+  var row2 = function(a, b){ return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' + a + b + '</div>'; };
+  var today = _srIso(new Date());
+  var struct = d0.structure;
+  var strikesHtml;
+  if(struct === 'vertical'){
+    var sk = d0.opt === 'call' ? L0.call.short : L0.put.short, lk = d0.opt === 'call' ? L0.call.long : L0.put.long;
+    strikesHtml = row2(f('Yeni short strike', 'roll_k1', 'number', sk), f('Yeni long strike', 'roll_k2', 'number', lk));
+  } else if(struct === 'ic'){
+    strikesHtml = row2(f('Short put', 'roll_kp1', 'number', L0.put.short), f('Long put', 'roll_kp2', 'number', L0.put.long))
+                + row2(f('Short call', 'roll_kc1', 'number', L0.call.short), f('Long call', 'roll_kc2', 'number', L0.call.long));
+  } else {
+    strikesHtml = f('Yeni strike', 'roll_k1', 'number', calcPrimaryStrike(stored));
   }
 
-  sh.appendChild(field('Kapatma P&L ($)','roll_close_pnl','number','e.g. -150'));
-  sh.appendChild(field('Kapatma Tarihi','roll_close_date','date','',new Date().toISOString().slice(0,10)));
-  sh.appendChild(field('Yeni Strike ($)','roll_new_strike','number','e.g. 450',oldTrade.strike));
-  sh.appendChild(field('Yeni Expiry','roll_new_expiry','date','',oldTrade.expiry||''));
-  sh.appendChild(field('Yeni Premium ($)','roll_new_premium','number','e.g. 1.80'));
+  sh.innerHTML = '<div class="modal-handle"></div>'
+    + '<div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">Roll — ' + E(stored.ticker) + ' ' + E(stored.type) + ' ' + E(fmtStrikes(stored)) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5;">Mevcut pozisyonun kalan <b>' + remaining + ' kontratı</b> kapatılır, yeni pozisyon aynı roll zincirine bağlanarak açılır. Her bacağın P&amp;L\'i ayrı kalır (vergi kapanış tarihine göre).</div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text-primary);margin:4px 0 8px;">1 · Kapanan pozisyon</div>'
+    + row2(f('Roll tarihi', 'roll_cd', 'date', today), '<div></div>')
+    + row2(f(lng ? 'Satış geliri (toplam $)' : 'Geri alım maliyeti (toplam $)', 'roll_cp', 'number', '', lng ? 'ör. 900' : 'ör. 1184'),
+           f('Kapanış komisyonu ($)', 'roll_ck', 'number', '', '0.19'))
+    + f('…ya da yalnızca kapanış P&amp;L ($)', 'roll_pnl', 'number', '', 'tutar bilinmiyorsa, ör. -383.49')
+    + '<div id="roll_close_prev" style="font-size:12px;margin:-2px 0 14px;font-variant-numeric:tabular-nums;"></div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--text-primary);margin:4px 0 8px;">2 · Yeni pozisyon</div>'
+    + row2(f('Yeni vade', 'roll_ex', 'date', stored.expiry || ''), f('Kontrat', 'roll_q', 'number', remaining))
+    + strikesHtml
+    + row2(f(lng ? 'Ödenen prim (toplam $)' : 'Net kredi (toplam $)', 'roll_np', 'number', '', 'ör. 1150'), f('Açılış komisyonu ($)', 'roll_nk', 'number', '', '0.23'))
+    + f('Teminat ($)', 'roll_te', 'number', '', 'otomatik')
+    + '<div id="roll_new_prev" style="font-size:12px;color:var(--text-secondary);margin:-2px 0 14px;font-variant-numeric:tabular-nums;"></div>'
+    + '<div id="roll_err" style="font-size:12px;color:var(--danger-text);margin-bottom:8px;"></div>'
+    + '<button id="roll_go" class="of-btn of-btn-primary" style="width:100%;">Roll\'u kaydet</button>';
 
-  var confirmBtn=document.createElement('button');
-  confirmBtn.style.cssText='width:100%;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:12px;padding:13px;color:var(--warn);font-family:var(--font-head);font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;';
-  confirmBtn.textContent='Roll Trade\'i Gerçekleştir';
-  confirmBtn.onclick=function(){
-    var closePnl=parseFloat(document.getElementById('roll_close_pnl').value)||0;
-    var closeDate=document.getElementById('roll_close_date').value||new Date().toISOString().slice(0,10);
-    var newStrike=document.getElementById('roll_new_strike').value||oldTrade.strike;
-    var newExpiry=document.getElementById('roll_new_expiry').value||'';
-    var newPrem=parseFloat(document.getElementById('roll_new_premium').value)||0;
-    // 1. Close old trade
-    var _rollChainId=oldTrade.rollChainId||('rc_'+String(oldTrade.id));
-    var months=Object.keys(tradesData);
-    for(var mi=0;mi<months.length;mi++){
-      var arr=tradesData[months[mi]];
-      for(var ti=0;ti<arr.length;ti++){
-        if(String(arr[ti].id)===String(oldTrade.id)){
-          arr[ti].closed=closeDate; arr[ti].pnl=closePnl;
-          arr[ti].pnlSource='manual';                       // roll ekraninda elle girilir
-          arr[ti].pct=calcTradePremium(arr[ti])?closePnl/calcTradePremium(arr[ti]):null;
-          arr[ti].status='closed';
-          if(!arr[ti].rollChainId) arr[ti].rollChainId='rc_'+String(arr[ti].id);
-          _rollChainId=arr[ti].rollChainId;
-          break;
-        }
-      }
+  var g = function(id){ var e = sh.querySelector('#' + id); return e ? e.value : ''; };
+  var num = function(id){ var v = g(id); return v === '' ? null : calcNum(v); };
+  var teTouched = false;
+  sh.querySelector('#roll_te').addEventListener('input', function(){ teTouched = true; });
+
+  function draftNew(){
+    var q = Math.max(1, parseInt(g('roll_q'), 10) || remaining);
+    var nt = { ticker:stored.ticker, type:stored.type, q:q, direction:stored.direction };
+    if(struct === 'vertical'){
+      var a = num('roll_k1'), b = num('roll_k2');
+      nt.strike = a === null ? '' : String(a);
+      if(a !== null && b !== null) nt.strikes = d0.opt === 'call' ? { c:[a, b] } : { p:[a, b] };
+    } else if(struct === 'ic'){
+      var sp = num('roll_kp1'), lp = num('roll_kp2'), sc = num('roll_kc1'), lc = num('roll_kc2');
+      nt.strike = (sp === null ? '' : sp) + '/' + (sc === null ? '' : sc);
+      if(sp !== null && lp !== null && sc !== null && lc !== null) nt.strikes = { p:[sp, lp], c:[sc, lc] };
+    } else {
+      var k = num('roll_k1'); nt.strike = k === null ? '' : String(k);
     }
-    // 2. Create new trade that references old
-    var _jsToApp=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
-    var nowMonth=_jsToApp[new Date().getMonth()];
-    if(!tradesData[nowMonth]) tradesData[nowMonth]=[];
-    var newId=newRecordId('roll');
-    var newTrade={
-      id:newId, ticker:oldTrade.ticker, type:oldTrade.type,
-      strike:newStrike, expiry:newExpiry,
-      // premium TOPLAM tutardir (openPremium ile ayni) — eskiden burada
-      // kontrat basi fiyat yaziliyordu ve iki alan birbirini tutmuyordu.
-      openPremium:newPrem*100*(oldTrade.q||1), premium:newPrem*100*(oldTrade.q||1),
-      price:newPrem,
-      q:oldTrade.q||1, teminat:oldTrade.teminat||0,
-      opened:closeDate, delta:oldTrade.delta||null, ivr:oldTrade.ivr||null,
-      subOwner:oldTrade.subOwner||'Eda',
-      rolledFrom:String(oldTrade.id), // link to previous trade
-      rollChainId:_rollChainId, rollKind:'roll',
-      direction:oldTrade.direction,
-      status:'open', calculationVersion:CALC_VERSION
-    };
-    tradesData[nowMonth].push(newTrade);
+    nt.openPremium = nt.premium = num('roll_np') || 0;
+    nt.openCommission = num('roll_nk') || 0;
+    return nt;
+  }
+  function refresh(){
+    // Kapanis onizlemesi (kopya uzerinde — kayitli nesneye dokunmaz)
+    var probe = JSON.parse(JSON.stringify(stored));
+    var r = applyCloseToTrade(probe, { date:g('roll_cd') || today, qty:remaining, closePremium:num('roll_cp'), closeCommission:num('roll_ck'), pnl:num('roll_pnl') });
+    var cpEl = sh.querySelector('#roll_close_prev');
+    if(r.ok){
+      var tot = r.totalPnl !== null ? r.totalPnl : r.entryPnl;
+      cpEl.innerHTML = 'Kapanış P&amp;L: <b style="color:' + (tot >= 0 ? 'var(--success-text)' : 'var(--danger-text)') + '">' + money2(tot, true) + '</b>'
+        + (calcPartialCloses(stored).length ? ' <span style="color:var(--text-tertiary)">(önceki kısmi kapanışlar dahil toplam)</span>' : '');
+    } else cpEl.innerHTML = '<span style="color:var(--text-tertiary)">' + E(r.reason) + '</span>';
+    var nt = draftNew();
+    if(!teTouched){
+      var dc = calcIsCoveredTrade(nt) ? 0 : calcDefaultCollateral(nt);
+      sh.querySelector('#roll_te').value = (dc === null || dc === undefined) ? '' : Math.round(dc);
+    }
+    var per = nt.q ? nt.openPremium / (nt.q * 100) : 0;
+    sh.querySelector('#roll_new_prev').textContent = nt.type + ' ' + fmtStrikes(Object.assign({}, nt, { teminat:num('roll_te') || 0 }))
+      + ' · ' + nt.q + ' kontrat · $' + per.toFixed(2) + '/kontrat' + (calcIsCoveredTrade(nt) ? ' · teminat yok (covered)' : '');
+  }
+  sh.addEventListener('input', refresh);
+  refresh();
+
+  sh.querySelector('#roll_go').onclick = function(){
+    var err = sh.querySelector('#roll_err');
+    var cd = g('roll_cd');
+    var nt = draftNew();
+    if(!cd){ err.textContent = 'Roll tarihi gerekli.'; return; }
+    if(num('roll_cp') === null && num('roll_pnl') === null){ err.textContent = 'Kapanış tutarını ya da kapanış P&L\'ini gir.'; return; }
+    if(!nt.strike || /^\/|\/$/.test(nt.strike)){ err.textContent = 'Yeni strike(lar) eksik.'; return; }
+    if(!(nt.openPremium > 0)){ err.textContent = lng ? 'Ödenen prim gerekli.' : 'Yeni net kredi gerekli.'; return; }
+    if(!g('roll_ex')){ err.textContent = 'Yeni vade gerekli.'; return; }
+    var r = applyCloseToTrade(stored, { date:cd, qty:remaining, closePremium:num('roll_cp'), closeCommission:num('roll_ck'), pnl:num('roll_pnl') });
+    if(!r.ok){ err.textContent = r.reason; return; }
+    stored.note = (stored.note ? stored.note + ' ' : '') + '[Roll]';
+    var month = appMonthBucket(cd);
+    var newT = Object.assign(nt, {
+      id:newRecordId('roll'), expiry:g('roll_ex'), opened:cd, closed:null, pnl:null,
+      price:nt.q ? nt.openPremium / (nt.q * 100) : 0,
+      teminat:calcIsCoveredTrade(nt) ? 0 : (num('roll_te') || 0),
+      delta:null, ivr:null,                    // yeni pozisyonun greek'leri eskisinden kopyalanmaz
+      subOwner:stored.subOwner || (ACTIVE_PROFILE === 'mustafa' ? 'Mustafa' : 'Eda'),
+      status:'open', calculationVersion:CALC_VERSION, createdAt:new Date().toISOString(),
+      note:'[Roll]', month:month
+    });
+    linkRollTrades(newT, stored, _storedTradesFlat(tradesData));
+    if(!tradesData[month]) tradesData[month] = [];
+    tradesData[month].push(newT);
     saveData();
     ov.remove();
     renderDashboard(); renderTradeList(currentFilter);
-    if(typeof renderVergi==='function') renderVergi();
-    var toast=document.createElement('div');
-    toast.textContent='✅ Roll tamamlandı: '+oldTrade.ticker+' yeni pozisyon açıldı.';
-    toast.style.cssText='position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#22C55E;color:#fff;padding:10px 18px;border-radius:12px;font-size:13px;font-weight:600;z-index:99999;font-family:var(--font-head);';
-    document.body.appendChild(toast);
-    setTimeout(function(){toast.remove();},3000);
+    if(typeof renderVergi === 'function') renderVergi();
+    if(typeof _backupToast === 'function') _backupToast('Roll kaydedildi: ' + stored.ticker + ' · kapanış ' + money2(r.full ? r.totalPnl : r.entryPnl, true), true);
   };
-  sh.appendChild(confirmBtn);
 }
 
 // ═══════════════════ ASSIGNMENT MODAL (WHEEL STRATEGY) ═══════════════════
@@ -12566,12 +12687,14 @@ function _shotHandleText(text){
     document.getElementById('shot_review').innerHTML = '';
     return;
   }
-  _shotTrades = groupLegsIntoTrades(parsed.legs);
+  _shotTrades = _shotSplitMixedGroups(groupLegsIntoTrades(parsed.legs));
   // Bacaklar mevcut bir acik pozisyonun TERSI ise bu bir KAPANIS emridir.
   _shotTrades.forEach(function(g){ g.closeMatch = _shotFindCloseMatch(g); });
   var _nClose = _shotTrades.filter(function(g){ return g.closeMatch; }).length;
+  var _nRoll = _shotDetectRolls(_shotTrades);
   _shotStatus('✅ ' + parsed.legs.length + ' bacak okundu → <b>' + _shotTrades.length + ' işlem</b> oluşturuldu.'
     + (_nClose ? '<br><span style="color:var(--info);">🔒 ' + _nClose + ' tanesi açık pozisyonun <b>kapanışı</b> olarak tanındı.</span>' : '')
+    + (_nRoll ? '<br><span style="color:var(--info);">🔁 ' + _nRoll + ' <b>roll</b> tanındı: yeni pozisyon kapanan pozisyonun zincirine bağlanacak.</span>' : '')
     + (parsed.warnings.length ? '<br><span style="color:var(--warn);">⚠️ ' + parsed.warnings.length + ' alan okunamadı, aşağıdan düzelt.</span>' : ''));
   _shotRenderReview(parsed.warnings);
 }
@@ -12688,6 +12811,56 @@ function _shotFindCloseMatch(g){
   };
 }
 
+// ── Roll tanima ─────────────────────────────────────────────────────────
+// Ayni VADEDE yapilan bir roll'da (or. CSP 100P -> 95P) kapanan ve acilan
+// bacaklar tek gruba duser: kapanis tutarina yeni pozisyonun kredisi karisir,
+// yeni pozisyon hic olusmazdi. Grup, acik bir pozisyonun TAM TERSI olan
+// bacaklarla geri kalanlar olarak ikiye ayrilir. Gecerli bir acilis yapisi
+// (2 bacakli PCS/BCS, tek bacak) bolunmez.
+function _shotSplitMixedGroups(trades){
+  var out = [], open = _shotAllOpenPositions();
+  trades.forEach(function(g){
+    if((g.type && g.legs.length <= 2) || !g.ticker || !g.expiry){ out.push(g); return; }
+    var split = null;
+    open.some(function(p){
+      var t = p.trade;
+      if(String(t.ticker || '').toUpperCase() !== String(g.ticker).toUpperCase() || t.expiry !== g.expiry) return false;
+      var pl = _posLegStrikes(t), lng = calcIsLongTrade(t);
+      var rev = function(l){
+        return (pl.short.indexOf(l.strike) >= 0 && l.side === (lng ? 'SELL' : 'BUY'))
+            || (pl.long.indexOf(l.strike)  >= 0 && l.side === (lng ? 'BUY' : 'SELL'));
+      };
+      var cl = g.legs.filter(rev), rest = g.legs.filter(function(l){ return !rev(l); });
+      if(cl.length && cl.length === pl.short.length + pl.long.length && rest.length){ split = { cl:cl, rest:rest }; return true; }
+      return false;
+    });
+    if(!split){ out.push(g); return; }
+    out.push(groupLegsIntoTrades(split.cl)[0]);
+    groupLegsIntoTrades(split.rest).forEach(function(x){ out.push(x); });
+  });
+  return out;
+}
+// Ayni ekran goruntusunde bir pozisyonun KAPANISI ile ayni ticker, ayni
+// tarih ve ayni stratejide yeni bir ACILIS birlikteyse bu bir roll'dur.
+// Yalnizca tek aday varsa baglanir (belirsizlikte tahmin yurutulmez).
+function _shotDetectRolls(trades){
+  var n = 0;
+  trades.forEach(function(g){
+    g.rollFrom = null;
+    if(g.closeMatch || !g.type) return;
+    var cands = [];
+    trades.forEach(function(c, j){
+      if(!c.closeMatch) return;
+      if(String(c.ticker || '').toUpperCase() !== String(g.ticker || '').toUpperCase()) return;
+      if((c.closeMatch.date || c.opened || '') !== (g.opened || '')) return;
+      if(!c.closeMatch.positions.some(function(p){ return p.trade.type === g.type; })) return;
+      cands.push(j);
+    });
+    if(cands.length === 1){ g.rollFrom = cands[0]; trades[cands[0]].rollTo = (trades[cands[0]].rollTo || []).concat([g]); n++; }
+  });
+  return n;
+}
+
 // Bir pozisyonun short ve long bacak strike'lari.
 // t.strikes varsa (ekran goruntusunden gelen gercek bacaklar) oradan,
 // yoksa teminattan geri hesaplanir — fmtStrikes ile ayni mantik.
@@ -12744,6 +12917,23 @@ function _shotCloseTradeIn(pid, tradeId, patch){
   return ok;
 }
 
+// Bir profildeki KAYITLI islem nesnesi uzerinde islem yapar (aktif olmayan
+// profilde localStorage'a geri yazar). fn(trade, poolOfStoredTrades)
+function _shotMutateIn(pid, tradeId, fn){
+  var run = function(data){
+    var pool = _storedTradesFlat(data), hit = null;
+    pool.forEach(function(t){ if(String(t.id) === String(tradeId)) hit = t; });
+    return hit ? { res: fn(hit, pool) } : null;
+  };
+  if(pid === ACTIVE_PROFILE){ var o = run(tradesData); return o ? o.res : null; }
+  var key = _shotStoreKey(pid), data = null;
+  try { var raw = localStorage.getItem(key); if(raw) data = JSON.parse(raw); } catch(e){ return null; }
+  if(!data) return null;
+  var o2 = run(data);
+  if(o2) localStorage.setItem(key, JSON.stringify(data));
+  return o2 ? o2.res : null;
+}
+
 // Kapanis P&L — Log New Trade ekranindakiyle ayni formul
 function _shotPnl(t, cp, ck){
   // Tek kaynak: calcTradePnlFromSource
@@ -12772,7 +12962,9 @@ function _shotRenderReview(warnings){
   // Yalnizca KAPANIS iceren bir ekran goruntusunde anlamsiz: kapanan
   // pozisyonun sahibi zaten belli.
   var _defOwner = (typeof ACTIVE_PROFILE !== 'undefined' && ACTIVE_PROFILE === 'mustafa') ? 'Mustafa' : 'Eda';
-  var _allClose = _shotTrades.length > 0 && _shotTrades.every(function(x){ return !!x.closeMatch; });
+  // Roll'un yeni bacagi hesap sahibini kapanan pozisyondan alir; secim
+  // yalnizca bagimsiz yeni islem varsa gosterilir.
+  var _allClose = _shotTrades.length > 0 && _shotTrades.every(function(x){ return !!x.closeMatch || x.rollFrom != null; });
   html += '<input type="hidden" id="sh_owner" value="' + _defOwner + '">';
   if(!_allClose) html += ''
     + '<div style="' + lbl + 'margin-bottom:8px;">Account Owner</div>'
@@ -12798,6 +12990,7 @@ function _shotRenderReview(warnings){
         +   '<input type="checkbox" id="sh_use_' + i + '" checked style="width:17px;height:17px;accent-color:#22C55E;">'
         +   '<b style="font-size:14px;color:var(--text);">' + (t.ticker || '?') + '</b>'
         +   '<span style="font-size:10px;font-weight:700;color:var(--info);background:var(--info-dim);border-radius:4px;padding:2px 6px;">🔒 KAPANIŞ</span>'
+        +   (t.rollTo && t.rollTo.length ? '<span style="font-size:10px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.12);border-radius:4px;padding:2px 6px;">🔁 ROLL · eski bacak</span>' : '')
         +   '<span style="font-size:11px;color:var(--text-3);">' + t.legs.length + ' bacak</span>'
         + '</div>'
         + '<div style="' + lbl + 'margin-bottom:6px;">Kapanacak pozisyonlar</div>'
@@ -12806,7 +12999,7 @@ function _shotRenderReview(warnings){
             return '<label style="display:flex;align-items:center;gap:7px;padding:7px 8px;margin-bottom:5px;background:var(--row-alt);border-radius:8px;cursor:pointer;">'
               + '<input type="checkbox" id="sh_mt_' + i + '_' + k + '" checked onchange="_shotCloseSum(' + i + ')" style="width:15px;height:15px;accent-color:#22C55E;">'
               + '<span style="font-size:11px;color:var(--text);">' + pr.emoji + ' <b>' + pr.name + '</b> · '
-              + (p.trade.type || '?') + ' ' + (p.trade.strike || '') + ' · ' + (p.trade.q || 0) + ' kontrat'
+              + (p.trade.type || '?') + ' ' + fmtStrikes(p.trade) + ' · ' + Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade)) + ' kontrat'
               + '<span style="color:var(--text-3);"> · açılış ' + (p.trade.opened || '?') + '</span></span>'
               + '<span id="sh_mp_' + i + '_' + k + '" style="margin-left:auto;font-size:11px;font-family:var(--font-mono);font-weight:700;"></span>'
               + '</label>';
@@ -12844,13 +13037,32 @@ function _shotRenderReview(warnings){
     }
 
     var okType = !!t.type;
+    var rf = (t.rollFrom != null) ? _shotTrades[t.rollFrom] : null;
+    // Roll ise kontrat dagilimi varsayilani: kapanan pozisyonlarin profilleri
+    // (toplam adet eslesiyorsa). Aksi halde tum adet aktif profile.
+    var rollDef = null;
+    if(rf){
+      var dm = {}, dsum = 0;
+      rf.closeMatch.positions.forEach(function(p){
+        var rem = Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade));
+        dm[p.pid] = (dm[p.pid] || 0) + rem; dsum += rem;
+      });
+      if(dsum === (t.q || 1)) rollDef = dm;
+    }
     html += '<div style="background:var(--card);border:1px solid ' + (okType ? 'var(--border)' : 'rgba(245,158,11,.45)') + ';border-radius:12px;padding:12px;margin-bottom:11px;">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
       +   '<input type="checkbox" id="sh_use_' + i + '"' + (okType ? ' checked' : '') + ' style="width:17px;height:17px;accent-color:#22C55E;">'
       +   '<b style="font-size:14px;color:var(--text);">' + (t.ticker || '?') + '</b>'
       +   '<span style="font-size:11px;color:var(--text-3);">' + t.legs.length + ' bacak</span>'
+      +   (rf ? '<span style="font-size:10px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.12);border-radius:4px;padding:2px 6px;">🔁 ROLL · yeni bacak</span>' : '')
       +   (okType ? '' : '<span style="font-size:10px;color:var(--warn);">' + (t.note || '') + '</span>')
       + '</div>'
+      + (rf ? '<label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;margin-bottom:10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:9px;cursor:pointer;">'
+          + '<input type="checkbox" id="sh_roll_' + i + '" checked style="width:16px;height:16px;margin-top:1px;accent-color:#F59E0B;">'
+          + '<span style="font-size:11px;color:var(--text-2);line-height:1.5;"><b>Roll zincirine bağla</b> — kapanan '
+          + rf.closeMatch.positions.map(function(p){ return (p.trade.type || '') + ' ' + fmtStrikes(p.trade) + ' (' + (p.trade.expiry || '?') + ')'; }).join(', ')
+          + ' pozisyonunun devamı olarak kaydedilir. Hesap sahibi kapanan pozisyondan alınır; her bacağın P&amp;L\'i ayrı kalır.</span></label>'
+        : '')
       + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;">'
       +   '<div><div style="' + lbl + '">Ticker</div><input id="sh_tk_' + i + '" value="' + (t.ticker || '') + '" style="' + inp + '"></div>'
       +   '<div><div style="' + lbl + '">Tip</div>'
@@ -12878,7 +13090,7 @@ function _shotRenderReview(warnings){
       +   '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">'
       +     _SHOT_PIDS.map(function(pid){
               var pr = (typeof PROFILES !== 'undefined' && PROFILES[pid]) ? PROFILES[pid] : { name: pid, emoji: '' };
-              var def = (pid === ACTIVE_PROFILE) ? (t.q || 1) : 0;
+              var def = rollDef ? (rollDef[pid] || 0) : ((pid === ACTIVE_PROFILE) ? (t.q || 1) : 0);
               return '<div><div style="' + lbl + 'text-align:center;">' + pr.emoji + ' ' + pr.name + '</div>'
                    + '<input id="sh_sp_' + i + '_' + pid + '" type="number" min="0" step="1" value="' + def + '" '
                    + 'oninput="_shotSplitSum(' + i + ')" style="' + inp + 'text-align:center;"></div>';
@@ -12898,7 +13110,8 @@ function _shotRenderReview(warnings){
 
   var _nCl = _shotTrades.filter(function(x){ return x.closeMatch; }).length;
   var _btnTxt = (_nCl === 0) ? '✅ Seçilenleri ekle'
-              : (_allClose ? '🔒 Seçilen pozisyonları kapat' : '✅ Seçilenleri uygula (ekle + kapat)');
+              : (_shotTrades.every(function(x){ return !!x.closeMatch; }) ? '🔒 Seçilen pozisyonları kapat'
+                 : (_shotTrades.some(function(x){ return x.rollFrom != null; }) ? '🔁 Roll\'u uygula (kapat + yeni bacak)' : '✅ Seçilenleri uygula (ekle + kapat)'));
   html += '<button onclick="_shotCommit()" style="width:100%;padding:14px;border-radius:12px;border:1px solid rgba(34,197,94,.4);background:rgba(34,197,94,.16);color:#22C55E;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">' + _btnTxt + '</button>';
   el.innerHTML = html;
   _shotTrades.forEach(function(t, i){ t.closeMatch ? _shotCloseSum(i) : _shotSplitSum(i); });
@@ -12913,21 +13126,31 @@ function _shotCloseAlloc(i){
   var sel = [];
   t.closeMatch.positions.forEach(function(p, k){
     var cb = document.getElementById('sh_mt_' + i + '_' + k);
-    if(cb && cb.checked) sel.push({ k: k, p: p, q: parseInt(p.trade.q, 10) || 0 });
+    // Kalan (henuz kapanmamis) adet — onceden kismen kapanmis pozisyonda q degil
+    var rem = Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade));
+    if(cb && cb.checked) sel.push({ k: k, p: p, q: rem });
   });
-  var qSum = sel.reduce(function(s, x){ return s + x.q; }, 0);
+  var need = t.closeMatch.qty;
+  // Tek pozisyon secili ve ekranda kalandan AZ kontrat kapanmissa bu bir
+  // KISMI kapanistir: yalnizca o kadar kontrat kapatilir.
+  sel.forEach(function(x){ x.qClose = (sel.length === 1 && need > 0 && need < x.q) ? need : x.q; });
+  var qSum = sel.reduce(function(s, x){ return s + x.qClose; }, 0);
 
-  // Prim/komisyon secili pozisyonlarin kontrat sayisina gore bolunur;
-  // yuvarlama artigi son dilime gider ki toplam birebir tutsun.
+  // Prim/komisyon kapatilan kontrat sayisina gore bolunur; yuvarlama artigi
+  // son dilime gider ki toplam birebir tutsun.
   var accP = 0, accC = 0;
   sel.forEach(function(x, n){
     var last = (n === sel.length - 1);
-    x.cp = (last || !qSum) ? Math.round((cp - accP) * 100) / 100 : Math.round(cp * x.q / qSum * 100) / 100;
-    x.ck = (last || !qSum) ? Math.round((ck - accC) * 100) / 100 : Math.round(ck * x.q / qSum * 100) / 100;
+    x.cp = (last || !qSum) ? Math.round((cp - accP) * 100) / 100 : Math.round(cp * x.qClose / qSum * 100) / 100;
+    x.ck = (last || !qSum) ? Math.round((ck - accC) * 100) / 100 : Math.round(ck * x.qClose / qSum * 100) / 100;
     accP += x.cp; accC += x.ck;
-    x.pnl = _shotPnl(x.p.trade, x.cp, x.ck);
+    // Onizleme kopya uzerinde, kayit ile AYNI kuralla (applyCloseToTrade)
+    var probe = JSON.parse(JSON.stringify(x.p.trade));
+    var r = applyCloseToTrade(probe, { date:'draft', qty:x.qClose, closePremium:x.cp, closeCommission:x.ck });
+    x.pnl = r.ok ? r.entryPnl : 0;
+    x.full = r.ok && r.full;
   });
-  return { sel: sel, qSum: qSum, cp: cp, ck: ck, need: t.closeMatch.qty };
+  return { sel: sel, qSum: qSum, cp: cp, ck: ck, need: need };
 }
 
 function _shotCloseSum(i){
@@ -12952,6 +13175,7 @@ function _shotCloseSum(i){
   var note = '', clr = 'var(--profit)';
   if(!a.sel.length){ note = 'Hiçbir pozisyon seçilmedi'; clr = 'var(--loss)'; }
   else if(a.qSum !== a.need){ note = a.qSum + ' / ' + a.need + ' kontrat — uyuşmuyor, kontrol et'; clr = 'var(--warn)'; }
+  else if(a.sel.length === 1 && !a.sel[0].full){ note = 'Kısmi kapanış: ' + a.qSum + ' / ' + a.sel[0].q + ' kontrat · bu kapanışın P&L\'i ' + (total >= 0 ? '+' : '-') + '$' + Math.abs(total).toLocaleString('tr-TR', { maximumFractionDigits: 2 }); clr = total >= 0 ? 'var(--profit)' : 'var(--loss)'; }
   else { note = a.qSum + ' / ' + a.need + ' kontrat · toplam P&L ' + (total >= 0 ? '+' : '-') + '$' + Math.abs(total).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
          clr = total >= 0 ? 'var(--profit)' : 'var(--loss)'; }
   sum.textContent = note;
@@ -13067,29 +13291,33 @@ function _shotCommit(){
   if(!picked.length && !closing.length){ alert('Hiçbir işlem seçilmedi.'); return; }
 
   // ── 2) Yaz ──
-  var added = 0, closed = 0, perProfile = {}, stamp = Date.now();
+  var added = 0, closed = 0, rolled = 0, perProfile = {}, stamp = Date.now();
+  var closedRefs = {};
 
-  // Once kapanislar: mevcut pozisyonlara kapanis bilgisi islenir
+  // Once kapanislar: trade detayindaki "Kapat" ile ayni kural (partialCloses
+  // girdisi + kaynak alanlardan toplam P&L). Onceden kismen kapanmis
+  // pozisyonlarda P&L ve vergi boylece dogru kalir.
   closing.forEach(function(sel){
     var cd = v('sh_cd_' + sel.i);
+    closedRefs[sel.i] = [];
     sel.alloc.sel.forEach(function(x){
-      var t = x.p.trade;
-      var okWrite = _shotCloseTradeIn(x.p.pid, t.id, {
-        closed: cd,
-        closePremium: x.cp,
-        closeCommission: x.ck,
-        pnl: x.pnl,
-        pct: (parseFloat(t.openPremium) > 0) ? (x.pnl / parseFloat(t.openPremium)) : null,
-        note: (t.note ? t.note + ' ' : '') + '[SS kapanış]'
+      var r = _shotMutateIn(x.p.pid, x.p.trade.id, function(t){
+        var rr = applyCloseToTrade(t, { date:cd, qty:x.qClose, closePremium:x.cp, closeCommission:x.ck });
+        if(rr.ok) t.note = (t.note ? t.note + ' ' : '') + (rr.full ? '[SS kapanış]' : '[SS kısmi kapanış]');
+        return rr;
       });
-      if(okWrite){ closed++; perProfile[x.p.pid] = (perProfile[x.p.pid] || 0) + 1; }
+      if(r && r.ok){
+        closed++; perProfile[x.p.pid] = (perProfile[x.p.pid] || 0) + 1;
+        closedRefs[sel.i].push({ pid:x.p.pid, id:String(x.p.trade.id) });
+      }
     });
   });
   picked.forEach(function(sel){
     var i = sel.i, alloc = sel.alloc;
     var opened = v('sh_op_' + i);
-    var d = new Date(opened);
-    var month = _jsToApp[isNaN(d) ? new Date().getMonth() : d.getMonth()];
+    var month = appMonthBucket(opened);
+    var rollCb = document.getElementById('sh_roll_' + i);
+    var rollRefs = (_shotTrades[i].rollFrom != null && rollCb && rollCb.checked) ? (closedRefs[_shotTrades[i].rollFrom] || []) : [];
     var qty  = alloc.total;
     var prem = parseFloat(v('sh_pr_' + i)) || 0;
     var tem  = parseFloat(v('sh_te_' + i)) || 0;
@@ -13114,7 +13342,7 @@ function _shotCommit(){
       var pOwner = (part.pid === ACTIVE_PROFILE) ? owner
                  : (part.pid === 'mustafa' ? 'Mustafa' : 'Eda');
 
-      _shotAddTradeTo(part.pid, month, {
+      var newT = {
         id: newRecordId('shot' + i + '_' + part.pid),
         ticker: sel.ticker,
         type: v('sh_ty_' + i),
@@ -13138,7 +13366,19 @@ function _shotCommit(){
         subOwner: pOwner,
         note: '[Ekran görüntüsü]' + (alloc.parts.length > 1 ? ' ' + part.n + '/' + qty : ''),
         month: month
-      });
+      };
+      // Roll: ayni profilde kapanan pozisyonun zincirine bagla; hesap sahibi
+      // de o pozisyondan gelir (ayni hesapta roll edilmistir).
+      var ref = rollRefs.filter(function(rf){ return rf.pid === part.pid; })[0];
+      if(ref){
+        var oldOwner = _shotMutateIn(part.pid, ref.id, function(old, pool){ linkRollTrades(newT, old, pool); return old.subOwner || null; });
+        if(newT.rolledFrom){
+          if(oldOwner) newT.subOwner = oldOwner;
+          newT.note = '[Ekran görüntüsü · roll]' + (alloc.parts.length > 1 ? ' ' + part.n + '/' + qty : '');
+          rolled++;
+        }
+      }
+      _shotAddTradeTo(part.pid, month, newT);
       perProfile[part.pid] = (perProfile[part.pid] || 0) + 1;
       added++;
     });
@@ -13157,6 +13397,7 @@ function _shotCommit(){
       var what = [];
       if(added)  what.push(added + ' işlem eklendi');
       if(closed) what.push(closed + ' pozisyon kapatıldı');
+      if(rolled) what.push(rolled + ' roll zincire bağlandı');
       _backupToast('📸 ' + what.join(' · ') + ' — ' + names, true);
     }
   } catch(e){}
@@ -15655,23 +15896,29 @@ function openTradeDetail(tradeId, month){
     sec.appendChild(closeBtn);sh.appendChild(sec);
   }
 
-  // Roll chain — show previous rolls if any
-  if(trade.rolledFrom){
+  // Roll zinciri — TUM bacaklar (onceki, bu, sonraki) ve zincir toplami.
+  // Eskiden yalnizca oncekiler listeleniyor, bu pozisyon ve sonraki roll'lar
+  // gorunmuyordu; baslik da HTML kodunu duz metin olarak yaziyordu.
+  var _chain = getRollChainTrades(trade, getAllTrades());
+  if(_chain.length > 1){
     var rollBox=document.createElement('div');
-    rollBox.style.cssText='background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-radius:12px;padding:10px 14px;margin-bottom:10px';
-    var rollHdr=document.createElement('div');rollHdr.style.cssText='font-size:10px;color:var(--warn);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;';rollHdr.textContent='&#x1F501; Zincir Pozisyon';rollBox.appendChild(rollHdr);
-    // Walk the roll chain
-    var chainIds = [];
-    (function buildChain(id){
-      var prev=null; getAllTrades().forEach(function(t){if(String(t.id)===String(id))prev=t;});
-      if(prev){chainIds.unshift(prev);if(prev.rolledFrom)buildChain(prev.rolledFrom);}
-    })(trade.rolledFrom);
-    chainIds.forEach(function(ct,i){
-      var cRow=document.createElement('div');cRow.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;';
-      var cL=document.createElement('span');cL.style.cssText='color:var(--text-2);';cL.textContent=(i===0?'Orijinal: ':'→ Rol '+(i)+': ')+ct.ticker+' $'+ct.strike+' '+(ct.expiry||'');
-      var cR=document.createElement('span');cR.style.cssText='font-family:var(--font-mono);color:'+(ct.pnl>=0?'var(--profit)':'var(--loss)');cR.textContent=ct.pnl!=null?(ct.pnl>=0?'+':'')+fmt$(ct.pnl):'Açık';
+    rollBox.style.cssText='background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:12px;padding:10px 14px;margin-bottom:10px';
+    var rollHdr=document.createElement('div');rollHdr.style.cssText='font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;';
+    rollHdr.textContent='Roll zinciri · '+_chain.length+' bacak';rollBox.appendChild(rollHdr);
+    var _sum=0,_known=0;
+    _chain.forEach(function(ct,i){
+      var p=calcTradePnl(ct); if(p!==null){_sum+=p;_known++;}
+      var cRow=document.createElement('div');cRow.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;font-size:12px;'+(String(ct.id)===String(trade.id)?'font-weight:700;':'');
+      var cL=document.createElement('span');cL.style.cssText='color:var(--text-secondary);';
+      cL.textContent=(i===0?'Başlangıç':'Roll '+i)+': '+fmtStrikes(ct)+' · '+(ct.expiry||'')+(String(ct.id)===String(trade.id)?'  (bu)':'');
+      var cR=document.createElement('span');cR.style.cssText='font-variant-numeric:tabular-nums;color:'+(p===null?'var(--text-tertiary)':(p>=0?'var(--success-text)':'var(--danger-text)'));
+      cR.textContent=p!==null?money2(p,true):'Açık';
       cRow.appendChild(cL);cRow.appendChild(cR);rollBox.appendChild(cRow);
     });
+    var tRow=document.createElement('div');tRow.style.cssText='display:flex;justify-content:space-between;padding-top:6px;margin-top:4px;border-top:1px solid var(--border-subtle);font-size:12px;font-weight:700;';
+    var tL=document.createElement('span');tL.textContent='Zincir gerçekleşen P&L';
+    var tR=document.createElement('span');tR.style.cssText='font-variant-numeric:tabular-nums;color:'+(_sum>=0?'var(--success-text)':'var(--danger-text)');tR.textContent=_known?money2(calcRound2(_sum),true):'—';
+    tRow.appendChild(tL);tRow.appendChild(tR);rollBox.appendChild(tRow);
     sh.appendChild(rollBox);
   }
 
