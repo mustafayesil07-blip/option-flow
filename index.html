@@ -6412,6 +6412,7 @@ function renderPositionDetail(){
     + '<button class="pd-btn" onclick="openTradeDetail(\'' + idq + '\',\'' + mq + '\')">' + (isOpen ? 'Kapat / kısmi kapat' : 'Yönet') + '</button>'
     + (t._isLeap ? '' : '<button class="pd-btn" onclick="(function(){var r=_findTradeRecord(\'' + idq + '\');if(r)showAddTrade(Object.assign({},r,{month:\'' + mq + '\'}));})()">Düzenle</button>')
     + (isOpen && !t._isLeap ? '<button class="pd-btn" onclick="showRollTrade(_pdFind(\'' + idq + '\').t)">Roll</button>' : '')
+    + (isOpen && t.type === 'IC' && !calcPartialCloses(t).length ? '<button class="pd-btn" onclick="showIcSideClose(_pdFind(\'' + idq + '\').t)">Tek tarafı kapat</button>' : '')
     + (isOpen && t.type === 'CSP' ? '<button class="pd-btn" onclick="showAssignmentModal(_pdFind(\'' + idq + '\').t)">Assign</button>' : '')
     + (isOpen && (t.type === 'CC' || t.type === 'COLLAR CALL') ? '<button class="pd-btn" onclick="showCallAwayModal(\'' + idq + '\')">Call away</button>' : '')
     + '</div>';
@@ -9316,6 +9317,187 @@ function showRollTrade(oldTrade){
     renderDashboard(); renderTradeList(currentFilter);
     if(typeof renderVergi === 'function') renderVergi();
     if(typeof _backupToast === 'function') _backupToast('Roll kaydedildi: ' + stored.ticker + ' · kapanış ' + money2(r.full ? r.totalPnl : r.entryPnl, true), true);
+  };
+}
+
+// ═══════════════════ IRON CONDOR — TEK TARAF KAPANISI ═══════════════════
+// IBKR'deki "close one side": IC'nin yalnizca put (ya da call) spread'i
+// kapatilir, diger taraf acik kalir. Kayit duzeni:
+//   - KAPANAN taraf ayri, KAPALI bir kayit olur (PCS ya da BCS) — kendi
+//     acilis kredisi + komisyon payi, IC'nin acilis tarihi, kapanis tarihi.
+//     Vergi bu kaydi kapanis tarihindeki kurla gerceklesmis olarak gorur.
+//   - IC kaydi (ayni id, ayni acilis) KALAN tarafa donusur (BCS ya da PCS):
+//     kalan kredi, kalan komisyon, kalan tarafin teminati.
+// Iki kaydin acilis kredileri toplami IC'nin kredisine birebir esittir —
+// toplam P&L ve vergi matrahi bolunmeden once ile ayni kalir.
+//
+// Taraf kredisi (IC tek bir net kredi olarak kayitli; tarafa dusen pay):
+//   1) openLegs varsa (ekran goruntusuyle acilan IC'ler) — KESIN.
+//   2) yoksa IBKR'nin kapanis bacaklarindaki realized P&L'den turetilir:
+//      P&L = (kredi - acilis kom.) - kapanis - kapanis kom.
+//   3) o da yoksa kullanici girer. Tahmin YURUTULMEZ.
+function icSideLegsCredit(ic, side){
+  if(!ic || !Array.isArray(ic.openLegs)) return null;
+  var ot = side === 'put' ? 'P' : 'C';
+  var ls = ic.openLegs.filter(function(l){ return l && l.t === ot; });
+  if(ls.length < 2) return null;
+  var credit = ls.reduce(function(s, l){ return s + (l.s === 'S' ? 1 : -1) * (calcNum(l.a) || 0); }, 0);
+  var comm = ls.reduce(function(s, l){ return s + (calcNum(l.c) || 0); }, 0);
+  return { credit:calcRound2(credit), comm:calcRound2(comm) };
+}
+// IBKR realized P&L'den taraf kredisi: C = P&L + acilis kom. payi + kapanis + kapanis kom.
+function icSideCreditFromRealized(realized, closePremium, closeCommission, sideOpenComm){
+  if(realized === null || realized === undefined || !isFinite(realized)) return null;
+  return calcRound2(realized + (sideOpenComm || 0) + (closePremium || 0) + (closeCommission || 0));
+}
+
+// o = { side:'put'|'call', date, closePremium, closeCommission, sideCredit, sideCommission, newId }
+// ic: KAYITLI nesne — yerinde kalan tarafa donusturulur. Kapanan taraf
+// yeni bir nesne olarak dondurulur (cagiran ayni ay kovasina ekler).
+function splitIronCondorSide(ic, o){
+  if(!ic || String(ic.type) !== 'IC') return { ok:false, reason:'Yalnızca Iron Condor pozisyonlarında kullanılabilir' };
+  if(ic.closed) return { ok:false, reason:'Pozisyon zaten kapalı' };
+  if(calcPartialCloses(ic).length) return { ok:false, reason:'Bu IC\'de kontrat bazlı kısmi kapanış var; tek taraf kapanışı bu durumda otomatik yapılamaz' };
+  var L = calcLegs(ic);
+  if([L.put.short, L.put.long, L.call.short, L.call.long].some(function(x){ return x === null || x === undefined; }))
+    return { ok:false, reason:'IC bacakları eksik (dört strike bilinmiyor)' };
+  var put = o.side === 'put';
+  if(!put && o.side !== 'call') return { ok:false, reason:'Taraf seçilmedi' };
+  var q = calcQty(ic) || 1, total = calcTradePremium(ic), oc = calcNum(ic.openCommission) || 0;
+  var sc = calcNum(o.sideCredit);
+  if(sc === null || sc < 0) return { ok:false, reason:'Kapanan tarafın açılış kredisi gerekli' };
+  if(sc > total + 0.005) return { ok:false, reason:'Taraf kredisi ($' + sc + ') IC\'nin toplam kredisinden ($' + total + ') büyük olamaz' };
+  var scm = calcNum(o.sideCommission); if(scm === null) scm = calcRound2(oc / 2);
+  if(scm > oc + 0.005) scm = oc;
+  var cK = put ? [L.put.short, L.put.long] : [L.call.short, L.call.long];
+  var rK = put ? [L.call.short, L.call.long] : [L.put.short, L.put.long];
+  var cType = put ? 'PCS' : 'BCS', rType = put ? 'BCS' : 'PCS';
+  var cKey = put ? 'p' : 'c', rKey = put ? 'c' : 'p';
+  var legsAll = Array.isArray(ic.openLegs) ? ic.openLegs : null;
+  var legsOf = function(ot){ return legsAll ? legsAll.filter(function(l){ return l && l.t === ot; }) : null; };
+
+  // ── Kapanan taraf: ayri kayit ──
+  var part = JSON.parse(JSON.stringify(ic));
+  ['partialCloses','plannedId','rollChainId','rolledFrom','rollKind','closePremium','closeCommission','pnl','pct','pnlSource',
+   'collateralOverride','collateralOverrideReason','openLegs','updatedAt','createdAt'].forEach(function(k){ delete part[k]; });
+  var cs = {}; cs[cKey] = cK.slice();
+  Object.assign(part, {
+    id:o.newId, type:cType, strike:String(cK[0]), strikes:cs,
+    openPremium:calcRound2(sc), premium:calcRound2(sc), price:Math.round(sc / (q * 100) * 10000) / 10000,
+    openCommission:calcRound2(scm), teminat:Math.round(Math.abs(cK[0] - cK[1]) * 100 * q),
+    closed:null, status:'open', origType:'IC', icSplitFrom:String(ic.id), icSide:o.side,
+    createdAt:new Date().toISOString(),
+    note:'[IC ' + (put ? 'put' : 'call') + ' tarafı kapandı]'
+  });
+  var lc = legsOf(put ? 'P' : 'C'); if(lc && lc.length) part.openLegs = lc;
+  var r = applyCloseToTrade(part, { date:o.date, qty:q, closePremium:o.closePremium, closeCommission:o.closeCommission });
+  if(!r.ok) return r;
+
+  // ── IC kaydi kalan tarafa donusur ──
+  var rs = {}; rs[rKey] = rK.slice();
+  var keep = legsOf(put ? 'C' : 'P');
+  ic.type = rType; ic.strike = String(rK[0]); ic.strikes = rs;
+  ic.openPremium = ic.premium = calcRound2(total - sc);
+  ic.price = q ? Math.round((total - sc) / (q * 100) * 10000) / 10000 : 0;
+  ic.openCommission = calcRound2(oc - scm);
+  ic.teminat = Math.round(Math.abs(rK[0] - rK[1]) * 100 * q);
+  delete ic.collateralOverride; delete ic.collateralOverrideReason;
+  if(keep && keep.length) ic.openLegs = keep; else delete ic.openLegs;
+  ic.origType = 'IC'; ic.icSideClosed = o.side; ic.icSideClosedTradeId = String(part.id);
+  ic.note = (ic.note ? ic.note + ' ' : '') + '[IC ' + (put ? 'put' : 'call') + ' tarafı kapandı → ' + rType + ']';
+  ic.calculationVersion = CALC_VERSION;
+  return { ok:true, closedPart:part, pnl:part.pnl, remainingType:rType, remainingCredit:ic.openPremium, side:o.side };
+}
+
+// Bir profilin veri nesnesi uzerinde islem (aktif olmayanda localStorage'a yazar)
+function _shotWithData(pid, fn){
+  if(pid === ACTIVE_PROFILE) return fn(tradesData);
+  var key = _shotStoreKey(pid), data = null;
+  try { var raw = localStorage.getItem(key); if(raw) data = JSON.parse(raw); } catch(e){ return null; }
+  if(!data) return null;
+  var res = fn(data);
+  localStorage.setItem(key, JSON.stringify(data));
+  return res;
+}
+function _findStoredIn(data, id){
+  var hit = null;
+  Object.keys(data || {}).forEach(function(m){ (data[m] || []).forEach(function(t){ if(t && String(t.id) === String(id)) hit = { t:t, month:m }; }); });
+  return hit;
+}
+// IC'yi bir veri nesnesinde boler; kapanan tarafi IC ile AYNI ay kovasina ekler.
+function applyIcSideCloseIn(data, icId, o){
+  var hit = _findStoredIn(data, icId);
+  if(!hit) return { ok:false, reason:'İşlem bulunamadı' };
+  var r = splitIronCondorSide(hit.t, o);
+  if(r.ok){ (data[hit.month] = data[hit.month] || []).push(r.closedPart); }
+  return r;
+}
+
+// ── Elle: trade detayi / Position Detail'den "Tek tarafı kapat" ──
+function showIcSideClose(trade){
+  var hit = _findStoredIn(tradesData, trade && trade.id);
+  if(!hit || hit.t.type !== 'IC'){ alert('Iron Condor bulunamadı.'); return; }
+  var ic = hit.t, L = calcLegs(ic), E = escHtml;
+  var ov = document.createElement('div'); ov.className = 'overlay';
+  var sh = document.createElement('div'); sh.className = 'modal-sheet';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  var inp = 'width:100%;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;color:var(--text-primary);font-size:14px;outline:none;box-sizing:border-box;font-variant-numeric:tabular-nums;';
+  var lbl = 'font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;';
+  var f = function(label, id, type, val, ph){ return '<div style="margin-bottom:10px;"><div style="' + lbl + '" id="' + id + '_l">' + label + '</div><input id="' + id + '" type="' + (type || 'number') + '"' + ((type || 'number') === 'number' ? ' step="0.01"' : '') + ' value="' + (val == null ? '' : E(String(val))) + '" placeholder="' + E(ph || '') + '" style="' + inp + '"></div>'; };
+  var two = function(a, b){ return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' + a + b + '</div>'; };
+  var side = 'put';
+  sh.innerHTML = '<div class="modal-handle"></div>'
+    + '<div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">Tek tarafı kapat — ' + E(ic.ticker) + ' IC ' + E(fmtStrikes(ic)) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5;">Seçilen taraf ayrı bir kapalı işlem olarak kaydedilir (vergi kapanış tarihine göre). Diğer taraf aynı kayıtta spread olarak açık kalır.</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
+    +   '<button type="button" class="pd-btn" id="ics_put" style="flex:1">Put tarafı · ' + L.put.short + '/' + L.put.long + 'P</button>'
+    +   '<button type="button" class="pd-btn" id="ics_call" style="flex:1">Call tarafı · ' + L.call.short + '/' + L.call.long + 'C</button></div>'
+    + two(f('Kapanış tarihi', 'ics_cd', 'date', _srIso(new Date())), '<div></div>')
+    + two(f('Geri alım maliyeti (toplam $)', 'ics_cp', 'number', '', 'ör. 205'), f('Kapanış komisyonu ($)', 'ics_ck', 'number', '', '0.63'))
+    + two(f('Bu tarafın açılış kredisi ($)', 'ics_sc', 'number', '', ''), f('Açılış kom. payı ($)', 'ics_scm', 'number', calcRound2((calcNum(ic.openCommission) || 0) / 2)))
+    + '<div id="ics_src" style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 10px;line-height:1.5;"></div>'
+    + '<div id="ics_prev" style="font-size:12px;margin:0 0 12px;font-variant-numeric:tabular-nums;line-height:1.6;"></div>'
+    + '<div id="ics_err" style="font-size:12px;color:var(--danger-text);margin-bottom:8px;"></div>'
+    + '<button id="ics_go" class="of-btn of-btn-primary" style="width:100%;">Kaydet</button>';
+  var g = function(id){ var e = sh.querySelector('#' + id); return e ? e.value : ''; };
+  var num = function(id){ var v = g(id); return v === '' ? null : calcNum(v); };
+  var scTouched = false;
+  sh.querySelector('#ics_sc').addEventListener('input', function(){ scTouched = true; });
+  function setSide(s){
+    side = s;
+    sh.querySelector('#ics_put').style.cssText = 'flex:1;' + (s === 'put' ? 'background:var(--accent);color:#fff;' : '');
+    sh.querySelector('#ics_call').style.cssText = 'flex:1;' + (s === 'call' ? 'background:var(--accent);color:#fff;' : '');
+    var lg = icSideLegsCredit(ic, s);
+    if(!scTouched) sh.querySelector('#ics_sc').value = lg ? lg.credit : '';
+    if(lg) sh.querySelector('#ics_scm').value = lg.comm;
+    sh.querySelector('#ics_src').textContent = lg ? 'Açılış kredisi IC kaydındaki bacak tutarlarından alındı (kesin).'
+      : 'IC tek bir net kredi olarak kayıtlı. Bu tarafın açılış kredisini IBKR\'deki ' + (s === 'put' ? 'put' : 'call') + ' bacaklarının açılış tutarlarından gir (satılan − alınan). Toplam IC kredisi: ' + money2(calcTradePremium(ic)) + '.';
+    refresh();
+  }
+  function refresh(){
+    var probe = JSON.parse(JSON.stringify(ic));
+    var r = splitIronCondorSide(probe, { side:side, date:g('ics_cd') || 'draft', closePremium:num('ics_cp'), closeCommission:num('ics_ck'), sideCredit:num('ics_sc'), sideCommission:num('ics_scm'), newId:'draft' });
+    var el = sh.querySelector('#ics_prev');
+    if(num('ics_cp') === null || !r.ok){ el.innerHTML = '<span style="color:var(--text-tertiary)">' + E(num('ics_cp') === null ? 'Geri alım maliyetini gir.' : r.reason) + '</span>'; return; }
+    el.innerHTML = 'Kapanan ' + (side === 'put' ? 'put' : 'call') + ' tarafı P&amp;L: <b style="color:' + (r.pnl >= 0 ? 'var(--success-text)' : 'var(--danger-text)') + '">' + money2(r.pnl, true) + '</b><br>'
+      + 'Kalan: <b>' + r.remainingType + ' ' + E(fmtStrikes(probe)) + '</b> · kredi ' + money2(r.remainingCredit) + ' · teminat ' + money2(probe.teminat);
+  }
+  sh.querySelector('#ics_put').onclick = function(){ setSide('put'); };
+  sh.querySelector('#ics_call').onclick = function(){ setSide('call'); };
+  sh.addEventListener('input', refresh);
+  setSide('put');
+  sh.querySelector('#ics_go').onclick = function(){
+    var err = sh.querySelector('#ics_err');
+    if(!g('ics_cd')){ err.textContent = 'Kapanış tarihi gerekli.'; return; }
+    if(num('ics_cp') === null){ err.textContent = 'Geri alım maliyeti gerekli.'; return; }
+    var r = applyIcSideCloseIn(tradesData, ic.id, { side:side, date:g('ics_cd'), closePremium:num('ics_cp'), closeCommission:num('ics_ck'),
+      sideCredit:num('ics_sc'), sideCommission:num('ics_scm'), newId:newRecordId('icside') });
+    if(!r.ok){ err.textContent = r.reason; return; }
+    saveData(); ov.remove();
+    renderDashboard(); renderTradeList(currentFilter);
+    if(typeof renderVergi === 'function') renderVergi();
+    if(typeof _backupToast === 'function') _backupToast(ic.ticker + ' IC ' + side + ' tarafı kapandı (' + money2(r.pnl, true) + ') · kalan ' + r.remainingType, true);
   };
 }
 
@@ -12446,10 +12628,23 @@ function parseScreenshotLegs(rawText){
       });
     }
 
+    // IBKR'nin P&L sutunu (kontrat satirinin sonu): kapanan bacakta realized
+    // P&L, acilan bacakta $0. Tutar ($1,592) disindaki SON isaretli $ degeri.
+    var legPnl = null;
+    (function(){
+      var raw = String(lines[idx]).replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, ' ');
+      var re = /(-|\()?\s*\$\s?(-)?\s?(\d[\d.,]*)\)?/g, m, vals = [];
+      while((m = re.exec(raw)) !== null){
+        var v = _ocrNum(m[3]); if(!isFinite(v)) continue;
+        vals.push((m[1] || m[2]) ? -v : v);
+      }
+      var rest = vals.filter(function(v){ return amount === null || Math.abs(Math.abs(v) - amount) > 0.005; });
+      if(amount !== null && vals.length >= 2 && rest.length) legPnl = rest[rest.length - 1];
+    })();
     var leg = {
       ticker: ticker, expiry: expiry, strike: strike, optType: optType,
       side: side, qty: qty, price: price, amount: amount,
-      comm: comm || 0, date: dateAbove(idx), raw: lines[idx]
+      comm: comm || 0, date: dateAbove(idx), raw: lines[idx], pnl: legPnl
     };
     if(!side)   warnings.push('"' + lines[idx] + '" için Sold/Bought okunamadı.');
     if(!qty)    warnings.push('"' + lines[idx] + '" için adet okunamadı.');
@@ -12785,11 +12980,27 @@ function _shotFindCloseMatch(g){
   // Pozisyonun kac bacagi var? Gruptaki bacak sayisi bundan azsa, eksik
   // bacagin tutari toplama HIC girmez ve kapanis primi sessizce dusuk
   // cikar. (Ornek: bir bacagin ticker'i yanlis okunup ayri gruba dusmesi.)
+  // IC TEK TARAF kapanisi: iki bacak, eslesen tum pozisyonlar IC ve bacaklar
+  // tam olarak bir tarafin tersi (short geri alinir, long satilir).
+  var side = null;
+  if(legs.length === 2 && hits.length && hits.every(function(h){ return String(h.trade.type) === 'IC'; })){
+    var sides = hits.map(function(h){
+      var L = calcLegs(h.trade);
+      var mt = function(sk, lk, ot){
+        return legs.every(function(l){ return l.optType === ot; })
+          && legs.some(function(l){ return l.side === 'BUY'  && l.strike === sk; })
+          && legs.some(function(l){ return l.side === 'SELL' && l.strike === lk; });
+      };
+      return mt(L.put.short, L.put.long, 'P') ? 'put' : mt(L.call.short, L.call.long, 'C') ? 'call' : null;
+    });
+    if(sides[0] && sides.every(function(x){ return x === sides[0]; })) side = sides[0];
+  }
   var beklenen = 0;
   hits.forEach(function(h){
     var pl = _posLegStrikes(h.trade);
     beklenen = Math.max(beklenen, pl.short.length + pl.long.length);
   });
+  if(side) beklenen = 2;
   if(beklenen > 0 && legs.length < beklenen){
     eksik.push('Pozisyon ' + beklenen + ' bacaklı ama ekran görüntüsünde '
              + legs.length + ' bacak okundu');
@@ -12801,13 +13012,17 @@ function _shotFindCloseMatch(g){
     else if(!l.qty)      eksik.push(ad + ': adet okunamadı');
   });
 
+  var realized = legs.every(function(l){ return typeof l.pnl === 'number'; })
+    ? Math.round(legs.reduce(function(s, l){ return s + l.pnl; }, 0) * 100) / 100 : null;
   return {
     positions: hits,
     closePremium: Math.round(Math.abs(closePrem) * 100) / 100,
     closeCommission: Math.round(closeComm * 100) / 100,
     qty: qty,
     incomplete: eksik,
-    date: g.opened || null
+    date: g.opened || null,
+    side: side,                 // 'put' | 'call' | null (IC tek taraf)
+    ibkrRealized: realized      // IBKR P&L sutunu toplami (okunabildiyse)
   };
 }
 
@@ -12991,6 +13206,7 @@ function _shotRenderReview(warnings){
         +   '<b style="font-size:14px;color:var(--text);">' + (t.ticker || '?') + '</b>'
         +   '<span style="font-size:10px;font-weight:700;color:var(--info);background:var(--info-dim);border-radius:4px;padding:2px 6px;">🔒 KAPANIŞ</span>'
         +   (t.rollTo && t.rollTo.length ? '<span style="font-size:10px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.12);border-radius:4px;padding:2px 6px;">🔁 ROLL · eski bacak</span>' : '')
+        +   (cm.side ? '<span style="font-size:10px;font-weight:700;color:var(--purple);background:rgba(139,92,246,.12);border-radius:4px;padding:2px 6px;">IC · yalnız ' + (cm.side === 'put' ? 'PUT' : 'CALL') + ' tarafı</span>' : '')
         +   '<span style="font-size:11px;color:var(--text-3);">' + t.legs.length + ' bacak</span>'
         + '</div>'
         + '<div style="' + lbl + 'margin-bottom:6px;">Kapanacak pozisyonlar</div>'
@@ -13005,6 +13221,21 @@ function _shotRenderReview(warnings){
               + '</label>';
           }).join('')
         + '<div id="sh_msum_' + i + '" style="font-size:10px;font-family:var(--font-mono);font-weight:700;margin:2px 0 9px;"></div>'
+        + (cm.side ? (function(){
+            var defs = cm.sideDefs = _shotSideDefaults(t);
+            var allC = defs.every(function(d){ return d.credit !== null; });
+            var dC = allC ? calcRound2(defs.reduce(function(s2, d){ return s2 + d.credit; }, 0)) : '';
+            var dM = calcRound2(defs.reduce(function(s2, d){ return s2 + (d.comm || 0); }, 0));
+            var src = defs.every(function(d){ return d.src === 'legs'; }) ? 'IC kaydındaki bacak tutarlarından alındı (kesin).'
+                    : defs.every(function(d){ return d.src === 'legs' || d.src === 'ibkr'; }) ? 'Ekran görüntüsündeki IBKR realized P&amp;L\'inden (' + money2(cm.ibkrRealized, true) + ') türetildi: kredi = P&amp;L + kapanış + komisyonlar.'
+                    : '<b style="color:var(--warn)">IC tek bir net kredi olarak kayıtlı ve ekranda P&amp;L okunamadı.</b> Bu tarafın açılış kredisini IBKR\'deki ' + cm.side + ' bacaklarının açılış tutarlarından gir (satılan − alınan).';
+            return '<div style="background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.22);border-radius:9px;padding:9px 10px;margin-bottom:10px;">'
+              + '<div style="font-size:11px;color:var(--text-2);line-height:1.5;margin-bottom:8px;">IC\'nin yalnız <b>' + cm.side + ' tarafı</b> kapanıyor: bu taraf ayrı bir kapalı işlem olarak vergiye girer, kalan taraf aynı kayıtta <b>' + (cm.side === 'put' ? 'Bear Call Spread (BCS)' : 'Bull Put Spread (PCS)') + '</b> olarak açık kalır.</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">'
+              +   '<div><div style="' + lbl + '">' + (cm.side === 'put' ? 'Put' : 'Call') + ' tarafı açılış kredisi $</div><input id="sh_sc_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + dC + '" style="' + inp + '"></div>'
+              +   '<div><div style="' + lbl + '">Açılış kom. payı $</div><input id="sh_scm_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + dM + '" style="' + inp + '"></div>'
+              + '</div><div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.5;">' + src + '</div></div>';
+          })() : '')
         + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;">'
         +   '<div><div style="' + lbl + '">Kapanış Primi $</div><input id="sh_cp_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + cm.closePremium + '" style="' + inp + '"></div>'
         +   '<div><div style="' + lbl + '">Komisyon $</div><input id="sh_ck_' + i + '" type="number" step="0.01" oninput="_shotCloseSum(' + i + ')" value="' + cm.closeCommission + '" style="' + inp + '"></div>'
@@ -13110,7 +13341,8 @@ function _shotRenderReview(warnings){
 
   var _nCl = _shotTrades.filter(function(x){ return x.closeMatch; }).length;
   var _btnTxt = (_nCl === 0) ? '✅ Seçilenleri ekle'
-              : (_shotTrades.every(function(x){ return !!x.closeMatch; }) ? '🔒 Seçilen pozisyonları kapat'
+              : (_shotTrades.every(function(x){ return x.closeMatch && x.closeMatch.side; }) ? 'IC tek tarafını kapat (kalan spread açık kalır)'
+              : _shotTrades.every(function(x){ return !!x.closeMatch; }) ? '🔒 Seçilen pozisyonları kapat'
                  : (_shotTrades.some(function(x){ return x.rollFrom != null; }) ? '🔁 Roll\'u uygula (kapat + yeni bacak)' : '✅ Seçilenleri uygula (ekle + kapat)'));
   html += '<button onclick="_shotCommit()" style="width:100%;padding:14px;border-radius:12px;border:1px solid rgba(34,197,94,.4);background:rgba(34,197,94,.16);color:#22C55E;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">' + _btnTxt + '</button>';
   el.innerHTML = html;
@@ -13144,13 +13376,63 @@ function _shotCloseAlloc(i){
     x.cp = (last || !qSum) ? Math.round((cp - accP) * 100) / 100 : Math.round(cp * x.qClose / qSum * 100) / 100;
     x.ck = (last || !qSum) ? Math.round((ck - accC) * 100) / 100 : Math.round(ck * x.qClose / qSum * 100) / 100;
     accP += x.cp; accC += x.ck;
+    if(t.closeMatch.side) return;              // IC tek taraf: asagida
     // Onizleme kopya uzerinde, kayit ile AYNI kuralla (applyCloseToTrade)
     var probe = JSON.parse(JSON.stringify(x.p.trade));
     var r = applyCloseToTrade(probe, { date:'draft', qty:x.qClose, closePremium:x.cp, closeCommission:x.ck });
     x.pnl = r.ok ? r.entryPnl : 0;
     x.full = r.ok && r.full;
   });
-  return { sel: sel, qSum: qSum, cp: cp, ck: ck, need: need };
+  if(t.closeMatch.side) _shotSideAlloc(i, t, sel, qSum);
+  return { sel: sel, qSum: qSum, cp: cp, ck: ck, need: need, side: t.closeMatch.side || null };
+}
+
+// IC tek taraf: her pozisyonun kapanan tarafa dusen acilis kredisi.
+// Varsayilan: pozisyonun bacak tutarlari (kesin) ya da IBKR realized P&L'i.
+// Kullanici toplam alani degistirdiyse o tutar kontrat oraninda bolunur.
+function _shotSideDefaults(t){
+  var cm = t.closeMatch, side = cm.side, out = [];
+  var qAll = cm.positions.reduce(function(s, p){ return s + Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade)); }, 0);
+  cm.positions.forEach(function(p){
+    var q = Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade));
+    var share = qAll ? q / qAll : 0;
+    var lg = icSideLegsCredit(p.trade, side);
+    var okShare = calcRound2((calcNum(p.trade.openCommission) || 0) / 2);
+    if(lg){ out.push({ credit:lg.credit, comm:lg.comm, src:'legs' }); return; }
+    if(cm.ibkrRealized !== null && cm.ibkrRealized !== undefined){
+      out.push({ credit:icSideCreditFromRealized(cm.ibkrRealized * share, cm.closePremium * share, cm.closeCommission * share, okShare), comm:okShare, src:'ibkr' });
+      return;
+    }
+    out.push({ credit:null, comm:okShare, src:null });
+  });
+  return out;
+}
+function _shotSideAlloc(i, t, sel, qSum){
+  var defs = t.closeMatch.sideDefs || (t.closeMatch.sideDefs = _shotSideDefaults(t));
+  var fC = (document.getElementById('sh_sc_' + i) || {}).value, fM = (document.getElementById('sh_scm_' + i) || {}).value;
+  fC = (fC === undefined || fC === '') ? null : calcNum(fC);
+  fM = (fM === undefined || fM === '') ? null : calcNum(fM);
+  var dC = sel.every(function(x){ return defs[x.k].credit !== null; }) ? calcRound2(sel.reduce(function(s, x){ return s + defs[x.k].credit; }, 0)) : null;
+  var dM = calcRound2(sel.reduce(function(s, x){ return s + (defs[x.k].comm || 0); }, 0));
+  var useDefC = (fC !== null && dC !== null && Math.abs(fC - dC) < 0.01);
+  var useDefM = (fM === null || Math.abs(fM - dM) < 0.01);
+  var accSC = 0, accSM = 0;
+  sel.forEach(function(x, n){
+    var last = (n === sel.length - 1);
+    x.sc = (fC === null) ? null : useDefC ? defs[x.k].credit
+         : (last ? calcRound2(fC - accSC) : calcRound2(fC * x.qClose / (qSum || 1)));
+    x.scm = useDefM ? defs[x.k].comm : (last ? calcRound2(fM - accSM) : calcRound2(fM * x.qClose / (qSum || 1)));
+    if(x.sc !== null) accSC += x.sc; accSM += x.scm;
+    x.sideErr = null;
+    if(x.qClose < x.q){ x.sideErr = 'Tek taraf kapanışı IC\'nin tüm kontratları için olmalı (' + x.qClose + ' / ' + x.q + ')'; x.pnl = 0; return; }
+    var probe = JSON.parse(JSON.stringify(x.p.trade));
+    var r = splitIronCondorSide(probe, { side:t.closeMatch.side, date:'draft', closePremium:x.cp, closeCommission:x.ck, sideCredit:x.sc, sideCommission:x.scm, newId:'draft' });
+    x.pnl = r.ok ? r.pnl : 0; x.full = true;
+    x.sideErr = r.ok ? null : r.reason;
+    x.remainingType = r.ok ? r.remainingType : null;
+    x.remainingDisp = r.ok ? (r.remainingType + ' ' + fmtStrikes(probe)) : null;
+    x.remainingCredit = r.ok ? r.remainingCredit : null;
+  });
 }
 
 function _shotCloseSum(i){
@@ -13173,7 +13455,15 @@ function _shotCloseSum(i){
   var total = a.sel.reduce(function(s, x){ return s + x.pnl; }, 0);
   total = Math.round(total * 100) / 100;
   var note = '', clr = 'var(--profit)';
+  var sideErr = a.side ? (a.sel.filter(function(x){ return x.sideErr; })[0] || {}).sideErr : null;
   if(!a.sel.length){ note = 'Hiçbir pozisyon seçilmedi'; clr = 'var(--loss)'; }
+  else if(a.side && sideErr){ note = sideErr; clr = 'var(--loss)'; }
+  else if(a.side){
+    var rc = calcRound2(a.sel.reduce(function(s, x){ return s + (x.remainingCredit || 0); }, 0));
+    note = (a.side === 'put' ? 'Put' : 'Call') + ' tarafı P&L ' + (total >= 0 ? '+' : '-') + '$' + Math.abs(total).toLocaleString('tr-TR', { maximumFractionDigits: 2 })
+         + ' · kalan ' + (a.sel[0].remainingDisp || '') + ' (kredi $' + rc.toLocaleString('tr-TR', { maximumFractionDigits: 2 }) + ') açık kalır';
+    clr = total >= 0 ? 'var(--profit)' : 'var(--loss)';
+  }
   else if(a.qSum !== a.need){ note = a.qSum + ' / ' + a.need + ' kontrat — uyuşmuyor, kontrol et'; clr = 'var(--warn)'; }
   else if(a.sel.length === 1 && !a.sel[0].full){ note = 'Kısmi kapanış: ' + a.qSum + ' / ' + a.sel[0].q + ' kontrat · bu kapanışın P&L\'i ' + (total >= 0 ? '+' : '-') + '$' + Math.abs(total).toLocaleString('tr-TR', { maximumFractionDigits: 2 }); clr = total >= 0 ? 'var(--profit)' : 'var(--loss)'; }
   else { note = a.qSum + ' / ' + a.need + ' kontrat · toplam P&L ' + (total >= 0 ? '+' : '-') + '$' + Math.abs(total).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
@@ -13275,6 +13565,10 @@ function _shotCommit(){
       else if(!v('sh_cd_' + i))  problems.push(ctk + ': kapanış tarihi boş.');
       else if(t.closeMatch.incomplete && t.closeMatch.incomplete.length && !(okBox && okBox.checked))
         problems.push(ctk + ': bir bacak eksik okundu — kapanış primini kontrol edip onay kutusunu işaretle.');
+      else if(t.closeMatch.side && ca.sel.some(function(x){ return x.sc === null; }))
+        problems.push(ctk + ': IC ' + t.closeMatch.side + ' tarafının açılış kredisini gir.');
+      else if(t.closeMatch.side && ca.sel.some(function(x){ return x.sideErr; }))
+        problems.push(ctk + ': ' + ca.sel.filter(function(x){ return x.sideErr; })[0].sideErr);
       else closing.push({ i: i, alloc: ca, ticker: ctk });
       return;
     }
@@ -13291,7 +13585,7 @@ function _shotCommit(){
   if(!picked.length && !closing.length){ alert('Hiçbir işlem seçilmedi.'); return; }
 
   // ── 2) Yaz ──
-  var added = 0, closed = 0, rolled = 0, perProfile = {}, stamp = Date.now();
+  var added = 0, closed = 0, rolled = 0, sideClosed = 0, perProfile = {}, stamp = Date.now();
   var closedRefs = {};
 
   // Once kapanislar: trade detayindaki "Kapat" ile ayni kural (partialCloses
@@ -13300,7 +13594,16 @@ function _shotCommit(){
   closing.forEach(function(sel){
     var cd = v('sh_cd_' + sel.i);
     closedRefs[sel.i] = [];
+    var sideOf = _shotTrades[sel.i].closeMatch.side;
     sel.alloc.sel.forEach(function(x){
+      if(sideOf){
+        var rs = _shotWithData(x.p.pid, function(data){
+          return applyIcSideCloseIn(data, x.p.trade.id, { side:sideOf, date:cd, closePremium:x.cp, closeCommission:x.ck,
+            sideCredit:x.sc, sideCommission:x.scm, newId:newRecordId('icside_' + x.p.pid) });
+        });
+        if(rs && rs.ok){ sideClosed++; perProfile[x.p.pid] = (perProfile[x.p.pid] || 0) + 1; }
+        return;
+      }
       var r = _shotMutateIn(x.p.pid, x.p.trade.id, function(t){
         var rr = applyCloseToTrade(t, { date:cd, qty:x.qClose, closePremium:x.cp, closeCommission:x.ck });
         if(rr.ok) t.note = (t.note ? t.note + ' ' : '') + (rr.full ? '[SS kapanış]' : '[SS kısmi kapanış]');
@@ -13367,6 +13670,18 @@ function _shotCommit(){
         note: '[Ekran görüntüsü]' + (alloc.parts.length > 1 ? ' ' + part.n + '/' + qty : ''),
         month: month
       };
+      // Bacak tutarlari: yalnizca bacaklar eksiksizse ve kredi/strike elle
+      // degistirilmediyse — IC'nin bir tarafi sonra kapatilirsa o tarafin
+      // acilis kredisi bunlardan KESIN hesaplanir.
+      var _src = _shotTrades[i];
+      var _legsOk = _src.legs && _src.legs.length > 1 && _src.legs.every(function(l){ return l.side && l.amount != null && l.strike != null; })
+        && Math.abs((parseFloat(v('sh_pr_' + i)) || 0) - (_src.openPremium || 0)) < 0.01 && v('sh_st_' + i) === String(_src.strike);
+      if(_legsOk){
+        var f = part.n / qty;
+        newT.openLegs = _src.legs.map(function(l){
+          return { t:l.optType, s:l.side === 'SELL' ? 'S' : 'B', k:l.strike, a:Math.round(l.amount * f * 100) / 100, c:Math.round((l.comm || 0) * f * 100) / 100 };
+        });
+      }
       // Roll: ayni profilde kapanan pozisyonun zincirine bagla; hesap sahibi
       // de o pozisyondan gelir (ayni hesapta roll edilmistir).
       var ref = rollRefs.filter(function(rf){ return rf.pid === part.pid; })[0];
@@ -13398,6 +13713,7 @@ function _shotCommit(){
       if(added)  what.push(added + ' işlem eklendi');
       if(closed) what.push(closed + ' pozisyon kapatıldı');
       if(rolled) what.push(rolled + ' roll zincire bağlandı');
+      if(sideClosed) what.push(sideClosed + ' IC tek taraf kapatıldı');
       _backupToast('📸 ' + what.join(' · ') + ' — ' + names, true);
     }
   } catch(e){}
@@ -15938,6 +16254,13 @@ function openTradeDetail(tradeId, month){
     rollBtn.innerHTML='&#x1F501; <span>Roll Trade (Zincir)</span>';
     rollBtn.onclick=function(){ ov.remove(); showRollTrade(trade); };
     editSec.appendChild(rollBtn);
+    if(trade.type==='IC' && !(trade.partialCloses||[]).length){
+      var icsBtn=document.createElement('button');
+      icsBtn.style.cssText=rollBtn.style.cssText.replace(/245,158,11/g,'139,92,246').replace('var(--warn)','var(--purple)');
+      icsBtn.innerHTML='<span>Tek tarafı kapat (put / call)</span>';
+      icsBtn.onclick=function(){ ov.remove(); showIcSideClose(trade); };
+      editSec.appendChild(icsBtn);
+    }
     // Assignment button for CSP (wheel strategy)
     if(trade.type==='CSP'){
       var assignBtn=document.createElement('button');
