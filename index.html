@@ -6413,6 +6413,7 @@ function renderPositionDetail(){
     + (t._isLeap ? '' : '<button class="pd-btn" onclick="(function(){var r=_findTradeRecord(\'' + idq + '\');if(r)showAddTrade(Object.assign({},r,{month:\'' + mq + '\'}));})()">Düzenle</button>')
     + (isOpen && !t._isLeap ? '<button class="pd-btn" onclick="showRollTrade(_pdFind(\'' + idq + '\').t)">Roll</button>' : '')
     + (isOpen && t.type === 'IC' && !calcPartialCloses(t).length ? '<button class="pd-btn" onclick="showIcSideClose(_pdFind(\'' + idq + '\').t)">Tek tarafı kapat</button>' : '')
+    + (t._isLeap ? '' : '<button class="pd-btn" onclick="showMoveTrade(_pdFind(\'' + idq + '\').t)">Profile taşı</button>')
     + (isOpen && t.type === 'CSP' ? '<button class="pd-btn" onclick="showAssignmentModal(_pdFind(\'' + idq + '\').t)">Assign</button>' : '')
     + (isOpen && (t.type === 'CC' || t.type === 'COLLAR CALL') ? '<button class="pd-btn" onclick="showCallAwayModal(\'' + idq + '\')">Call away</button>' : '')
     + '</div>';
@@ -9498,6 +9499,141 @@ function showIcSideClose(trade){
     renderDashboard(); renderTradeList(currentFilter);
     if(typeof renderVergi === 'function') renderVergi();
     if(typeof _backupToast === 'function') _backupToast(ic.ticker + ' IC ' + side + ' tarafı kapandı (' + money2(r.pnl, true) + ') · kalan ' + r.remainingType, true);
+  };
+}
+
+// ═══════════════════ İŞLEMİ BAŞKA PROFİLE TAŞI ═══════════════════
+// Tasima = hedef profile YENI kimlikle kopya + kaynakta acik silme
+// (tombstone). Ayni kimlik kullanilmaz: kaynaktaki tombstone, islem bir gun
+// geri tasinirsa onu bulut esitlemesinde yeniden silerdi.
+// Bagli islemler (roll zinciri, IC tek taraf bolunmesi) BIRLIKTE tasinir —
+// tek basina tasinirsa baglar kopar. Hisse pozisyonuna (atama / call away)
+// bagli islemler tasinmaz: hisse kaydi profilin kendi deposundadir.
+function moveGroupOf(trade, pool){
+  var byId = {}; pool.forEach(function(t){ byId[String(t.id)] = t; });
+  var seen = {}, out = [], queue = [trade];
+  while(queue.length){
+    var t = queue.shift(); if(!t || seen[String(t.id)]) continue;
+    seen[String(t.id)] = true; out.push(t);
+    getRollChainTrades(t, pool).forEach(function(x){ queue.push(x); });
+    [t.icSplitFrom, t.icSideClosedTradeId].forEach(function(id){ if(id && byId[String(id)]) queue.push(byId[String(id)]); });
+    pool.forEach(function(x){ if(String(x.icSplitFrom) === String(t.id) || String(x.icSideClosedTradeId) === String(t.id)) queue.push(x); });
+  }
+  return out.sort(function(a, b){ return String(a.opened || '').localeCompare(String(b.opened || '')); });
+}
+function moveBlockers(group){
+  var ids = {}; group.forEach(function(t){ ids[String(t.id)] = 1; });
+  var why = [];
+  (typeof stockPositions !== 'undefined' ? stockPositions : []).forEach(function(sp){
+    if(ids[String(sp.sourceTradeId)] || ids[String(sp.calledAwayByTradeId)]) why.push(sp.ticker + ' hisse pozisyonuna (atama / call away) bağlı');
+  });
+  _storedTradesFlat(tradesData).forEach(function(x){
+    if(x.rollKind === 'assignment' && ids[String(x.assignedFromTradeId)] && !ids[String(x.id)]) why.push(x.ticker + ' wheel CC işlemi bu işleme bağlı');
+  });
+  group.forEach(function(t){ if(t._isLeap) why.push('LEAPS kayıtları bu yolla taşınamaz'); });
+  return why;
+}
+
+// ids: aktif profildeki KAYITLI islem kimlikleri (grubun tamami)
+function moveTradesToProfile(ids, targetPid, opts){
+  opts = opts || {};
+  if(!PROFILES[targetPid] || targetPid === ACTIVE_PROFILE) return { ok:false, reason:'Geçersiz hedef profil' };
+  var want = {}; ids.forEach(function(id){ want[String(id)] = 1; });
+  var items = [];
+  Object.keys(tradesData).forEach(function(m){ (tradesData[m] || []).forEach(function(t){ if(t && want[String(t.id)]) items.push({ t:t, month:m }); }); });
+  if(!items.length) return { ok:false, reason:'İşlem bulunamadı' };
+  var why = moveBlockers(items.map(function(x){ return x.t; }));
+  if(why.length) return { ok:false, reason:why.join('; ') };
+
+  var map = {}; items.forEach(function(x){ map[String(x.t.id)] = newRecordId('mv'); });
+  var now = new Date().toISOString(), dev = getDeviceId();
+  var srcName = PROFILES[ACTIVE_PROFILE].name, tgtName = PROFILES[targetPid].name;
+  var copies = items.map(function(x){
+    var c = JSON.parse(JSON.stringify(x.t));
+    c.id = map[String(x.t.id)];
+    ['rolledFrom','icSplitFrom','icSideClosedTradeId'].forEach(function(k){ if(c[k] && map[String(c[k])]) c[k] = map[String(c[k])]; });
+    if(opts.subOwner) c.subOwner = opts.subOwner;
+    c.movedFrom = { profile:ACTIVE_PROFILE, id:String(x.t.id), at:now };
+    c.note = (c.note ? c.note + ' ' : '') + '[' + srcName + ' → ' + tgtName + ']';
+    c.updatedAt = now; c.revision = (parseInt(c.revision, 10) || 0) + 1; c.deviceId = dev;
+    return { c:c, month:x.month, oldId:String(x.t.id) };
+  });
+
+  // 1) Once HEDEFE yaz — basarisiz olursa kaynaga dokunulmaz.
+  try {
+    copies.forEach(function(x){ _shotAddTradeTo(targetPid, x.month, x.c); });
+    var tKey = _cloudProfileKey(targetPid, 'tax_v1'), vKey = _cloudProfileKey(targetPid, 'optflow_vergi_override_v1');
+    var tTax = _lsJSON(tKey, {}) || {}, tV = _lsJSON(vKey, {}) || {};
+    copies.forEach(function(x){
+      if(taxData[x.oldId] !== undefined) tTax[x.c.id] = taxData[x.oldId];
+      if(vergiManualOverride[x.oldId] !== undefined) tV[x.c.id] = vergiManualOverride[x.oldId];
+    });
+    localStorage.setItem(tKey, JSON.stringify(tTax));
+    localStorage.setItem(vKey, JSON.stringify(tV));
+    var st = syncLoadState(targetPid); st.dirty = true; syncSaveState(targetPid, st);
+  } catch(e){
+    return { ok:false, reason:'Hedef profile yazılamadı: ' + (e && e.message ? e.message : e) };
+  }
+  // 2) Kaynaktan kaldir: acik silme (bulutta da silinsin) + yan veriler
+  copies.forEach(function(x){
+    markDeleted(x.oldId);
+    Object.keys(tradesData).forEach(function(m){ tradesData[m] = (tradesData[m] || []).filter(function(t){ return String(t.id) !== x.oldId; }); });
+    delete taxData[x.oldId]; delete vergiManualOverride[x.oldId];
+  });
+  saveTaxData(); saveVergiOverride(); saveData();
+  return { ok:true, moved:copies.length, map:map };
+}
+
+function showMoveTrade(trade){
+  var pool = _storedTradesFlat(tradesData);
+  var stored = pool.filter(function(t){ return String(t.id) === String(trade && trade.id); })[0];
+  if(!stored){ alert(trade && trade._isLeap ? 'LEAPS kayıtları bu yolla taşınamaz.' : 'İşlem bulunamadı.'); return; }
+  var group = moveGroupOf(stored, pool), why = moveBlockers(group), E = escHtml;
+  var ov = document.createElement('div'); ov.className = 'overlay';
+  var sh = document.createElement('div'); sh.className = 'modal-sheet';
+  ov.appendChild(sh); document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  var targets = Object.keys(PROFILES).filter(function(pid){ return pid !== ACTIVE_PROFILE; });
+  var target = null, owner = stored.subOwner || 'Eda';
+  var lbl = 'font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:12px 0 6px;';
+  sh.innerHTML = '<div class="modal-handle"></div>'
+    + '<div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">Başka profile taşı</div>'
+    + '<div style="font-size:12px;color:var(--text-tertiary);line-height:1.5;">' + E(PROFILES[ACTIVE_PROFILE].name) + ' profilinden çıkarılır, seçtiğin profile eklenir. Vergi, istatistik ve raporlar artık o profilde sayılır.</div>'
+    + '<div style="' + lbl + '">Taşınacak ' + (group.length > 1 ? group.length + ' işlem (bağlı, birlikte taşınır)' : 'işlem') + '</div>'
+    + '<div style="background:var(--surface-secondary);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.7;font-variant-numeric:tabular-nums;">'
+    +   group.map(function(t){ var p = calcTradePnl(t); return '<div style="display:flex;justify-content:space-between;gap:8px;"><span>' + E(t.ticker + ' ' + t.type + ' ' + fmtStrikes(t)) + ' · ' + E(t.opened || '') + '</span><span>' + (t.closed ? money2(p, true) : 'açık') + '</span></div>'; }).join('')
+    + '</div>'
+    + (group.length > 1 ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Roll zinciri / IC bölünmesi bağlantılarını korumak için hepsi birlikte taşınır.</div>' : '')
+    + '<div style="' + lbl + '">Hedef profil</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(' + targets.length + ',1fr);gap:8px;">'
+    +   targets.map(function(pid){ return '<button type="button" class="pd-btn" data-pid="' + pid + '">' + E(PROFILES[pid].name) + '</button>'; }).join('')
+    + '</div>'
+    + '<div style="' + lbl + '">Hesap sahibi (vergi)</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+    +   ['Mustafa','Eda'].map(function(n){ return '<button type="button" class="pd-btn" data-owner="' + n + '">' + n + '</button>'; }).join('')
+    + '</div>'
+    + '<div id="mv_err" style="font-size:12px;color:var(--danger-text);margin:12px 0 0;line-height:1.5;">' + (why.length ? 'Taşınamaz: ' + E(why.join('; ')) : '') + '</div>'
+    + '<button id="mv_go" class="of-btn of-btn-primary" style="width:100%;margin-top:12px;"' + (why.length ? ' disabled' : '') + '>Profil seç</button>';
+  var paint = function(){
+    sh.querySelectorAll('[data-pid]').forEach(function(b){ var on = b.getAttribute('data-pid') === target; b.style.background = on ? 'var(--accent)' : ''; b.style.color = on ? '#fff' : ''; });
+    sh.querySelectorAll('[data-owner]').forEach(function(b){ var on = b.getAttribute('data-owner') === owner; b.style.background = on ? 'var(--accent)' : ''; b.style.color = on ? '#fff' : ''; });
+    var go = sh.querySelector('#mv_go');
+    go.textContent = target ? (group.length > 1 ? group.length + ' işlemi ' : '') + PROFILES[target].name + ' profiline taşı' : 'Profil seç';
+    go.disabled = !target || why.length > 0;
+  };
+  sh.querySelectorAll('[data-pid]').forEach(function(b){ b.onclick = function(){ target = b.getAttribute('data-pid'); paint(); }; });
+  sh.querySelectorAll('[data-owner]').forEach(function(b){ b.onclick = function(){ owner = b.getAttribute('data-owner'); paint(); }; });
+  paint();
+  sh.querySelector('#mv_go').onclick = function(){
+    if(!target) return;
+    var r = moveTradesToProfile(group.map(function(t){ return t.id; }), target, { subOwner:owner });
+    if(!r.ok){ sh.querySelector('#mv_err').textContent = r.reason; return; }
+    ov.remove();
+    document.querySelectorAll('.overlay').forEach(function(o){ o.remove(); });
+    if(_pdTradeId && r.map[_pdTradeId]) closePositionDetail();
+    renderDashboard(); renderTradeList(currentFilter);
+    if(typeof renderVergi === 'function') renderVergi();
+    if(typeof _backupToast === 'function') _backupToast(r.moved + ' işlem ' + PROFILES[target].name + ' profiline taşındı', true);
   };
 }
 
@@ -16240,6 +16376,13 @@ function openTradeDetail(tradeId, month){
 
   // Edit button — always visible (both open and closed)
   var editSec=document.createElement('div');
+  if(!trade._isLeap){
+    var mvBtn=document.createElement('button');
+    mvBtn.style.cssText='width:100%;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:12px;padding:10px;color:var(--text-primary);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;';
+    mvBtn.textContent='Başka profile taşı';
+    mvBtn.onclick=function(){ showMoveTrade(trade); };
+    editSec.appendChild(mvBtn);
+  }
   editSec.style.cssText='margin-top:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06)';
   // What-If button for open trades
   if(isOpen){
