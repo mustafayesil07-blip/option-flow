@@ -1589,7 +1589,8 @@
     <div class="filter-pill" data-type-filter="PCS">PCS</div>
     <div class="filter-pill" data-type-filter="CC">CC</div>
     <div class="filter-pill" data-type-filter="PMCC">PMCC</div>
-    <div class="filter-pill" data-type-filter="BCS">BCS</div>
+    <div class="filter-pill" data-type-filter="BCS" title="Call Credit Spread (Bear Call)">CCS</div>
+    <div class="filter-pill" data-type-filter="CDS" title="Call Debit Spread (Bull Call)">CDS</div>
     <div class="filter-pill" data-type-filter="IC">IC</div>
     <div class="filter-pill" data-type-filter="COLLAR PUT">COLLAR PUT</div>
     <div class="filter-pill" data-type-filter="COLLAR CALL">COLLAR CALL</div>
@@ -1965,21 +1966,33 @@ var CALC_PNL_TOLERANCE = 0.01;     // saklanan / hesaplanan fark esigi
 //   opt       : 'call' | 'put' | 'mixed'
 //   structure : 'single' | 'vertical' | 'ic' | 'collar'
 //   covered   : short call'in dayanak hisseyle karsilandigi turler
+//   label     : EKRANDA gorunen kisaltma, name: tam ad
+//
+// ISIMLENDIRME KURALI — kredi/borc esasli: "BCS" hem Bull Call hem Bear
+// Call Spread anlamina gelebildigi icin ekranda boga/ayi kisaltmasi
+// KULLANILMAZ. Spread'ler kredi/borc ve opsiyon turuyle adlandirilir:
+//   PCS = Put Credit Spread (Bull Put)   CCS = Call Credit Spread (Bear Call)
+//   CDS = Call Debit Spread (Bull Call)
+// Kayitli kod DEGISMEZ (eski kayitlar 'BCS' olarak kalir, bulut/vergi
+// verisine dokunulmaz); yalnizca gosterim typeLabel()/typeName()'den gelir.
 var CALC_TYPE_DEFS = [
-  { code:'CSP',         dir:'short', opt:'put',   structure:'single'   },
-  { code:'PCS',         dir:'short', opt:'put',   structure:'vertical' },
-  { code:'CC',          dir:'short', opt:'call',  structure:'single', covered:true },
-  { code:'PMCC',        dir:'short', opt:'call',  structure:'single', covered:true },
-  { code:'BCS',         dir:'short', opt:'call',  structure:'vertical' },
-  { code:'IC',          dir:'short', opt:'mixed', structure:'ic'       },
-  { code:'COLLAR PUT',  dir:'short', opt:'put',   structure:'collar'   },
-  { code:'COLLAR CALL', dir:'short', opt:'call',  structure:'collar', covered:true },
+  { code:'CSP',         dir:'short', opt:'put',   structure:'single',   label:'CSP',   name:'Cash-Secured Put' },
+  { code:'PCS',         dir:'short', opt:'put',   structure:'vertical', label:'PCS',   name:'Put Credit Spread (Bull Put)' },
+  { code:'CC',          dir:'short', opt:'call',  structure:'single', covered:true, label:'CC', name:'Covered Call' },
+  { code:'PMCC',        dir:'short', opt:'call',  structure:'single', covered:true, label:'PMCC', name:"Poor Man's Covered Call" },
+  { code:'BCS',         dir:'short', opt:'call',  structure:'vertical', label:'CCS',   name:'Call Credit Spread (Bear Call)' },
+  { code:'CDS',         dir:'long',  opt:'call',  structure:'vertical', label:'CDS',   name:'Call Debit Spread (Bull Call)' },
+  { code:'IC',          dir:'short', opt:'mixed', structure:'ic',       label:'IC',    name:'Iron Condor' },
+  { code:'COLLAR PUT',  dir:'short', opt:'put',   structure:'collar',   label:'COLLAR PUT',  name:'Collar · Put' },
+  { code:'COLLAR CALL', dir:'short', opt:'call',  structure:'collar', covered:true, label:'COLLAR CALL', name:'Collar · Call' },
   // HEDGE yeni islemde secilemez; gecmis kayitlar icin tanim duruyor.
-  { code:'HEDGE',       dir:'short', opt:'call',  structure:'single', legacy:true },
-  { code:'Long Call',   dir:'long',  opt:'call',  structure:'single'   },
-  { code:'Long Put',    dir:'long',  opt:'put',   structure:'single'   },
-  { code:'LEAPS',       dir:'long',  opt:'call',  structure:'single'   }
+  { code:'HEDGE',       dir:'short', opt:'call',  structure:'single', legacy:true, label:'HEDGE', name:'Hedge' },
+  { code:'Long Call',   dir:'long',  opt:'call',  structure:'single',   label:'Long Call', name:'Long Call' },
+  { code:'Long Put',    dir:'long',  opt:'put',   structure:'single',   label:'Long Put',  name:'Long Put' },
+  { code:'LEAPS',       dir:'long',  opt:'call',  structure:'single',   label:'LEAPS', name:'LEAPS' }
 ];
+// Eski girislerde kullanilan esanlamlilar -> kayitli kod
+var CALC_TYPE_ALIASES = { 'CCS':'BCS', 'BEAR CALL':'BCS', 'BULL PUT':'PCS', 'BULL CALL':'CDS', 'CALL DEBIT SPREAD':'CDS' };
 
 var TRADE_STATUSES = ['planned', 'open', 'partially_closed', 'closed', 'assigned', 'expired'];
 var CLOSED_STATUSES = ['closed', 'assigned', 'expired'];
@@ -1997,6 +2010,21 @@ function calcTypeDef(type){
   for(var i = 0; i < CALC_TYPE_DEFS.length; i++) if(CALC_TYPE_DEFS[i].code === k) return CALC_TYPE_DEFS[i];
   return null;
 }
+// Ekran kisaltmasi / tam ad (bkz. ISIMLENDIRME KURALI). Bilinmeyen tur aynen.
+function typeLabel(type){ var d = calcTypeDef(type); return d ? (d.label || d.code) : (String(type || '').trim() || '—'); }
+function typeName(type){ var d = calcTypeDef(type); return d ? (d.name || d.code) : (String(type || '').trim() || '—'); }
+function typeLabelFull(type){ var d = calcTypeDef(type); return d ? (d.label === d.name ? d.label : d.label + ' · ' + d.name) : typeLabel(type); }
+// Serbest metin (ice aktarma, eski girisler) -> kayitli kod
+function normalizeTypeCode(type){
+  var k = String(type || '').trim(); if(!k) return k;
+  if(calcTypeDef(k)) return k;
+  var u = k.toUpperCase();
+  if(CALC_TYPE_ALIASES[u]) return CALC_TYPE_ALIASES[u];
+  for(var i = 0; i < CALC_TYPE_DEFS.length; i++) if(CALC_TYPE_DEFS[i].code.toUpperCase() === u) return CALC_TYPE_DEFS[i].code;
+  return k;
+}
+// Borc (debit) dikey spread: alinan bacak ANA bacaktir.
+function calcIsDebitVertical(t){ var d = calcTypeDef(t && t.type); return !!d && d.dir === 'long' && d.structure === 'vertical'; }
 // 'YYYY-MM-DD' -> YEREL gece yarisi. new Date('YYYY-MM-DD') UTC okur ve
 // UTC+3'te ay/gun kaydirabilir; tum tarih hesaplari bunu kullanir.
 function calcParseDate(s){
@@ -2087,8 +2115,13 @@ function calcLegs(t){
   var d = calcTypeDef(t.type);
   var opt = d ? d.opt : null, structure = d ? d.structure : 'single';
 
+  // Borc dikey spread'de (CDS) dizinin ILK elemani ALINAN (long) bacaktir;
+  // kredi spread'lerinde ilk eleman satilan (short) bacak. (_posLegStrikes
+  // ve fmtStrikes ayni kurali izler: ana bacak once.)
+  var debitV = !!d && d.dir === 'long' && structure === 'vertical';
   if(t.strikes && (t.strikes.p || t.strikes.c)){
     var p = (t.strikes.p || []).map(calcNum), c = (t.strikes.c || []).map(calcNum);
+    if(debitV){ var _sw = function(a){ return [a[1], a[0]]; }; if(p.length > 1) p = _sw(p); if(c.length > 1) c = _sw(c); }
     if(p[0] !== null && p[0] !== undefined) out.put.short = p[0];
     if(p[1] !== null && p[1] !== undefined) out.put.long  = p[1];
     if(c[0] !== null && c[0] !== undefined) out.call.short = c[0];
@@ -2102,6 +2135,7 @@ function calcLegs(t){
       out.call.short = seg[1] !== undefined ? seg[1] : null;
     } else if(structure === 'vertical'){
       var sk = seg[0] !== undefined ? seg[0] : null, lk = seg.length > 1 ? seg[1] : null;
+      if(debitV){ var _t = sk; sk = lk; lk = _t; }            // "750/760" = alinan/satilan
       if(opt === 'put'){ out.put.short = sk; out.put.long = lk; } else { out.call.short = sk; out.call.long = lk; }
     } else {
       var k = seg[0] !== undefined ? seg[0] : null;
@@ -2113,7 +2147,7 @@ function calcLegs(t){
   // Eksik long bacak: teminattan (genislik x 100 x adet) geri hesap
   var q = calcQty(t), coll = calcNum(t.teminat);
   var w = (q && coll && coll > 0) ? coll / (q * 100) : null;
-  if(structure === 'vertical' && w){
+  if(structure === 'vertical' && w && !debitV){
     if(opt === 'put' && out.put.short !== null && out.put.long === null){ out.put.long = out.put.short - w; out.source += '+collateral'; }
     if(opt === 'call' && out.call.short !== null && out.call.long === null){ out.call.long = out.call.short + w; out.source += '+collateral'; }
   }
@@ -2128,6 +2162,7 @@ function calcLegs(t){
 function calcPrimaryStrike(t){
   var L = calcLegs(t);
   var d = calcTypeDef(t && t.type);
+  if(d && d.dir === 'long' && d.structure === 'vertical') return d.opt === 'call' ? L.call.long : L.put.long;
   if(d && d.opt === 'call') return L.call.short;
   return L.put.short !== null ? L.put.short : L.call.short;
 }
@@ -2356,12 +2391,29 @@ function calcBreakeven(t){
     if(L.put.short === null || L.call.short === null) return null;
     return [r(L.put.short - pps), r(L.call.short + pps)];
   }
+  if(d.dir === 'long' && d.structure === 'vertical'){
+    // Borc spread: ALINAN bacak + odenen borc (call) / - (put)
+    var kl = d.opt === 'call' ? L.call.long : L.put.long; if(kl === null) return null;
+    return [r(d.opt === 'call' ? kl + pps : kl - pps)];
+  }
   if(d.opt === 'put'){
     var kp = L.put.short; if(kp === null) return null;
     return [r(kp - pps)];
   }
   var kc = L.call.short; if(kc === null) return null;
   return [r(kc + pps)];
+}
+
+// ── Vadede kar/zarar (dikey spread + IC) ───────────────────────────────
+// Bacak bazli: satilan bacak icsel deger kadar zarar, alinan bacak kadar
+// kazanc; kredi spread'inde +prim, borc spread'inde -odenen. Komisyon haric.
+function calcPayoffAtExpiry(t, S){
+  var d = calcTypeDef(t && t.type);
+  if(!d || (d.structure !== 'vertical' && d.structure !== 'ic')) return null;
+  var L = calcLegs(t), q = calcQty(t) || 1, P = calcTradePremium(t);
+  var iv = function(k, ot){ if(k === null || k === undefined) return 0; return ot === 'call' ? Math.max(0, S - k) : Math.max(0, k - S); };
+  var v = -iv(L.put.short, 'put') + iv(L.put.long, 'put') - iv(L.call.short, 'call') + iv(L.call.long, 'call');
+  return calcRound2(v * 100 * q + (d.dir === 'long' ? -P : P));
 }
 
 // ── Sure ───────────────────────────────────────────────────────────────
@@ -3032,6 +3084,13 @@ function calcMaxProfit(t){
   if(!t) return res;
   var d = calcTypeDef(t.type), P = calcTradePremium(t), ok = calcNum(t.openCommission) || 0;
   if(calcIsLongTrade(t)){
+    if(d && d.structure === 'vertical'){
+      // Borc spread: kar genislikle sinirli — genislik x 100 x adet - odenen borc
+      var LV = calcLegs(t), wv = d.opt === 'call' ? LV.width.call : LV.width.put, qv = calcQty(t);
+      if(wv && qv){ res.value = calcRound2(wv * 100 * qv - P - ok); res.basis = 'genislik x 100 x adet - odenen borc'; }
+      else res.basis = 'spread genisligi bilinmiyor';
+      return res;
+    }
     if(d && d.opt === 'put'){
       var k = calcPrimaryStrike(t), q = calcQty(t);
       if(k !== null && q){ res.value = calcRound2(k * 100 * q - P - ok); res.basis = 'strike x 100 x adet - odenen prim'; }
@@ -3832,7 +3891,8 @@ function runAnalyticsTests(){
   T('Ort. kazanc 122.5, ort. kayip -300', [122.5, -300], function(){ return [O.avgWinner, O.avgLoser]; });
   T('Beklenti = WR x ortK - LR x |ortZ| = 31.667 (= ortalama)', [31.6667, true], function(){ return [r4(O.expectancy), Math.abs(O.expectancy - O.avgPnl) < 1e-9]; });
   T('Kar faktoru 490/300', 490 / 300, function(){ return O.profitFactor.value; });
-  T('ROC ort. 0.108333, ROC beklentisi ayni (P&L ile karistirilmaz)', [0.1083, 0.1083], function(){ return [r4(O.avgRoc), r4(O.rocExpectancy)]; });
+  // CC (F) nakit teminat baglamaz -> ROC N/A, ortalamaya girmez: (0.03 - 0.06 + 0.16 + 0 + 0.5) / 5
+  T('ROC ort. 0.126 (CC nakit teminatsiz, haric), ROC beklentisi ayni (P&L ile karistirilmaz)', [0.126, 0.126], function(){ return [r4(O.avgRoc), r4(O.rocExpectancy)]; });
   T('Risk basina beklenti: toplam P&L / toplam maks. kayip', true, function(){ var rows = ds.closed.filter(function(r){ return r.maxLoss > 0; }); var s = rows.reduce(function(a, r){ return a + r.pnl; }, 0) / rows.reduce(function(a, r){ return a + r.maxLoss; }, 0); return near(O.expectancyPerDollarRisk, s) && O.riskN === rows.length; });
   T('Tutma: ort 15.1667, medyan 9.5, min 0, max 45', [15.1667, 9.5, 0, 45], function(){ return [r4(O.avgHold), O.medianHold, O.minHold, O.maxHold]; });
   // Kar faktoru kenarlari
@@ -4344,7 +4404,7 @@ function checkZoneAlerts(openTrades) {
     if (prev && prev !== zone) {
       // Zone changed — notify on dangerous transitions
       var title = '', body = '';
-      var stk = t.strike + ' ' + t.type;
+      var stk = t.strike + ' ' + typeLabel(t.type);
       if (prev === 'green' && zone === 'amber') {
         title = '⚠️ ' + t.ticker + ' — Amber Zone';
         body  = t.ticker + ' ' + stk + ' | Spot $' + spot.toFixed(2) + ' — Strike ' + Math.abs(dist).toFixed(1) + '% away - under 6%';
@@ -4837,7 +4897,9 @@ function runDataIntegrityCheckOn(data, opts){
       else if(d.structure !== 'ic' && (shortK === null || !(shortK > 0))) add('MEDIUM', 'invalid-strike', t, 'Strike okunamadi: ' + t.strike);
       if(d.structure === 'vertical' && L.source === 'strikes'){
         if(d.opt === 'put' && L.put.long !== null && L.put.long >= L.put.short) add('MEDIUM', 'invalid-strike', t, 'Put spread long bacak short bacaktan yuksek olmamali');
-        if(d.opt === 'call' && L.call.long !== null && L.call.long <= L.call.short) add('MEDIUM', 'invalid-strike', t, 'Call spread long bacak short bacaktan dusuk olmamali');
+        var _debit = d.dir === 'long';
+        if(d.opt === 'call' && L.call.long !== null && !_debit && L.call.long <= L.call.short) add('MEDIUM', 'invalid-strike', t, 'Call kredi spread\'inde alinan bacak satilandan yuksek olmali');
+        if(d.opt === 'call' && L.call.long !== null && _debit && L.call.long >= L.call.short) add('MEDIUM', 'invalid-strike', t, 'Call borc spread\'inde alinan bacak satilandan dusuk olmali');
       }
     }
     // Prim tutarliligi
@@ -6401,7 +6463,7 @@ function renderPositionDetail(){
     + ofMetric('Current underlying', spot ? '$' + spot : nd, spot ? 'stock price' : 'no price loaded', 'sm')
     + ofMetric('Max profit', mp.unlimited ? 'Unlimited' : (mp.value === null ? nd : '<span class="privacy-val">' + ccMoney(mp.value) + '</span>'), '', 'sm')
     + ofMetric('Max loss', ml.unlimited ? 'Unlimited' : (ml.value === null ? nd : '<span class="privacy-val">' + ccMoney(ml.value) + '</span>'), 'not collateral', 'sm')
-    + ofMetric('Collateral', coll.source === 'covered' ? '$0' : coll.value > 0 ? '<span class="privacy-val">' + ccMoney(coll.value) + '</span>' : '<span class="of-na">Not provided</span>', coll.source === 'covered' ? 'covered by shares / LEAPS' : coll.source === 'calculated' ? 'derived from strike' : '', 'sm')
+    + ofMetric('Collateral', coll.source === 'covered' ? '$0' : coll.value > 0 ? '<span class="privacy-val">' + ccMoney(coll.value) + '</span>' : (!coll.expected ? '$0' : '<span class="of-na">Not provided</span>'), coll.source === 'covered' ? 'covered by shares / LEAPS' : coll.source === 'calculated' ? 'derived from strike' : (!coll.expected ? 'debit paid — risk is the premium' : ''), 'sm')
     + ofMetric('ROC', roc.value !== null ? ccPct(roc.value, 2) : calcIsCoveredTrade(t) ? '<span class="of-na">N/A</span>' : nd, roc.annualized !== null ? ccPct(roc.annualized, 1) + ' annualized' : calcIsCoveredTrade(t) ? 'ROC N/A — no cash collateral' : '', 'sm')
     + ofMetric('DTE', dte === null ? nd : String(dte), t.expiry ? E(t.expiry) : '', 'sm')
     + ofMetric('Delta', dl === null ? nd : dl.toFixed(2), dl === null ? '' : 'at entry', 'sm')
@@ -6457,7 +6519,7 @@ function renderPositionDetail(){
         var xp = calcTradePnl(x);
         return (i ? '<div style="text-align:center;color:var(--text-3);font-size:11px">↓ roll</div>' : '')
           + '<div class="pd-chain' + (String(x.id) === String(t.id) ? ' cur' : '') + '" tabindex="0" style="cursor:pointer" onclick="openPositionDetail(\'' + E(String(x.id)).replace(/'/g, '&#39;') + '\')">'
-          + '<b>#' + E(String(x.id)).slice(0, 14) + '</b> ' + E(x.type) + ' · ' + E(typeof fmtStrikes === 'function' ? fmtStrikes(x) : String(x.strike)) + '<br>'
+          + '<b>#' + E(String(x.id)).slice(0, 14) + '</b> ' + E(typeLabel(x.type)) + ' · ' + E(typeof fmtStrikes === 'function' ? fmtStrikes(x) : String(x.strike)) + '<br>'
           + 'Açılış ' + E(x.opened || '—') + (x.closed ? ' · kapanış ' + E(x.closed) : ' · açık') + ' · P&L <span class="privacy-val" style="color:' + ccClr(xp) + '">' + ccMoney(xp, true) + '</span></div>';
       }).join('') + '<div class="cc-note">Zincir toplam P&L: <b class="privacy-val" style="color:' + ccClr(ch.combinedPnl) + '">' + ccMoney(ch.combinedPnl, true) + '</b>' + (ch.openCount ? ' (' + ch.openCount + ' açık bacak dahil değil)' : '') + ' — işlemlerin kendi P&L değerleri değişmez.</div>');
   // Zaman cizelgesi
@@ -6678,7 +6740,7 @@ function renderAnalytics(){
   h += '<details class="cc-sec an-filters" ' + (window.innerWidth >= 768 ? 'open' : '') + '><summary class="cc-sec-t">Filters' + (M.activeFilters.length ? ' · ' + M.activeFilters.length : '') + '</summary><div class="an-fgrid">'
     + '<label>Başlangıç (açılış)' + inp('anf_from', 'from', '', 'date') + '</label><label>Bitiş (açılış)' + inp('anf_to', 'to', '', 'date') + '</label>'
     + '<label>Profil' + sel('anf_profile', anState.profile, [['current', 'Aktif profil'], ['all', 'Tüm profiller']].concat(CLOUD_PROFILE_IDS.map(function(p){ return [p, p]; })), "anState.profile=this.value;renderAnalytics()") + '</label>'
-    + '<label>Strateji' + sel('anf_strategy', f.strategy || 'all', [['all', 'Tümü']].concat(Object.keys(strategies).sort().map(function(s){ return [s, s]; })), "anSetFilter('strategy',this.value)") + '</label>'
+    + '<label>Strateji' + sel('anf_strategy', f.strategy || 'all', [['all', 'Tümü']].concat(Object.keys(strategies).sort().map(function(s){ return [s, typeLabelFull(s)]; })), "anSetFilter('strategy',this.value)") + '</label>'
     + '<label>Ticker' + inp('anf_ticker', 'ticker', 'ör. NVDA', 'text') + '</label>'
     + '<label>Yön' + sel('anf_dir', f.direction || 'all', [['all', 'Tümü'], ['short', 'Short'], ['long', 'Long']], "anSetFilter('direction',this.value)") + '</label>'
     + '<label>Durum' + sel('anf_status', f.status || 'all', [['all', 'Tümü'], ['closed', 'Kapalı'], ['open', 'Açık']], "anSetFilter('status',this.value)") + '</label>'
@@ -6749,7 +6811,7 @@ function anRenderTab(M, ds){
   }
   if(t === 'strategies'){
     var srt = sortSel('strategySort');
-    return anSec('Strateji karşılaştırması', srt + '<div class="an-list">' + M.strategies.map(function(g){ return anGroupCard(g, anCols(['wr', 'tot', 'avg', 'exp', 'wlb', 'med', 'aw', 'al', 'pf', 'roc', 'ann', 'hold', 'dd'])); }).join('') + '</div>'
+    return anSec('Strateji karşılaştırması', srt + '<div class="an-list">' + M.strategies.map(function(g){ return anGroupCard(Object.assign({}, g, { label:typeLabelFull(g.key) }), anCols(['wr', 'tot', 'avg', 'exp', 'wlb', 'med', 'aw', 'al', 'pf', 'roc', 'ann', 'hold', 'dd'])); }).join('') + '</div>'
       + (M.strategies.length ? '' : '<div class="cc-empty">Filtreye uyan kapalı işlem yok.</div>') + '<div class="cc-note">Sıralama yalnızca seçilen metriğe göredir; sıralama bir değerlendirme değildir.</div>');
   }
   if(t === 'tickers'){
@@ -6788,7 +6850,7 @@ function anRenderTab(M, ds){
           + anTile('Zincir sayısı', String(rc.count), null, rc.closedCount + ' tamamen kapalı') + anTile('Ort. roll sayısı', rc.avgRolls === null ? AN_NA : rc.avgRolls.toFixed(1), rc.count)
           + anTile('Toplam zincir P&L', anM(rc.totalPnl, true), rc.closedCount, 'kapalı zincirler') + anTile('Kazanan / kaybeden zincir', rc.winning + ' / ' + rc.losing, rc.closedCount)
           + anTile('Ort. zincir süresi', anD(rc.avgDurationDays), rc.closedCount) + '</div>'
-          + rc.chains.map(function(c){ return '<div class="an-g"><div class="an-g-h"><b>' + E(c.ticker) + ' ' + E(c.strategy) + '</b><span class="an-sub">' + c.legs + ' bacak · ' + (c.closed ? 'kapalı' : 'açık bacak var') + '</span></div>'
+          + rc.chains.map(function(c){ return '<div class="an-g"><div class="an-g-h"><b>' + E(c.ticker) + ' ' + E(typeLabel(c.strategy)) + '</b><span class="an-sub">' + c.legs + ' bacak · ' + (c.closed ? 'kapalı' : 'açık bacak var') + '</span></div>'
             + '<div class="an-sub">Bireysel sonuçlar: ' + c.legsDetail.map(function(l){ return '#' + E(String(l.id)).slice(0, 10) + ' ' + (l.pnl === null ? 'açık' : ccMoney(l.pnl, true)); }).join(' → ') + '</div>'
             + '<div>Birleşik zincir sonucu: <b>' + (c.closed ? ccMoney(c.pnl, true) : 'zincir kapanmadı (kapalı bacaklar ' + ccMoney(c.pnl, true) + ')') + '</b></div></div>'; }).join(''))
       + anSec('Kısmi kapanışlar', !pa.count ? '<div class="cc-empty">Kısmi kapanışlı pozisyon yok.</div>' : pa.positions.map(function(p){ return '<div class="an-g"><div class="an-g-h"><b>' + E(p.ticker) + ' ' + E(p.strategy) + '</b><span class="an-sub">#' + E(String(p.id)).slice(0, 10) + ' · ' + E(p.status) + '</span></div><div class="an-g-grid">'
@@ -6810,7 +6872,7 @@ function anRenderSetup(ds){
   var strategies = {}; ds.rows.forEach(function(r){ strategies[r.strategy] = 1; });
   var inp = function(k, ph, type){ return '<input id="an_su_' + k + '" type="' + (type || 'number') + '" step="any" placeholder="' + ph + '" value="' + E(S[k] == null ? '' : String(S[k])) + '" onchange="anSetSetup(\'' + k + '\',this.value)">'; };
   return anSec('Setup tanımı', '<div class="an-fgrid">'
-      + '<label>Strateji<select id="an_su_strategy" onchange="anSetSetup(\'strategy\',this.value)"><option value="">Tümü</option>' + Object.keys(strategies).sort().map(function(s){ return '<option' + (S.strategy === s ? ' selected' : '') + '>' + E(s) + '</option>'; }).join('') + '</select></label>'
+      + '<label>Strateji<select id="an_su_strategy" onchange="anSetSetup(\'strategy\',this.value)"><option value="">Tümü</option>' + Object.keys(strategies).sort().map(function(s){ return '<option value="' + E(s) + '"' + (S.strategy === s ? ' selected' : '') + '>' + E(typeLabelFull(s)) + '</option>'; }).join('') + '</select></label>'
       + '<label>Ticker' + inp('ticker', 'ör. CLS', 'text') + '</label>'
       + '<label>Giriş DTE<span class="an-pair">' + inp('dteMin', 'min') + inp('dteMax', 'max') + '</span></label>'
       + '<label>Giriş delta<span class="an-pair">' + inp('deltaMin', '0.15') + inp('deltaMax', '0.25') + '</span></label>'
@@ -6844,7 +6906,7 @@ function anExport(fmt){
 // ═══════════════════════════════════════════════════════════════════════
 var OF_STRATEGY_NAMES = { CSP:'Cash-Secured Put', PCS:'Put Credit Spread', BCS:'Bear Call Spread', CC:'Covered Call', PMCC:"Poor Man's Covered Call",
   IC:'Iron Condor', 'Long Call':'Long Call', 'Long Put':'Long Put', LEAPS:'LEAPS', 'COLLAR PUT':'Collar · Put', 'COLLAR CALL':'Collar · Call', HEDGE:'Hedge' };
-function ofStrategyName(t){ return OF_STRATEGY_NAMES[t] || t || '—'; }
+function ofStrategyName(t){ return calcTypeDef(t) ? typeName(t) : (OF_STRATEGY_NAMES[t] || t || '—'); }
 var OF_STATUS_LABEL = { open:'Open', partially_closed:'Partially closed', closed:'Closed', assigned:'Assigned', expired:'Expired', planned:'Planned' };
 // Veri yoksa asla 0 gostermez
 function ofNA(){ return '<span class="of-na">N/A</span>'; }
@@ -6894,13 +6956,13 @@ function renderPositions(){
   var rows = open.map(function(t){
     var id = String(t.id), dte = calcDTE(t), known = ccKnownPnl(t), mp = calcMaxProfit(t), dl = ccNormalizedDelta(t), c = calcCollateral(t), st = calcTradeStatus(t), a = firstAlert[id];
     var pct = (known !== null && mp.value > 0 && isFinite(mp.value)) ? known / mp.value : null;
-    return { t:t, id:id, dte:dte, known:known, pct:pct, dl:dl, coll:c.value > 0 ? c.value : null, cov:c.source === 'covered', st:st, a:a };
+    return { t:t, id:id, dte:dte, known:known, pct:pct, dl:dl, coll:c.value > 0 ? c.value : null, cov:c.source === 'covered', debit:!c.expected && c.source !== 'covered', st:st, a:a };
   });
   var q = function(id){ return E(id).replace(/'/g, '&#39;'); };
   var h = '<div class="cc-sec of-pos-mobile">' + rows.map(function(r){
     return '<div class="cc-row" tabindex="0" role="button" aria-label="' + E(calcTickerRoot(r.t)) + ' pozisyonunu görüntüle" onclick="openPositionDetail(\'' + q(r.id) + '\')" style="grid-template-columns:minmax(0,1fr) auto auto">'
       + '<div><div class="cc-row-t">' + E(calcTickerRoot(r.t)) + ' <span class="cc-row-s" style="display:inline">' + E(ofStrategyName(r.t.type)) + '</span></div>'
-      + '<div class="cc-row-s">' + (r.dte === null ? 'No expiry' : r.dte + ' DTE') + ' · Δ ' + (r.dl === null ? 'N/A' : r.dl.toFixed(2)) + ' · ' + (r.cov ? 'Covered · $0 collateral' : r.coll === null ? 'Collateral not provided' : '<span class="privacy-val">' + ccMoney(r.coll) + '</span>')
+      + '<div class="cc-row-s">' + (r.dte === null ? 'No expiry' : r.dte + ' DTE') + ' · Δ ' + (r.dl === null ? 'N/A' : r.dl.toFixed(2)) + ' · ' + (r.cov ? 'Covered · $0 collateral' : r.debit ? 'Debit · no collateral' : r.coll === null ? 'Collateral not provided' : '<span class="privacy-val">' + ccMoney(r.coll) + '</span>')
       + (r.a ? ' · <span class="of-dot sev-' + r.a.severity + '" style="width:6px;height:6px"></span> ' + E(ofAlertTitle(r.a)) : '') + '</div></div>'
       + '<div class="cc-row-m privacy-val ' + ofMoneyCls(r.known) + '">' + (r.known === null ? 'N/A' : ccMoney(r.known, true)) + '</div><span class="of-chev" aria-hidden="true">›</span></div>';
   }).join('') + '</div>';
@@ -6909,7 +6971,7 @@ function renderPositions(){
       return '<tr data-tid="' + E(r.id) + '" tabindex="0" onclick="openPositionDetail(\'' + q(r.id) + '\')"><td class="tk">' + E(calcTickerRoot(r.t)) + '</td><td>' + E(ofStrategyName(r.t.type)) + '</td>'
         + '<td class="n">' + (r.dte === null ? ofNA() : r.dte) + '</td><td class="n privacy-val ' + ofMoneyCls(r.known) + '">' + (r.known === null ? ofNA() : ccMoney(r.known, true)) + '</td>'
         + '<td class="n">' + (r.pct === null ? ofNA() : ccPct(r.pct, 0)) + '</td><td class="n">' + (r.dl === null ? ofNA() : r.dl.toFixed(2)) + '</td>'
-        + '<td class="n privacy-val">' + (r.cov ? '<span class="of-na">$0 · covered</span>' : r.coll === null ? '<span class="of-na">Not provided</span>' : ccMoney(r.coll)) + '</td>'
+        + '<td class="n privacy-val">' + (r.cov ? '<span class="of-na">$0 · covered</span>' : r.debit ? '<span class="of-na">$0 · debit</span>' : r.coll === null ? '<span class="of-na">Not provided</span>' : ccMoney(r.coll)) + '</td>'
         + '<td><span class="of-pill">' + E(OF_STATUS_LABEL[r.st] || r.st) + '</span></td>'
         + '<td style="color:var(--text-secondary)">' + (r.a ? '<span class="of-dot sev-' + r.a.severity + '" style="width:6px;height:6px"></span> ' + E(ofAlertTitle(r.a)) : '') + '</td></tr>';
     }).join('') + '</tbody></table><div class="cc-note" style="margin-top:12px">Current P&L ve Profit % yalnızca kısmi kapanışlardan gerçekleşen kısmı gösterir; opsiyon fiyatları tutulmadığı için açık kısım N/A.</div></div>';
@@ -7236,7 +7298,7 @@ function updateHealthBanner(){
 
 function fmtA$(v){ if(v==null) return '--'; return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0}).format(v); }
 function fmtP(v){ return v==null?'--':(v*100).toFixed(1)+'%'; }
-function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; if(t==='COLLAR PUT'||t==='COLLAR CALL')return'tag-pcs'; return'tag-other'; }
+function tagCls(type){ var t=(type||'').toUpperCase(); if(t==='CSP')return'tag-csp'; if(t==='PCS')return'tag-pcs'; if(t==='CC')return'tag-cc'; if(t==='PMCC')return'tag-pmcc'; if(t==='IC')return'tag-ic'; if(t==='BCS')return'tag-pcs'; if(t==='CDS')return'tag-cc'; if(t==='COLLAR PUT'||t==='COLLAR CALL')return'tag-pcs'; return'tag-other'; }
 
 // Tablo gorunumunde tur rozetleri icin kisa kod. "COLLAR CALL" gibi uzun
 // adlar sutunu 113px'e sisiriyordu; kisa kod + title ile hem yer kazaniliyor
@@ -7246,7 +7308,7 @@ var _TYPE_SHORT = {
   'COLLAR PUT':'COL P', 'COLLAR CALL':'COL C',
   'LEAPS':'LEAP', 'HEDGE':'HDG'
 };
-function typeShort(type){ return _TYPE_SHORT[type] || type || '—'; }
+function typeShort(type){ return _TYPE_SHORT[type] || typeLabel(type); }
 
 // Kompakt vade: yil yalnizca icinde bulunulan yildan FARKLIYSA yazilir.
 // "AUG 15 '26" -> "AUG 15" (ayni yil) / "AUG 15 '27" (farkli yil)
@@ -7641,7 +7703,7 @@ function getFilteredClosedTrades(month){
 
 function calcAvgHoldDays(trades){
   // Sadece CSP, PCS, IC, CC, PMCC için — long pozisyonlar hariç
-  var TYPES = ['CSP','PCS','IC','CC','PMCC'];
+  var TYPES = ['CSP','PCS','IC','CC','PMCC','BCS','CDS'];
   var eligible = trades.filter(function(t){
     return TYPES.indexOf(t.type) >= 0 && t.opened && t.closed;
   });
@@ -7851,7 +7913,7 @@ function _renderDashboardCore(){
     el.innerHTML=recent.map(function(t){
       var tc=tcol(t.ticker.split(' ')[0]);var ip=t.pnl>=0;
       return'<div class="activity-item"><div class="activity-icon" style="background:'+tc.bg+';color:'+tc.color+'">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
-        '<div class="activity-body"><div class="activity-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
+        '<div class="activity-body"><div class="activity-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'" title="'+typeName(t.type)+'">'+typeLabel(t.type)+'</span></div>'+
         '<div class="activity-sub">$'+t.strike+' · '+t.closed+'</div></div>'+
         '<div><div class="activity-pnl '+(ip?'profit':'loss')+'">'+fmt$(t.pnl)+'</div>'+
         '<div style="font-size:10px;color:var(--text-3);text-align:right;margin-top:2px;">'+(t.pct?fmtP(t.pct):'')+'</div></div></div>';
@@ -7995,7 +8057,7 @@ function renderTradeList(filter, month){
         var _cWarn=(_cs.getPropertyValue('--warn')||'#f59e0b').trim();
         var _cLoss=(_cs.getPropertyValue('--loss')||'#ef4444').trim();
         var _cPurple=(_cs.getPropertyValue('--purple')||'#8b5cf6').trim();
-        var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'LEAPS':_cProfit,'Long Call':_cLoss,'Long Put':_cLoss,'COLLAR PUT':_cPurple,'COLLAR CALL':_cPurple,'HEDGE':'#64748b'};
+        var tagC={'CSP':_cInfo,'CC':_cProfit,'PCS':_cPurple,'PMCC':_cWarn,'IC':_cLoss,'BCS':_cPurple,'CDS':_cProfit,'LEAPS':_cProfit,'Long Call':_cLoss,'Long Put':_cLoss,'COLLAR PUT':_cPurple,'COLLAR CALL':_cPurple,'HEDGE':'#64748b'};
         var typeColor=tagC[t.type]||(_cs.getPropertyValue('--text-3')||'#94a3b8').trim();
         return '<tr data-tid="'+t.id+'" data-tmonth="'+t.month+'" style="border-bottom:1px solid var(--border);cursor:pointer;background:'+rowBg+';border-left:3px solid '+_dteBorderClr+'" '+
           '>' +
@@ -8110,7 +8172,7 @@ function renderTradeList(filter, month){
     return'<div class="trade-card '+_dteCls+'" style="'+ab+'" data-tid="'+t.id+'" data-tmonth="'+t.month+'">'+
       '<div class="trade-card-head"><div class="trade-card-left">'+
         '<div class="trade-ticker-badge" style="background:'+tc.bg+';color:'+tc.color+'">'+t.ticker.split(' ')[0].slice(0,4)+'</div>'+
-        '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'">'+t.type+'</span></div>'+
+        '<div><div class="trade-ticker">'+t.ticker+' <span class="strategy-tag '+tagCls(t.type)+'" title="'+typeName(t.type)+'">'+typeLabel(t.type)+'</span></div>'+
         '<div class="trade-date">'+t.opened+(t.closed?' > '+t.closed:' > open')+'</div></div></div>'+
         '<div><div class="trade-pnl-val" style="color:'+pc+'">'+(isOpen?(_partlyOpen?fmt$(shownPnl):'Open'):fmt$(displayPnl))+'</div>'+
         '<div class="trade-pnl-pct" style="color:'+pc+'">'+(_pct2!=null?fmtP(_pct2):(_partlyOpen?(_remainingQty+' contracts open'):(isOpen?'pending':'')))+'</div>'+
@@ -8274,7 +8336,7 @@ document.querySelectorAll('.period-btn').forEach(function(b){b.addEventListener(
 
 // ═══════════════════ STATISTICS ═══════════════════
 function getStatsFilteredTrades(month) {
-  var STATS_TYPES = ['CSP','PCS','IC','BCS'];
+  var STATS_TYPES = ['CSP','PCS','IC','BCS','CDS'];
   return getFilteredClosedTrades(month).filter(function(t){
     return STATS_TYPES.indexOf(t.type) >= 0;
   });
@@ -8298,7 +8360,7 @@ function _renderStatsCore(){
   var closed=getStatsFilteredTrades(month);
   var open=getOpenTrades();
   var label = month==='all' ? 'All Time' : Array.isArray(month) ? month.map(function(m){return _MONTHS_DISP[m]||m;}).join(' + ') : (_MONTHS_DISP[month]||month);
-  var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/BCS · '+open.length+' open';
+  var allClosed=getFilteredClosedTrades(month); var sub=document.getElementById('statsSub'); if(sub)sub.textContent=label+' · '+closed.length+' CSP/PCS/IC/CCS/CDS · '+open.length+' open';
   var dctx=document.getElementById('donutChart');
   if(dctx){if(donutChartInst)donutChartInst.destroy();donutChartInst=new Chart(dctx.getContext('2d'),{type:'doughnut',data:{datasets:[{data:[stats.winners,stats.losers],backgroundColor:['rgba(34,197,94,.8)','rgba(239,68,68,.8)'],borderColor:['#22C55E','#EF4444'],borderWidth:1.5,hoverOffset:4}]},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});}
   var dl=document.getElementById('donutLegend');
@@ -8325,15 +8387,15 @@ function _renderStatsCore(){
     {l:'Payoff Ratio',v:stats.payoff.toFixed(2)+'×',sub:'Win:Loss size',c:'var(--warn)'},
     {l:'EV / Trade',v:fmt$(stats.ev),sub:'expected value',c:stats.ev>=0?'var(--profit)':'var(--loss)'},
     {l:'Total P&L',v:'<span class="privacy-val">'+fmt$(stats.totalPnl)+'</span>',sub:fmtP(stats.totalPnl/PORT_SIZE)+' return',c:stats.totalPnl>=0?'var(--profit)':'var(--loss)',full:true},
-    {l:'Avg Hold Days',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' days':'—';})(),sub:'CSP/PCS/IC/BCS avg',c:'var(--purple)',full:true},
+    {l:'Avg Hold Days',v:(function(){var h=calcAvgHoldDays(closed);return h!==null?h+' days':'—';})(),sub:'CSP/PCS/IC/CCS/CDS avg',c:'var(--purple)',full:true},
     (function(){
-      var SPREAD=['CSP','PCS','IC','BCS'];
+      var SPREAD=['CSP','PCS','IC','BCS','CDS'];
       var sp=closed.filter(function(t){return SPREAD.indexOf(t.type)>=0;});
       var _spWs=calcWinStats(sp); var wr=_spWs.closedTrades?_spWs.winRate:null;
       var hd=calcAvgHoldDays(sp);
       return [
         {l:'Strategy Win Rate',v:wr!==null?Math.round(wr*100)+'%':'—',sub:sp.length+' trades',bar:wr||0,bc:'var(--profit)',c:wr===null?'var(--text-3)':wr>=0.7?'var(--profit)':wr>=0.5?'var(--warn)':'var(--loss)'},
-        {l:'Avg Hold Days',v:hd!==null?hd+' days':'—',sub:'CSP/PCS/IC/BCS avg',c:'var(--purple)'}
+        {l:'Avg Hold Days',v:hd!==null?hd+' days':'—',sub:'CSP/PCS/IC/CCS/CDS avg',c:'var(--purple)'}
       ];
     })(),
     {l:'Total Collateral',v:'<span class="privacy-val">'+fmtA$(totalTeminat)+'</span>',sub:'avg '+fmtA$(Math.round(avgTeminat))+' / trade · '+tradesWithColl.length+' trades with collateral',c:'var(--info)',full:true},
@@ -8350,7 +8412,7 @@ function _renderStatsCore(){
     })()
   ].flat().filter(function(x){return x!=null;}).map(function(x){return'<div class="stats-big-card'+(x.full?' full':'')+'"><div class="stat-big-lbl">'+x.l+'</div><div class="stat-big-val privacy-val" style="color:'+x.c+'">'+x.v+'</div><div class="stat-big-sub">'+x.sub+'</div>'+(x.bar!=null?'<div class="stat-big-bar"><div class="stat-big-bar-fill" style="width:'+Math.round(x.bar*100)+'%;background:'+x.bc+'"></div></div>':'')+'</div>';}).join('');
   var st=document.getElementById('stratTableInner');
-  if(st){var rows=['CSP','PCS','IC','BCS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var _tws=calcWinStats(t);var pnl=_tws.totalPnl;var wr=_tws.winRate;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+type+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
+  if(st){var rows=['CSP','PCS','IC','BCS','CDS'].map(function(type){var t=closed.filter(function(x){return x.type===type;});if(!t.length)return null;var _tws=calcWinStats(t);var pnl=_tws.totalPnl;var wr=_tws.winRate;return'<div class="perf-row" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;"><div style="display:flex;align-items:center;"><span class="strategy-tag '+tagCls(type)+'" style="margin:0;">'+typeLabel(type)+'</span></div><div class="perf-row-val">'+t.length+'</div><div class="perf-row-val" style="color:'+(wr>=.7?'var(--profit)':wr>=.5?'var(--warn)':'var(--loss)')+'">'+Math.round(wr*100)+'%</div><div class="perf-row-val" style="color:'+(pnl>=0?'var(--profit)':'var(--loss)')+'">'+fmt$(pnl)+'</div></div>';}).filter(Boolean).join('');st.innerHTML='<div class="perf-row" style="background:rgba(255,255,255,0.02);display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;"><div>Strategy</div><div>Trades</div><div>WR%</div><div>P&L</div></div>'+rows;}
   // Analytics charts
   _buildAnalyticsCharts();
 }
@@ -8359,7 +8421,7 @@ function _renderStatsCore(){
 function renderRisk(){
   var open=getOpenTrades(); var coll=open.reduce(function(s,t){return s+calcCollateral(t).value;},0); var cp=PORT_SIZE>0?coll/PORT_SIZE:0;
   var alerts=[];
-  open.forEach(function(t){if(t.delta&&t.delta>35)alerts.push({type:'danger',icon:'⚠️',title:'Delta Threshold Breached',desc:t.ticker+' '+t.type+' at '+t.delta+'Δ — exceeds 35Δ rule.',meta:t.ticker+' $'+t.strike+' · '+t.expiry});});
+  open.forEach(function(t){if(t.delta&&t.delta>35)alerts.push({type:'danger',icon:'⚠️',title:'Delta Threshold Breached',desc:t.ticker+' '+typeLabel(t.type)+' at '+t.delta+'Δ — exceeds 35Δ rule.',meta:t.ticker+' $'+t.strike+' · '+t.expiry});});
   open.forEach(function(t){var d=getDTE(t.expiry);if(d!==null&&d<=7)alerts.push({type:'danger',icon:'⏱',title:'DTE Alert — Near Expiry',desc:t.ticker+' has '+d+' days left. Gamma risk accelerates below 7 DTE.',meta:t.ticker+' · '+d+' DTE'});});
   open.forEach(function(t){if(t.ivr&&t.ivr>65)alerts.push({type:'warn',icon:'📈',title:'High IVR',desc:t.ticker+' IVR: '+t.ivr+'. Verify setup.',meta:t.ticker});});
   open.forEach(function(t){var _tc=calcCollateral(t).value;if(_tc>PORT_SIZE*0.1)alerts.push({type:'warn',icon:'💰',title:'Large Position Size',desc:t.ticker+' uses '+(_tc/PORT_SIZE*100).toFixed(1)+'% of portfolio — over 10% limit.',meta:fmtA$(t.teminat)});});
@@ -8370,11 +8432,11 @@ function renderRisk(){
     if(dEarn >= 0 && dEarn <= 5){
       alerts.push({type:'danger',icon:'📆',title:'Earnings Yaklaşıyor — '+t.ticker,
         desc:t.ticker+' earnings '+(dEarn===0?'bugün':dEarn+' gün sonra')+'! IV crush riski — pozisyonu kapatmayı değerlendirin.',
-        meta:t.ticker+' · '+t.type+' · Earnings: '+t.earningsDate});
+        meta:t.ticker+' · '+typeLabel(t.type)+' · Earnings: '+t.earningsDate});
     } else if(dEarn > 5 && dEarn <= 14){
       alerts.push({type:'warn',icon:'📅',title:'Earnings 2 Haftada — '+t.ticker,
         desc:t.ticker+' earnings '+dEarn+' gün sonra. Pozisyon vadeyi geçiyorsa hazırlıklı olun.',
-        meta:t.ticker+' · '+t.type+' · Earnings: '+t.earningsDate});
+        meta:t.ticker+' · '+typeLabel(t.type)+' · Earnings: '+t.earningsDate});
     }
   });
   // Ex-Dividend alerts for CC positions
@@ -8560,7 +8622,7 @@ function buildThetaCalendar(){
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">' +
       '<div style="display:flex;align-items:center;gap:8px;">' +
         '<span style="font-family:var(--font-head);font-weight:600;color:'+tc2.color+';font-size:12px;">'+r.ticker.split(' ')[0]+'</span>' +
-        '<span style="font-size:9px;padding:1px 5px;background:rgba(255,255,255,0.08);border-radius:3px;color:var(--text-3);">'+r.type+'</span>' +
+        '<span style="font-size:9px;padding:1px 5px;background:rgba(255,255,255,0.08);border-radius:3px;color:var(--text-3);">'+typeLabel(r.type)+'</span>' +
         '<span style="font-size:10px;color:'+dteClr+';">DTE: '+r.dte+'</span>' +
       '</div>' +
       '<div style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:'+clr+';">' + (r.dailyTheta>0?'+':'') + fmtA$(Math.abs(r.dailyTheta).toFixed(1)) + '/gün</div>' +
@@ -8610,6 +8672,10 @@ function updateBlackSwan(movePct) {
       // Bull put / Bear call spread: capped loss at width (teminat)
       var riskFrac = Math.min(1, Math.max(0, -move / 0.20)); // full loss at -20%
       impact = move < 0 ? -(coll * riskFrac) + prem : prem * 0.15;
+    } else if(t.type === 'CDS'){
+      // Call borc spread (Bull Call): yukselisle kazanc genislikle sinirli, dususte odenen borc kaybolur
+      var _mpC = calcMaxProfit(t).value; if(!(_mpC > 0)) _mpC = prem;
+      impact = move > 0 ? _mpC * Math.min(1, move / 0.10) : -prem * Math.min(1, -move / 0.10);
     } else if(t.type === 'IC'){
       // Iron condor: put side loses on big down, call side loses on big up
       var putRisk = move < 0 ? Math.min(1, -move / 0.20) : 0;
@@ -8637,7 +8703,7 @@ function updateBlackSwan(movePct) {
     rows.slice(0,5).map(function(r){
       var ic = r.impact >= 0 ? 'var(--profit)' : 'var(--loss)';
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;">' +
-        '<div style="font-size:12px;color:var(--text-2);">' + r.ticker + ' <span style="color:var(--text-3);font-size:10px;">' + r.type + '</span></div>' +
+        '<div style="font-size:12px;color:var(--text-2);">' + r.ticker + ' <span style="color:var(--text-3);font-size:10px;">' + typeLabel(r.type) + '</span></div>' +
         '<div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:'+ic+';">' + (r.impact>=0?'+':'') + fmtA$(Math.round(r.impact)) + '</div>' +
       '</div>';
     }).join('') +
@@ -8998,7 +9064,7 @@ function showWhatIfCalc(trade){
   var hdl=document.createElement('div'); hdl.className='modal-handle'; sh.appendChild(hdl);
   var titleEl=document.createElement('div');
   titleEl.style.cssText='font-size:16px;font-weight:700;margin-bottom:4px;color:var(--text)';
-  titleEl.textContent='🎯 What-If P&L — '+trade.ticker+' '+trade.type;
+  titleEl.textContent='What-If P&L — '+trade.ticker+' '+typeLabel(trade.type)+' '+fmtStrikes(trade);
   var subEl=document.createElement('div');
   subEl.style.cssText='font-size:11px;color:var(--text-3);margin-bottom:18px';
   subEl.textContent='Strike: $'+trade.strike+' | Premium: $'+calcTradePremium(trade).toFixed(2);
@@ -9027,17 +9093,11 @@ function showWhatIfCalc(trade){
     }else if(t.type==='CC'||t.type==='PMCC'){
       if(price<=strike) return prem; // max profit
       return prem - (price-strike)*qty*100; // called away
-    }else if(SPREADS.indexOf(t.type)>=0){
-      // Bull put spread: max profit = credit, max loss = width - credit
-      if(price>=strike) return prem;
-      return Math.max(prem-maxLossSpread, prem-(strike-price)*qty*100);
-    }else if(t.type==='IC'){
-      var legs=String(t.strike).split('/');
-      var putStrike=legs.length===2?parseFloat(legs[0]):strike;
-      var callStrike=legs.length===2?parseFloat(legs[1]):strike;
-      if(price>putStrike&&price<callStrike) return prem; // in the body
-      if(price<=putStrike) return prem-(putStrike-price)*qty*100;
-      return prem-(price-callStrike)*qty*100;
+    }else if(calcPayoffAtExpiry(t, price) !== null){
+      // Dikey spread'ler (PCS, CCS, CDS) ve IC: bacak bazli vade payoff'u.
+      // Eskiden tum spread'ler put gibi hesaplaniyordu — CCS (bear call)
+      // egrisi ters cikiyordu; IC kanat genisligini (sinirli zarar) yok sayiyordu.
+      return calcPayoffAtExpiry(t, price);
     }else if(isLongPos){
       // Long pozisyonun içsel değeri yöne bağlı: call'da (fiyat-strike),
       // put'ta (strike-fiyat). Eskiden her long CALL gibi hesaplanıyordu,
@@ -9226,7 +9286,7 @@ function showRollTrade(oldTrade){
   }
 
   sh.innerHTML = '<div class="modal-handle"></div>'
-    + '<div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">Roll — ' + E(stored.ticker) + ' ' + E(stored.type) + ' ' + E(fmtStrikes(stored)) + '</div>'
+    + '<div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">Roll — ' + E(stored.ticker) + ' ' + E(typeLabel(stored.type)) + ' ' + E(fmtStrikes(stored)) + '</div>'
     + '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5;">Mevcut pozisyonun kalan <b>' + remaining + ' kontratı</b> kapatılır, yeni pozisyon aynı roll zincirine bağlanarak açılır. Her bacağın P&amp;L\'i ayrı kalır (vergi kapanış tarihine göre).</div>'
     + '<div style="font-size:12px;font-weight:700;color:var(--text-primary);margin:4px 0 8px;">1 · Kapanan pozisyon</div>'
     + row2(f('Roll tarihi', 'roll_cd', 'date', today), '<div></div>')
@@ -9282,7 +9342,7 @@ function showRollTrade(oldTrade){
       sh.querySelector('#roll_te').value = (dc === null || dc === undefined) ? '' : Math.round(dc);
     }
     var per = nt.q ? nt.openPremium / (nt.q * 100) : 0;
-    sh.querySelector('#roll_new_prev').textContent = nt.type + ' ' + fmtStrikes(Object.assign({}, nt, { teminat:num('roll_te') || 0 }))
+    sh.querySelector('#roll_new_prev').textContent = typeLabel(nt.type) + ' ' + fmtStrikes(Object.assign({}, nt, { teminat:num('roll_te') || 0 }))
       + ' · ' + nt.q + ' kontrat · $' + per.toFixed(2) + '/kontrat' + (calcIsCoveredTrade(nt) ? ' · teminat yok (covered)' : '');
   }
   sh.addEventListener('input', refresh);
@@ -9601,7 +9661,7 @@ function showMoveTrade(trade){
     + '<div style="font-size:12px;color:var(--text-tertiary);line-height:1.5;">' + E(PROFILES[ACTIVE_PROFILE].name) + ' profilinden çıkarılır, seçtiğin profile eklenir. Vergi, istatistik ve raporlar artık o profilde sayılır.</div>'
     + '<div style="' + lbl + '">Taşınacak ' + (group.length > 1 ? group.length + ' işlem (bağlı, birlikte taşınır)' : 'işlem') + '</div>'
     + '<div style="background:var(--surface-secondary);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.7;font-variant-numeric:tabular-nums;">'
-    +   group.map(function(t){ var p = calcTradePnl(t); return '<div style="display:flex;justify-content:space-between;gap:8px;"><span>' + E(t.ticker + ' ' + t.type + ' ' + fmtStrikes(t)) + ' · ' + E(t.opened || '') + '</span><span>' + (t.closed ? money2(p, true) : 'açık') + '</span></div>'; }).join('')
+    +   group.map(function(t){ var p = calcTradePnl(t); return '<div style="display:flex;justify-content:space-between;gap:8px;"><span>' + E(t.ticker + ' ' + typeLabel(t.type) + ' ' + fmtStrikes(t)) + ' · ' + E(t.opened || '') + '</span><span>' + (t.closed ? money2(p, true) : 'açık') + '</span></div>'; }).join('')
     + '</div>'
     + (group.length > 1 ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">Roll zinciri / IC bölünmesi bağlantılarını korumak için hepsi birlikte taşınır.</div>' : '')
     + '<div style="' + lbl + '">Hedef profil</div>'
@@ -9811,7 +9871,7 @@ function showExpiryCalendar(){
       var badge=document.createElement('div');badge.style.cssText='width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;background:'+tc.bg+';color:'+tc.color;badge.textContent=t.ticker.split(' ')[0].slice(0,4);
       var info=document.createElement('div');
       var tn=document.createElement('div');tn.style.cssText='font-size:13px;font-weight:600;color:var(--text)';tn.textContent=t.ticker+' $'+t.strike;
-      var ts=document.createElement('div');ts.style.cssText='font-size:11px;color:var(--text-3);margin-top:1px';ts.textContent=t.type+' · '+t.q+' contracts';
+      var ts=document.createElement('div');ts.style.cssText='font-size:11px;color:var(--text-3);margin-top:1px';ts.textContent=typeLabel(t.type)+' · '+t.q+' contracts';
       info.appendChild(tn);info.appendChild(ts);lft.appendChild(badge);lft.appendChild(info);
       var prem=document.createElement('div');
       prem.style.cssText='font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--info)';
@@ -9860,7 +9920,7 @@ function renderGroupedTrades(f){
       var isOpen=!t.closed; var dte=getDTE(t.expiry);
       var pnlC=t.pnl!=null?(t.pnl>=0?'var(--profit)':'var(--loss)'):'var(--text-3)';
       html+='<div data-tid="'+t.id+'" data-tmonth="'+t.month+'" onclick="openTradeDetail(this.dataset.tid,this.dataset.tmonth)" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid rgba(255,255,255,0.05);cursor:pointer">';
-      html+='<div><div style="font-size:12px;font-weight:600;color:var(--text)">'+t.type+' $'+t.strike+' <span style="font-size:10px;color:var(--text-3)">exp:'+t.expiry+'</span></div>';
+      html+='<div><div style="font-size:12px;font-weight:600;color:var(--text)">'+typeLabel(t.type)+' '+fmtStrikes(t)+' <span style="font-size:10px;color:var(--text-3)">exp:'+t.expiry+'</span></div>';
       html+='<div style="font-size:11px;color:var(--text-3);margin-top:1px">'+t.q+' cnt · '+t.opened+(isOpen?' · <span style="color:'+(dte<=7?'var(--loss)':dte<=21?'var(--warn)':'var(--info)')+'">'+dte+'DTE</span>':' → '+t.closed)+'</div></div>';
       html+='<div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:'+pnlC+'">'+(t.pnl!=null?(t.pnl>=0?'+':'')+Math.round(t.pnl):'Open')+'</div>';
       html+='</div>';
@@ -10307,7 +10367,7 @@ function exportTaxCSV(){
       : (t.closed || '');
 
     lines.push([
-      cell(t.ticker), cell(t.type), cell(t.opened||''), cell(kapanis), cell(t.expiry||''), cell(t.q||1),
+      cell(t.ticker), cell(typeLabel(t.type)), cell(t.opened||''), cell(kapanis), cell(t.expiry||''), cell(t.q||1),
       n2(alinan), n2(odenen), n2(res.komAcilis), n2(res.komKapanis),
       n4(res.acilis_kur), n4(res.kapanis_kur),
       n2(t.pnl), (matrah!==null?n2(matrah):''), cell(not.join(' | '))
@@ -10379,7 +10439,7 @@ function showBeyannamePDF(){
 
     return '<tr>'
       + '<td>'+esc(t.ticker)+'</td>'
-      + '<td>'+esc(t.type)+'</td>'
+      + '<td>'+esc(typeLabel(t.type))+'</td>'
       + '<td>'+esc(t.opened||'')+'</td>'
       + '<td>'+esc(kapanis)+'</td>'
       + '<td class="r">'+(t.q||1)+'</td>'
@@ -10537,9 +10597,17 @@ function fmtStrikes(t){
   var k = num(raw.split('/')[0]);
   if(k === null) return raw;
   var isPut  = (type === 'PCS' || type === 'CSP' || type === 'LONG PUT' || type === 'COLLAR PUT');
-  var isCall = (type === 'BCS' || type === 'CCS' || type === 'CC' || type === 'PMCC' ||
+  var isCall = (type === 'BCS' || type === 'CCS' || type === 'CDS' || type === 'CC' || type === 'PMCC' ||
                 type === 'LONG CALL' || type === 'COLLAR CALL' || type === 'LEAPS');
   var letter = isPut ? 'P' : isCall ? 'C' : '';
+  // Iki strike'i acikca girilmis dikey spread (CDS'de alinan/satilan) aynen
+  var _seg2 = raw.split('/').map(num);
+  // (PCS: satilan > alinan; CCS: satilan < alinan; CDS: alinan < satilan —
+  // tutarsiz girislerde eskisi gibi teminattan turetilir)
+  if(_seg2.length === 2 && _seg2[0] !== null && _seg2[1] !== null){
+    var _okDir = (type === 'PCS') ? _seg2[1] < _seg2[0] : (type === 'BCS' || type === 'CCS' || type === 'CDS') ? _seg2[1] > _seg2[0] : false;
+    if(_okDir) return _stkNum(_seg2[0]) + '/' + _stkNum(_seg2[1]) + letter;
+  }
 
   // Dikey spread: long bacak teminattan tam olarak cikar
   if((type === 'PCS' || type === 'BCS' || type === 'CCS') && width > 0){
@@ -10994,7 +11062,7 @@ function buildSpreadMarkdown(){
   var wRoc = D.rocValue !== null ? D.rocValue * 100 : null;
 
   var only = _spreadRepTypes.slice().sort().join('+');
-  var kindLbl = (only === 'PCS') ? 'PCS' : (only === 'BCS') ? 'BCS' : 'credit spread';
+  var kindLbl = (only === 'PCS') ? 'PCS' : (only === 'BCS') ? 'CCS' : 'credit spread';
   var period = _srMonthLabel(D.from, D.to);
   var stLbl = (D.status === 'open') ? 'open' : (D.status === 'all') ? '' : 'closed ';
 
@@ -11026,7 +11094,7 @@ function buildSpreadMarkdown(){
     rows.forEach(function(r){
       // "230/225P PCS" — bacaklar ice aktarimdan ya da teminattan gelir.
       // Sondaki P/C harfi KIRPILMAZ: IC'de "… 790/800C" bozuluyordu.
-      var yapi = String(r.strike) + ' ' + r.type;
+      var yapi = String(r.strike) + ' ' + typeLabel(r.type);
       L.push('| ' + r.ticker
         + ' | ' + yapi
         + ' | ' + r.opened
@@ -11255,7 +11323,7 @@ function showSpreadReport(){
     + '<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:7px;">Strateji</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:14px;">'
     +   btn('sr_ty_PCS', 'PCS · Put Credit Spread', "_srToggleType('PCS')", pillCss)
-    +   btn('sr_ty_BCS', 'BCS · Call Credit Spread', "_srToggleType('BCS')", pillCss)
+    +   btn('sr_ty_BCS', 'CCS · Call Credit Spread', "_srToggleType('BCS')", pillCss)
     + '</div>'
 
     + '<div id="sr_summary" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
@@ -11561,7 +11629,7 @@ function _xrPaintCard(c, D, W){
     var rw = c.measureText(rightTxt).width;
     text(rightTxt, CR, y, F(M.pl, '600'), rightCol, 'right');
     c.font = F(M.st, '500');
-    text(fit(r.type, CR - rw - 12 - (CX + tw + 7)), CX + tw + 7, y, F(M.st, '500'), MUT, 'left');
+    text(fit(typeLabel(r.type), CR - rw - 12 - (CX + tw + 7)), CX + tw + 7, y, F(M.st, '500'), MUT, 'left');
   };
   var line = function(left, right, y, size, leftCol, rightCol){
     c.font = F(size, '500');
@@ -11646,7 +11714,7 @@ function _xrPaintCard(c, D, W){
   if(!mix.length){ text('—', sx, sy + 12, F(13, '500'), MUT2, 'left'); sy += 22; }
   mix.forEach(function(m){
     c.font = F(12, '600');
-    text(fit(m.type, 70), sx, sy + 11, F(12, '600'), TXT, 'left');
+    text(fit(typeLabel(m.type), 70), sx, sy + 11, F(12, '600'), TXT, 'left');
     var bx = sx + 78, bw = sr - bx - 28, fw = Math.max(8, bw * m.count / maxMix);
     _srRoundRect(c, bx, sy + 3, bw, 8, 4); c.fillStyle = TRACK; c.fill();
     _srRoundRect(c, bx, sy + 3, fw, 8, 4); c.fillStyle = ACC; c.fill();
@@ -12065,7 +12133,7 @@ function _mtdPaintCard(c, D, W, PAD){
   } else {
     closedShown.forEach(function(r){
       c.font = F(19, '700'); c.fillStyle = TXT; c.textAlign = 'left';
-      c.fillText(r.ticker + ' · ' + r.type, left, yy + 20);
+      c.fillText(r.ticker + ' · ' + typeLabel(r.type), left, yy + 20);
       c.font = F(20, '700'); c.fillStyle = r.pnl >= 0 ? GRN : RED; c.textAlign = 'right';
       c.fillText(_srSigned(r.pnl), W - PAD, yy + 20);
       c.font = MONO(15, '500'); c.fillStyle = MUT; c.textAlign = 'left';
@@ -12092,7 +12160,7 @@ function _mtdPaintCard(c, D, W, PAD){
   } else {
     openShown.forEach(function(r){
       c.font = F(19, '700'); c.fillStyle = TXT; c.textAlign = 'left';
-      c.fillText(r.ticker + ' · ' + r.type, left, yy + 20);
+      c.fillText(r.ticker + ' · ' + typeLabel(r.type), left, yy + 20);
       c.font = F(17, '600'); c.fillStyle = MUT; c.textAlign = 'right';
       c.fillText((r.dte === null ? '—' : r.dte + ' DTE'), W - PAD, yy + 20);
       c.font = MONO(15, '500'); c.fillStyle = MUT; c.textAlign = 'left';
@@ -12118,7 +12186,7 @@ function _mtdPaintCard(c, D, W, PAD){
     for(var mi = 0; mi < mixShown.length; mi++){
       var m = mixShown[mi], mx = left + (mi % 2) * mixCol, my = yy + Math.floor(mi / 2) * mixLineH;
       c.textAlign = 'left'; c.font = F(16, '700'); c.fillStyle = TXT;
-      c.fillText(m.type, mx, my + 16);
+      c.fillText(typeLabel(m.type), mx, my + 16);
       c.font = F(14, '500'); c.fillStyle = MUT;
       c.fillText(m.count + ' trade' + (m.count === 1 ? '' : 's'), mx + 76, my + 16);
       c.font = F(16, '700'); c.fillStyle = m.pnl >= 0 ? GRN : RED; c.textAlign = 'right';
@@ -12337,7 +12405,7 @@ function showXReport(){
 
   var typePills = btn('xr_ty_ALL', 'All', '_xrToggleType(null)', tiny)
     + (typeof ALL_TRADE_TYPES !== 'undefined' ? ALL_TRADE_TYPES : []).map(function(t){
-        return btn('xr_ty_' + t.replace(/\s/g,'_'), t, "_xrToggleType('" + t + "')", tiny);
+        return btn('xr_ty_' + t.replace(/\s/g,'_'), typeLabel(t), "_xrToggleType('" + t + "')", tiny);
       }).join('');
 
   box.innerHTML =
@@ -12852,7 +12920,13 @@ function groupLegsIntoTrades(legs){
         type = 'BCS'; strike = String(sells[0].strike);
         strikes = { c: [sells[0].strike, buys[0].strike] };
         collateral = Math.abs(buys[0].strike - sells[0].strike) * 100 * qty;
-      } else { note = 'Borç call spread — uygulamada karşılığı yok'; }
+      } else {
+        // Borc call spread (Bull Call): alt strike ALINIR, ust strike SATILIR.
+        // Teminat yok; risk = odenen borc. Ana (alinan) bacak once.
+        type = 'CDS'; strike = String(buys[0].strike) + '/' + String(sells[0].strike);
+        strikes = { c: [buys[0].strike, sells[0].strike] };
+        collateral = 0;
+      }
     } else if(g.length === 4 && puts.length === 2 && calls.length === 2 &&
               sells.length === 2 && buys.length === 2 && netCredit > 0){
       var sp = puts.filter(function(l){ return l.side === 'SELL'; })[0];
@@ -13070,7 +13144,11 @@ function _shotFindCloseMatch(g){
   // put'un kapanisi sanilabilirdi. Kapanislar zaten borc spread'i olarak
   // cikar ve groupLegsIntoTrades onlara tip veremez (type === null).
   // Tek bacakli emirlerde ise tersine islem fiilen kapanistir.
-  if(g.type && legs.length > 1) return null;
+  // ISTISNA: grup acik bir pozisyonun bacaklarinin TAM tersiyse (ayni
+  // ticker/vade, ayni strike'lar, ters yon) bu kesin bir kapanistir — or.
+  // CDS kapanisi bir CCS acilisina, CCS kapanisi bir CDS acilisina benzer.
+  // Ayni sekilde IC'nin tek bir tarafinin tam tersi de kapanistir.
+  if(g.type && legs.length > 1 && !_shotIsExactReversal(g)) return null;
 
   var hits = _shotAllOpenPositions().filter(function(p){
     var t = p.trade;
@@ -13093,8 +13171,10 @@ function _shotFindCloseMatch(g){
     for(var hi = 0; hi < hits.length; hi++){
       var t = hits[hi].trade, pl = _posLegStrikes(t);
       var lng = (typeof isLong === 'function') && calcIsLongTrade(t);
-      if(pl.short.indexOf(l.strike) >= 0){ l.side = lng ? 'SELL' : 'BUY';  l.sideGuessed = true; return; }
-      if(pl.long.indexOf(l.strike)  >= 0){ l.side = lng ? 'BUY'  : 'SELL'; l.sideGuessed = true; return; }
+      // Kapanista acilista SATILAN bacak alinir, ALINAN bacak satilir (pozisyon
+      // kredi ya da borc olsun). Eskiden long pozisyonlarda yon ters turetiliyordu.
+      if(pl.short.indexOf(l.strike) >= 0){ l.side = 'BUY';  l.sideGuessed = true; return; }
+      if(pl.long.indexOf(l.strike)  >= 0){ l.side = 'SELL'; l.sideGuessed = true; return; }
     }
   });
 
@@ -13162,6 +13242,30 @@ function _shotFindCloseMatch(g){
   };
 }
 
+function _shotIsExactReversal(g){
+  var legs = (g && g.legs) || [];
+  if(!legs.length || legs.some(function(l){ return !l.side; })) return false;
+  return _shotAllOpenPositions().some(function(p){
+    var t = p.trade;
+    if(String(t.ticker || '').toUpperCase() !== String(g.ticker || '').toUpperCase() || t.expiry !== g.expiry) return false;
+    var lng = calcIsLongTrade(t), pl = _posLegStrikes(t);
+    var shortSide = 'BUY', longSide = 'SELL';          // kapanista: satilan geri alinir, alinan satilir
+    var match = function(shortKs, longKs, ot){
+      if(legs.length !== shortKs.length + longKs.length) return false;
+      return legs.every(function(l){
+        if(ot && l.optType !== ot) return false;
+        return (l.side === shortSide && shortKs.indexOf(l.strike) >= 0) || (l.side === longSide && longKs.indexOf(l.strike) >= 0);
+      });
+    };
+    if(match(pl.short, pl.long, null)) return true;
+    if(String(t.type) === 'IC'){
+      var L = calcLegs(t);
+      return match([L.put.short], [L.put.long], 'P') || match([L.call.short], [L.call.long], 'C');
+    }
+    return false;
+  });
+}
+
 // ── Roll tanima ─────────────────────────────────────────────────────────
 // Ayni VADEDE yapilan bir roll'da (or. CSP 100P -> 95P) kapanan ve acilan
 // bacaklar tek gruba duser: kapanis tutarina yeni pozisyonun kredisi karisir,
@@ -13178,8 +13282,8 @@ function _shotSplitMixedGroups(trades){
       if(String(t.ticker || '').toUpperCase() !== String(g.ticker).toUpperCase() || t.expiry !== g.expiry) return false;
       var pl = _posLegStrikes(t), lng = calcIsLongTrade(t);
       var rev = function(l){
-        return (pl.short.indexOf(l.strike) >= 0 && l.side === (lng ? 'SELL' : 'BUY'))
-            || (pl.long.indexOf(l.strike)  >= 0 && l.side === (lng ? 'BUY' : 'SELL'));
+        return (pl.short.indexOf(l.strike) >= 0 && l.side === 'BUY')
+            || (pl.long.indexOf(l.strike)  >= 0 && l.side === 'SELL');
       };
       var cl = g.legs.filter(rev), rest = g.legs.filter(function(l){ return !rev(l); });
       if(cl.length && cl.length === pl.short.length + pl.long.length && rest.length){ split = { cl:cl, rest:rest }; return true; }
@@ -13237,6 +13341,13 @@ function _posLegStrikes(t){
     var sp = num(seg[0]), sc = num(seg[1]);
     if(sp !== null){ out.short.push(sp); if(width > 0) out.long.push(sp - width); }
     if(sc !== null){ out.short.push(sc); if(width > 0) out.long.push(sc + width); }
+    return out;
+  }
+  if(type === 'CDS'){
+    // "750/760" = alinan/satilan
+    var sg = String(t.strike || '').split('/').map(num);
+    if(sg[0] !== null && sg[0] !== undefined) out.long.push(sg[0]);
+    if(sg.length > 1 && sg[1] !== null) out.short.push(sg[1]);
     return out;
   }
   var k = num(String(t.strike || '').split('/')[0]);
@@ -13351,7 +13462,7 @@ function _shotRenderReview(warnings){
             return '<label style="display:flex;align-items:center;gap:7px;padding:7px 8px;margin-bottom:5px;background:var(--row-alt);border-radius:8px;cursor:pointer;">'
               + '<input type="checkbox" id="sh_mt_' + i + '_' + k + '" checked onchange="_shotCloseSum(' + i + ')" style="width:15px;height:15px;accent-color:#22C55E;">'
               + '<span style="font-size:11px;color:var(--text);">' + pr.emoji + ' <b>' + pr.name + '</b> · '
-              + (p.trade.type || '?') + ' ' + fmtStrikes(p.trade) + ' · ' + Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade)) + ' kontrat'
+              + typeLabel(p.trade.type) + ' ' + fmtStrikes(p.trade) + ' · ' + Math.max(0, (calcQty(p.trade) || 0) - calcClosedQty(p.trade)) + ' kontrat'
               + '<span style="color:var(--text-3);"> · açılış ' + (p.trade.opened || '?') + '</span></span>'
               + '<span id="sh_mp_' + i + '_' + k + '" style="margin-left:auto;font-size:11px;font-family:var(--font-mono);font-weight:700;"></span>'
               + '</label>';
@@ -13427,7 +13538,7 @@ function _shotRenderReview(warnings){
       + (rf ? '<label style="display:flex;align-items:flex-start;gap:8px;padding:9px 10px;margin-bottom:10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:9px;cursor:pointer;">'
           + '<input type="checkbox" id="sh_roll_' + i + '" checked style="width:16px;height:16px;margin-top:1px;accent-color:#F59E0B;">'
           + '<span style="font-size:11px;color:var(--text-2);line-height:1.5;"><b>Roll zincirine bağla</b> — kapanan '
-          + rf.closeMatch.positions.map(function(p){ return (p.trade.type || '') + ' ' + fmtStrikes(p.trade) + ' (' + (p.trade.expiry || '?') + ')'; }).join(', ')
+          + rf.closeMatch.positions.map(function(p){ return typeLabel(p.trade.type) + ' ' + fmtStrikes(p.trade) + ' (' + (p.trade.expiry || '?') + ')'; }).join(', ')
           + ' pozisyonunun devamı olarak kaydedilir. Hesap sahibi kapanan pozisyondan alınır; her bacağın P&amp;L\'i ayrı kalır.</span></label>'
         : '')
       + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;">'
@@ -13435,7 +13546,7 @@ function _shotRenderReview(warnings){
       +   '<div><div style="' + lbl + '">Tip</div>'
       +     '<select id="sh_ty_' + i + '" style="' + inp + '">'
       +       (typeof ALL_TRADE_TYPES !== 'undefined' ? ALL_TRADE_TYPES : ['CSP','CC','PCS','BCS','IC'])
-              .map(function(x){ return '<option' + (x === t.type ? ' selected' : '') + '>' + x + '</option>'; }).join('')
+              .map(function(x){ return '<option value="' + x + '"' + (x === t.type ? ' selected' : '') + '>' + typeLabel(x) + '</option>'; }).join('')
       +     '</select></div>'
       +   '<div><div style="' + lbl + '">Strike</div><input id="sh_st_' + i + '" value="' + (t.strike || '') + '" style="' + inp + '">'
       +     (t.strikes ? '<div style="font-size:9px;color:var(--info);font-family:var(--font-mono);margin-top:3px;">→ ' + fmtStrikes(t) + '</div>' : '')
@@ -14772,7 +14883,7 @@ function showAddTrade(existingTrade, prefill){
     // Hesap sahibi — Mustafa profili için
     var _defOwner = ACTIVE_PROFILE === 'mustafa' ? 'Mustafa' : 'Eda';
     var subOwnerVal = sheet.querySelector('#nt_owner') ? sheet.querySelector('#nt_owner').value : (isEdit && existingTrade.subOwner ? existingTrade.subOwner : _defOwner);
-    var typeOpts = ALL_TYPES.map(function(t){return'<option'+(t===typeVal?' selected':'')+'>'+t+'</option>';}).join('');
+    var typeOpts = ALL_TYPES.map(function(t){return'<option value="'+t+'"'+(t===typeVal?' selected':'')+'>'+typeLabelFull(t)+'</option>';}).join('');
     var isLongPos = longTypes.indexOf(typeVal) !== -1;
     var openPremLabel = isLongPos ? 'Premium Paid — Open ($)' : 'Premium Received — Open ($)';
     var closePremLabel = isLongPos ? 'Premium Received — Close ($)' : 'Premium Paid — Close ($)';
@@ -14792,14 +14903,14 @@ function showAddTrade(existingTrade, prefill){
 
       '<!-- Row 2: Strike + Month -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
-        _fldWrap('Strike','<input id="nt_s" placeholder="50" style="'+s+'"'+(isEdit?' value="'+existingTrade.strike+'"':'')+'>') +
+        _fldWrap(typeVal==='CDS'?'Strikes (alınan/satılan)':'Strike','<input id="nt_s" placeholder="'+(typeVal==='CDS'?'750/760':'50')+'" style="'+s+'"'+(isEdit?' value="'+existingTrade.strike+'"':'')+'>','nt_s_lbl') +
         _fldWrap('Month','<select id="nt_m" style="'+s+';color:#F5EDE0;background:#796D66;">'+mo+'</select>')+
       '</div>'+
 
       '<!-- Row 3: Qty + Collateral -->'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'+
         _fldWrap('Contracts','<input id="nt_q" type="number" placeholder="1" value="'+(isEdit?existingTrade.q:1)+'" style="'+s+'">') +
-        _fldWrap('Collateral ($)','<input id="nt_c" type="number" placeholder="14000" style="'+s+'"'+(isEdit&&existingTrade.teminat?' value="'+existingTrade.teminat+'"':'')+'>') +
+        _fldWrap(isLongPos?'Collateral ($) — yok (borç)':'Collateral ($)','<input id="nt_c" type="number" placeholder="'+(isLongPos?'0':'14000')+'" style="'+s+'"'+(isEdit&&existingTrade.teminat?' value="'+existingTrade.teminat+'"':'')+'>','nt_c_lbl') +
       '</div>'+
 
       '<!-- AÇILIŞ BÖLÜMÜ -->'+
@@ -14919,7 +15030,7 @@ function showAddTrade(existingTrade, prefill){
       // Seçili type göster (tıklanabilir)
       var _tyBtn = document.createElement('div');
       _tyBtn.style.cssText = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:11px 13px;color:#FFF3E0;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;-webkit-user-select:none';
-      _tyBtn.innerHTML = '<span id="nt_ty_label">'+typeVal+'</span><span style="font-size:10px;opacity:0.5">▼</span>';
+      _tyBtn.innerHTML = '<span id="nt_ty_label">'+typeLabelFull(typeVal)+'</span><span style="font-size:10px;opacity:0.5">▼</span>';
       // Gizli input değer için
       var _tyHidden = document.createElement('input');
       _tyHidden.type='hidden'; _tyHidden.id='nt_ty'; _tyHidden.value=typeVal;
@@ -14947,12 +15058,16 @@ function showAddTrade(existingTrade, prefill){
           var item = document.createElement('div');
           item.style.cssText = 'padding:13px 16px;font-size:14px;color:'+(t===typeVal?'#3B82F6':'#F1F5F9')+';cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-weight:'+(t===typeVal?'700':'400');
           if(t===typeVal) item.style.background='rgba(59,130,246,0.1)';
-          item.textContent = t;
+          item.textContent = typeLabelFull(t);
           item.onclick = function(ev){
             ev.stopPropagation();
             _tyHidden.value = t;
-            document.getElementById('nt_ty_label').textContent = t;
+            document.getElementById('nt_ty_label').textContent = typeLabelFull(t);
             dd.remove();
+            var _sLbl = sheet.querySelector('#nt_s_lbl'), _sInp = sheet.querySelector('#nt_s'), _cLbl = sheet.querySelector('#nt_c_lbl');
+            if(_sLbl) _sLbl.textContent = t === 'CDS' ? 'Strikes (alınan/satılan)' : 'Strike';
+            if(_sInp) _sInp.placeholder = t === 'CDS' ? '750/760' : '50';
+            if(_cLbl) _cLbl.textContent = isLong(t) ? 'Collateral ($) — yok (borç)' : 'Collateral ($)';
             // typeVal güncelle ve label'ları yenile
             var _isLong2 = isLong(t);
             // DIKKAT: burada sheet.querySelectorAll('label') aranıyordu ama form
@@ -15740,7 +15855,7 @@ function _renderVergiInner(){
         var dt=document.createElement('div');dt.style.cssText='font-size:9px;color:var(--text-3);margin-top:1px';dt.textContent=(tr.opened||'')+' → '+lastCloseDate;
         c1.appendChild(sp);c1.appendChild(dt);
 
-        var c2=document.createElement('div');c2.style.cssText='font-size:10px;padding:2px 5px;border-radius:4px;background:var(--row-alt);color:var(--text-2);text-align:center';c2.textContent=tr.type;
+        var c2=document.createElement('div');c2.style.cssText='font-size:10px;padding:2px 5px;border-radius:4px;background:var(--row-alt);color:var(--text-2);text-align:center';c2.textContent=typeLabel(tr.type);
         var c3=document.createElement('div');c3.style.cssText='font-family:var(--font-mono);color:var(--profit);font-size:11px';c3.textContent=alinan>0?fmtA$(alinan):'-';
         var c4=document.createElement('div');c4.style.cssText='font-family:var(--font-mono);color:var(--loss);font-size:11px';c4.textContent=odenen>0?fmtA$(odenen):'-';
         var c5=document.createElement('div');c5.style.cssText='font-family:var(--font-mono);color:var(--text-3);font-size:11px';c5.textContent=res.komAcilis>0?fmtA$(res.komAcilis):'-';
@@ -16062,7 +16177,7 @@ function openTradeDetail(tradeId, month){
   ico.style.cssText='width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:'+tc.bg+';color:'+tc.color;
   ico.textContent=trade.ticker.split(' ')[0].slice(0,4);
   var inf=document.createElement('div');inf.style.flex='1';
-  var tn=document.createElement('div');tn.style.cssText='font-size:17px;font-weight:700;color:var(--text)';tn.textContent=trade.ticker+' ('+trade.type+')';
+  var tn=document.createElement('div');tn.style.cssText='font-size:17px;font-weight:700;color:var(--text)';tn.textContent=trade.ticker+' ('+typeLabel(trade.type)+')';
   var td2=document.createElement('div');td2.style.cssText='font-size:11px;color:var(--text-3);margin-top:3px';
   td2.textContent=trade.opened+(trade.closed?' > '+trade.closed:' - Open');
   inf.appendChild(tn);inf.appendChild(td2);
@@ -16103,7 +16218,7 @@ function openTradeDetail(tradeId, month){
   sh.appendChild(box);
 
   // ── IC / Spread Legs Breakdown ─────────────────────────────────
-  if((trade.type==='IC'||trade.type==='PCS'||trade.type==='CCS'||trade.type==='BCS') && trade.legs && trade.legs.length){
+  if((trade.type==='IC'||trade.type==='PCS'||trade.type==='CCS'||trade.type==='BCS'||trade.type==='CDS') && trade.legs && trade.legs.length){
     var legBox=document.createElement('div');
     legBox.style.cssText='background:rgba(255,255,255,0.03);border-radius:12px;padding:10px 14px;margin-bottom:12px';
     var legHdr=document.createElement('div');
@@ -16836,7 +16951,7 @@ function renderPlannedList(){
       +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
       +'<div style="display:flex;align-items:center;gap:8px">'
       +'<span style="font-size:16px;font-weight:800;font-family:monospace;color:#f1f5f9">'+p.ticker+'</span>'
-      +'<span style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:5px;font-size:10px;font-weight:700;padding:2px 8px">'+p.type+'</span>'
+      +'<span style="background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:5px;font-size:10px;font-weight:700;padding:2px 8px">'+typeLabel(p.type)+'</span>'
       +'</div>'
       +'<span style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">'+planStatusControls(p,i)
       +'<button onclick="deletePlan('+i+')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:11px;font-weight:600;cursor:pointer;padding:3px 10px">Delete</button>'+'</span>'
