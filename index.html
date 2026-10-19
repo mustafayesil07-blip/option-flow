@@ -5149,6 +5149,18 @@ function runCalculationTests(){
 // ═══════════════════════════════════════════════════════════════════════
 // TANI EKRANI (Debug sekmesi) — veri butunlugu, migration kaydi, testler
 // ═══════════════════════════════════════════════════════════════════════
+async function _diagRenderSnapshots(btn){
+  var el = document.getElementById('diagSnapList'); if(!el) return;
+  var E = escHtml;
+  try { await bkMigrateLocalBackups(); } catch(e){}
+  var snaps = await listPrerestoreSnapshots();
+  var h = '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">Yerel depolama: ' + (lsUsageBytes() / 1048576).toFixed(2) + ' MB kullanılıyor</div>';
+  if(snaps.length){
+    h += '<div style="font-size:11px;margin-bottom:4px;">Geri yükleme öncesi yerel anlık görüntüler:</div>';
+    snaps.forEach(function(k){ h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;margin-bottom:4px;"><span style="font-family:var(--font-mono);color:var(--text-3);">' + E(k.replace(PRERESTORE_PREFIX, '')) + '</span><button style="' + btn + '" onclick="syncRestoreLocalSnapshot(\'' + E(k) + '\').then(function(r){if(r&&r.ok){alert(\'Yerel anlık görüntü geri yüklendi. Önceki hal: \'+r.backupKey);showDiagnostics(true);}else if(r&&r.error)alert(r.error);});">Bu hale dön</button></div>'; });
+  }
+  el.innerHTML = h;
+}
 function showDiagnostics(refresh){
   var ov = document.getElementById('_diagOverlay');
   if(ov && !refresh){ ov.remove(); ov = null; }
@@ -5244,11 +5256,8 @@ function showDiagnostics(refresh){
       var rows = CLOUD_PROFILE_IDS.map(function(pid){ var st = syncLoadState(pid);
         return E(pid) + ': son eşitleme ' + (st.lastSyncAt ? E(_cloudFmtTime(st.lastSyncAt)) : '—') + ' · rev ' + E(String(st.lastSyncRevision == null ? '—' : st.lastSyncRevision)) + (st.dirty ? ' · <span style="color:var(--warn)">yerel değişiklik</span>' : '') + (st.conflicts.length ? ' · <span style="color:var(--loss)">' + st.conflicts.length + ' çakışma</span>' : ''); });
       h += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">' + rows.join('<br>') + '<br>Cihaz: ' + E(getDeviceId()) + '</div>';
-      var snaps = listPrerestoreSnapshots();
-      if(snaps.length){
-        h += '<div style="font-size:11px;margin-bottom:4px;">Geri yükleme öncesi yerel anlık görüntüler:</div>';
-        snaps.forEach(function(k){ h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;margin-bottom:4px;"><span style="font-family:var(--font-mono);color:var(--text-3);">' + E(k.replace(PRERESTORE_PREFIX, '')) + '</span><button style="' + btn + '" onclick="var r=syncRestoreLocalSnapshot(\'' + E(k) + '\');if(r&&r.ok){alert(\'Yerel anlık görüntü geri yüklendi. Önceki hal: \'+r.backupKey);showDiagnostics(true);}else if(r&&r.error)alert(r.error);">Bu hale dön</button></div>'; });
-      }
+      h += '<div id="diagSnapList"></div>';
+      setTimeout(function(){ _diagRenderSnapshots(btn); }, 0);
     } catch(e){}
   })();
 
@@ -5608,6 +5617,96 @@ function getDeviceId(){
 function _pk(pid, base){ return _cloudProfileKey(pid, base); }
 function _lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function _lsJSON(k, d){ var v = _lsGet(k); if(v === null) return d; try { return JSON.parse(v); } catch(e){ return d; } }
+
+// ── Yedek deposu (IndexedDB) ───────────────────────────────────────────
+// Geri yukleme / migration oncesi tam yedekler localStorage'a (~5 MB) sigmiyor;
+// birkac yedek birikince kota doluyor ve geri yukleme hic yapilamiyordu.
+// Yedekler artik IndexedDB'de (yuzlerce MB). IDB yoksa localStorage yedek yol.
+var BK_DB_NAME = 'optflow_backups', BK_STORE = 'snaps';
+var BK_KEEP_PRERESTORE = 5, BK_KEEP_PREMIG = 3;
+var _bkDbP = null;
+function _bkDb(){
+  if(_bkDbP) return _bkDbP;
+  _bkDbP = new Promise(function(res, rej){
+    try {
+      if(typeof indexedDB === 'undefined' || !indexedDB) return rej(new Error('IndexedDB yok'));
+      var rq = indexedDB.open(BK_DB_NAME, 1);
+      rq.onupgradeneeded = function(){ if(!rq.result.objectStoreNames.contains(BK_STORE)) rq.result.createObjectStore(BK_STORE); };
+      rq.onsuccess = function(){ res(rq.result); };
+      rq.onerror = function(){ rej(rq.error || new Error('IndexedDB açılamadı')); };
+      rq.onblocked = function(){ rej(new Error('IndexedDB engellendi')); };
+    } catch(e){ rej(e); }
+  });
+  _bkDbP.catch(function(){ _bkDbP = null; });
+  return _bkDbP;
+}
+function _bkTx(mode, fn){
+  return _bkDb().then(function(db){ return new Promise(function(res, rej){
+    var tx = db.transaction(BK_STORE, mode), st = tx.objectStore(BK_STORE), out;
+    var rq = fn(st); if(rq) rq.onsuccess = function(){ out = rq.result; };
+    tx.oncomplete = function(){ res(out); };
+    tx.onerror = tx.onabort = function(){ rej(tx.error || new Error('IndexedDB yazılamadı')); };
+  }); });
+}
+function bkPut(key, str){ return _bkTx('readwrite', function(st){ return st.put(str, key); }); }
+function bkGet(key){ return _bkTx('readonly', function(st){ return st.get(key); }); }
+function bkDel(key){ return _bkTx('readwrite', function(st){ return st.delete(key); }); }
+function bkKeys(){ return _bkTx('readonly', function(st){ return st.getAllKeys(); }).then(function(k){ return (k || []).map(String); }); }
+function _bkIsBackupKey(k){ return !!k && (k.indexOf(PRERESTORE_PREFIX) === 0 || k.indexOf(PREMIG_BACKUP_PREFIX) !== -1); }
+function _lsKeysWhere(pred){
+  var out = [];
+  try { for(var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); if(pred(k)) out.push(k); } } catch(e){}
+  return out;
+}
+// Silinecek yedekler: anlik goruntulerden son 5, migration yedeklerinden profil basina son 3 kalir.
+function _bkPruneList(keys, extraKeep){
+  var pre = [], mig = {};
+  keys.forEach(function(k){
+    if(k.indexOf(PRERESTORE_PREFIX) === 0) pre.push(k);
+    else if(k.indexOf(PREMIG_BACKUP_PREFIX) !== -1){ var g = k.slice(0, k.indexOf(PREMIG_BACKUP_PREFIX)); (mig[g] = mig[g] || []).push(k); }
+  });
+  var stamp = function(k){ return k.replace(/^.*_v\d+_/, ''); };
+  var drop = pre.sort().slice(0, Math.max(0, pre.length - Math.max(0, BK_KEEP_PRERESTORE - (extraKeep || 0))));
+  Object.keys(mig).forEach(function(g){
+    var l = mig[g].sort(function(a, b){ return stamp(a) < stamp(b) ? -1 : stamp(a) > stamp(b) ? 1 : 0; });
+    drop = drop.concat(l.slice(0, Math.max(0, l.length - BK_KEEP_PREMIG)));
+  });
+  return drop;
+}
+// Acilista: localStorage'daki eski yedekleri IndexedDB'ye tasi, sonra localStorage'dan sil.
+// Bir yedek ancak IDB'ye yazildiktan SONRA silinir.
+var _bkMigrateP = null;
+function bkMigrateLocalBackups(){
+  if(_bkMigrateP) return _bkMigrateP;
+  _bkMigrateP = (async function(){
+    var res = { moved:0, freed:0, pruned:0, idb:true };
+    var lsKeys = _lsKeysWhere(_bkIsBackupKey);
+    try {
+      for(var i = 0; i < lsKeys.length; i++){
+        var v = _lsGet(lsKeys[i]); if(v === null) continue;
+        await bkPut(lsKeys[i], v);
+        try { localStorage.removeItem(lsKeys[i]); res.moved++; res.freed += lsKeys[i].length + v.length; } catch(e){}
+      }
+      var drop = _bkPruneList(await bkKeys());
+      for(var j = 0; j < drop.length; j++){ await bkDel(drop[j]); res.pruned++; }
+    } catch(e){
+      res.idb = false; res.error = e && e.message;
+      // IDB yok: en azindan localStorage'daki fazlaliklari buda
+      _bkPruneList(_lsKeysWhere(_bkIsBackupKey)).forEach(function(k){ try { var v = _lsGet(k); localStorage.removeItem(k); res.pruned++; res.freed += k.length + (v ? v.length : 0); } catch(e2){} });
+    }
+    if(res.moved || res.pruned) console.info('[backup] yedekler tasindi/budandi', res);
+    return res;
+  })();
+  _bkMigrateP.then(function(){ _bkMigrateP = null; }, function(){ _bkMigrateP = null; });
+  return _bkMigrateP;
+}
+// localStorage kullanimi (yaklasik, UTF-16 karakter x2 bayt)
+function lsUsageBytes(){
+  var n = 0;
+  try { for(var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch(e){}
+  return n;
+}
+try { setTimeout(function(){ bkMigrateLocalBackups(); }, 0); } catch(e){}
 
 // ── Durum ───────────────────────────────────────────────────────────────
 function syncLoadState(pid){
@@ -6099,7 +6198,7 @@ async function syncCheckCloudStatus(){
 }
 
 // ── Buluttan geri yukle (yerel veriyi DEGISTIRIR) ──────────────────────
-function _syncPrerestoreBackup(){
+function _syncBuildPrerestoreSnap(){
   var snap = { at:new Date().toISOString(), deviceId:getDeviceId(), keys:{} };
   CLOUD_PROFILE_IDS.forEach(function(pid){
     Object.keys(SYNC_LOCAL_KEYS).forEach(function(k){ var key = _pk(pid, SYNC_LOCAL_KEYS[k]); var v = _lsGet(key); if(v !== null) snap.keys[key] = v; });
@@ -6107,18 +6206,69 @@ function _syncPrerestoreBackup(){
     var sk = _pk(pid, SYNC_STATE_BASE); var sv = _lsGet(sk); if(sv !== null) snap.keys[sk] = sv;
   });
   Object.keys(SYNC_SHARED_LOCAL).forEach(function(k){ var v = _lsGet(SYNC_SHARED_LOCAL[k]); if(v !== null) snap.keys[SYNC_SHARED_LOCAL[k]] = v; });
-  var key = PRERESTORE_PREFIX + snap.at.replace(/[:.]/g, '-');
-  localStorage.setItem(key, JSON.stringify(snap));             // yazilamazsa istisna -> geri yukleme YAPILMAZ
-  // En eski anlik goruntuler budanir (son 5 kalir)
-  var all = [];
-  for(var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); if(k && k.indexOf(PRERESTORE_PREFIX) === 0) all.push(k); }
-  all.sort().slice(0, Math.max(0, all.length - 5)).forEach(function(k){ try { localStorage.removeItem(k); } catch(e){} });
-  return key;
+  return snap;
 }
-function listPrerestoreSnapshots(){
+// Geri yuklemenin yazabilecegi tum anahtarlar (geri alma icin)
+function _syncRestoreTouchedKeys(){
   var out = [];
-  for(var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); if(k && k.indexOf(PRERESTORE_PREFIX) === 0) out.push(k); }
-  return out.sort().reverse();
+  CLOUD_PROFILE_IDS.forEach(function(pid){
+    Object.keys(SYNC_LOCAL_KEYS).forEach(function(k){ out.push(_pk(pid, SYNC_LOCAL_KEYS[k])); });
+    Object.keys(SYNC_SCALAR_LOCAL).forEach(function(k){ out.push(_pk(pid, SYNC_SCALAR_LOCAL[k])); });
+    out.push(_pk(pid, SYNC_STATE_BASE));
+  });
+  Object.keys(SYNC_SHARED_LOCAL).forEach(function(k){ out.push(SYNC_SHARED_LOCAL[k]); });
+  out.push(SYNC_SHARED_STATE_KEY);
+  return out;
+}
+// Yarida kalan bir yazmayi anlik goruntuye geri sarar. Once yeni degerler
+// silinir (yer acilir), sonra eski degerler yazilir.
+function _syncRollbackTo(snap){
+  var keys = _syncRestoreTouchedKeys().concat(Object.keys(snap.keys)), failed = [];
+  keys.forEach(function(k){ if(!(k in snap.keys)) try { localStorage.removeItem(k); } catch(e){} });
+  Object.keys(snap.keys).forEach(function(k){ try { localStorage.removeItem(k); } catch(e){} });
+  Object.keys(snap.keys).forEach(function(k){ try { localStorage.setItem(k, snap.keys[k]); } catch(e){ failed.push(k); } });
+  return failed;
+}
+var PRERESTORE_NO_SPACE_MSG = 'Geri yükleme öncesi yerel yedek alınamadı (tarayıcı depolama alanı dolu). '
+  + 'Hiçbir veri değiştirilmedi. Önce Ayarlar → Data → "Export backup (JSON)" ile yedeği indirip tekrar deneyin.';
+// Tum profillerin yerel verisinin anlik goruntusunu alir. Once IndexedDB,
+// olmazsa localStorage. Eski goruntuler YAZMADAN ONCE budanir (son 5).
+// Hicbir yere yazilamazsa istisna -> geri yukleme YAPILMAZ.
+// Doner: { key, snap, store:'idb'|'local' }
+async function _syncPrerestoreBackup(){
+  var snap = _syncBuildPrerestoreSnap();
+  var key = PRERESTORE_PREFIX + snap.at.replace(/[:.]/g, '-');
+  var str = JSON.stringify(snap);
+  try {
+    await bkMigrateLocalBackups();
+    var drop = _bkPruneList((await bkKeys()).filter(function(k){ return k.indexOf(PRERESTORE_PREFIX) === 0; }), 1);
+    for(var i = 0; i < drop.length; i++) await bkDel(drop[i]);
+    await bkPut(key, str);
+    if((await bkGet(key)) !== str) throw new Error('IndexedDB doğrulanamadı');
+    return { key:key, snap:snap, store:'idb' };
+  } catch(e){ console.warn('[backup] IndexedDB kullanilamadi, localStorage deneniyor', e && e.message); }
+  // Yedek yol: localStorage — yer acmak icin eski anlik goruntuler once silinir
+  _bkPruneList(_lsKeysWhere(function(k){ return !!k && k.indexOf(PRERESTORE_PREFIX) === 0; }), 1)
+    .forEach(function(k){ try { localStorage.removeItem(k); } catch(e){} });
+  try { localStorage.setItem(key, str); }
+  catch(e){
+    var old = _lsKeysWhere(function(k){ return !!k && k.indexOf(PRERESTORE_PREFIX) === 0; }).sort();
+    while(old.length){ try { localStorage.removeItem(old.shift()); } catch(e2){} try { localStorage.setItem(key, str); return { key:key, snap:snap, store:'local' }; } catch(e3){} }
+    throw new Error(PRERESTORE_NO_SPACE_MSG);
+  }
+  return { key:key, snap:snap, store:'local' };
+}
+async function listPrerestoreSnapshots(){
+  var seen = {};
+  _lsKeysWhere(function(k){ return !!k && k.indexOf(PRERESTORE_PREFIX) === 0; }).forEach(function(k){ seen[k] = 1; });
+  try { (await bkKeys()).forEach(function(k){ if(k.indexOf(PRERESTORE_PREFIX) === 0) seen[k] = 1; }); } catch(e){}
+  return Object.keys(seen).sort().reverse();
+}
+async function _bkReadSnapshot(key){
+  var raw = null;
+  try { raw = await bkGet(key); } catch(e){}
+  if(raw === undefined || raw === null) raw = _lsGet(key);
+  return raw;
 }
 // Bulut icerigini okur (v2 ya da eski format) — yazmaz.
 async function syncReadCloudForRestore(cloud){
@@ -6174,9 +6324,20 @@ async function syncRestoreFromCloud(opts){
             + '  profiller: ' + pids.join(', ') + '\n\n'
             + 'Önce bu cihazın verisinin yerel yedeği alınacak.\nDevam edilsin mi?';
     if(!ask(msg)){ _syncBusy = false; _syncRefreshIdle(); return { ok:false, cancelled:true }; }
-    var backupKey = _syncPrerestoreBackup();
-    pids.forEach(function(pid){ syncWriteLocalProfile(pid, data.profiles[pid], null); });
-    if(data.shared) Object.keys(data.shared).forEach(function(k){ try { localStorage.setItem(SYNC_SHARED_LOCAL[k], JSON.stringify(data.shared[k] || {})); } catch(e){} });
+    var bk = await _syncPrerestoreBackup(), backupKey = bk.key;
+    try {
+      pids.forEach(function(pid){ syncWriteLocalProfile(pid, data.profiles[pid], null); });
+      if(data.shared) Object.keys(data.shared).forEach(function(k){ localStorage.setItem(SYNC_SHARED_LOCAL[k], JSON.stringify(data.shared[k] || {})); });
+    } catch(we){
+      // Yazma yarida kaldi (kota) -> yerel veri eski haline doner
+      var rbFail = _syncRollbackTo(bk.snap);
+      _syncBusy = false;
+      var wm = 'Bulut verisi bu cihaza yazılamadı (' + ((we && we.message) || we) + '). '
+             + (rbFail.length ? 'Yerel veri tam geri alınamadı; yedek: ' + backupKey : 'Yerel veri eski haline döndürüldü.');
+      setSyncStatus('ERROR', wm);
+      if(typeof reloadProfileData === 'function' && ACTIVE_PROFILE) reloadProfileData();
+      return { ok:false, error:wm, backupKey:backupKey, rolledBack:!rbFail.length };
+    }
     // Dogrula: yerelden geri oku ve say
     var mismatch = [];
     pids.forEach(function(pid){
@@ -6214,13 +6375,19 @@ async function syncRestoreFromCloud(opts){
   }
 }
 // Son geri yukleme oncesine don (yerel anlik goruntu)
-function syncRestoreLocalSnapshot(key, confirmFn){
+async function syncRestoreLocalSnapshot(key, confirmFn){
   var ask = confirmFn || function(m){ return confirm(m); };
-  var raw = _lsGet(key); if(!raw) return { ok:false, error:'Anlık görüntü bulunamadı: ' + key };
+  var raw = await _bkReadSnapshot(key); if(!raw) return { ok:false, error:'Anlık görüntü bulunamadı: ' + key };
   var snap; try { snap = JSON.parse(raw); } catch(e){ return { ok:false, error:'Anlık görüntü okunamadı' }; }
   if(!ask('This restore will replace local data.\n' + _cloudFmtTime(snap.at) + ' tarihli yerel anlık görüntüye dönülsün mü?')) return { ok:false, cancelled:true };
-  var before = _syncPrerestoreBackup();
-  Object.keys(snap.keys).forEach(function(k){ localStorage.setItem(k, snap.keys[k]); });
+  var bk;
+  try { bk = await _syncPrerestoreBackup(); } catch(e){ return { ok:false, error:(e && e.message) || String(e) }; }
+  var before = bk.key;
+  try { Object.keys(snap.keys).forEach(function(k){ localStorage.setItem(k, snap.keys[k]); }); }
+  catch(we){
+    var rbFail = _syncRollbackTo(bk.snap);
+    return { ok:false, error:'Anlık görüntü yazılamadı (' + ((we && we.message) || we) + '). ' + (rbFail.length ? 'Yedek: ' + before : 'Yerel veri değiştirilmedi.') };
+  }
   syncAdoptImported('local-snapshot');
   if(typeof reloadProfileData === 'function' && ACTIVE_PROFILE) reloadProfileData();
   return { ok:true, backupKey:before };
@@ -17428,6 +17595,7 @@ function reloadProfileData() {
   // buluttan geri yuklemede de calisir (kayit bazinda idempotent).
   try { loadStockPositions(); } catch(e){ stockPositions = []; }
   try { runDataMigrations('profile-load'); } catch(e){ console.warn('[migration]', e && e.message); }
+  try { bkMigrateLocalBackups(); } catch(e){}   // yeni migration yedegi de IndexedDB'ye
   // Degisiklik izleyicinin taban cizgisi yuklemede alinir; boylece yuklemeden
   // sonraki ILK duzenleme de updatedAt/revision/deviceId damgasi alir.
   try { syncEnsureTrackingBaseline(); } catch(e){}
