@@ -10820,7 +10820,15 @@ function _srDaysBetween(a, b){
 // ICINDE ACILMIS pozisyonlar gelir; onceki ay acilip bu ay kapanan islem
 // listede olmaz. Butun hizli secimler ayni mantikla calisir.
 // durum: 'closed' (kapanmis) | 'open' (acik) | 'all' (tumu)
-function _repFilterTrades(fromISO, toISO, types, status){
+// basis: tarih araligi neye gore uygulanir —
+//   'opened' (varsayilan): aralikta ACILMIS islemler (kapanisi sonra olabilir)
+//   'closed': aralikta KAPANMIS islemler (acilisi once olabilir; acik islem giremez)
+//   'either': aralikta acilmis YA DA kapanmis islemler (karma)
+function _repInRange(iso, fromISO, toISO){
+  if(!iso) return false;
+  return !(fromISO && iso < fromISO) && !(toISO && iso > toISO);
+}
+function _repFilterTrades(fromISO, toISO, types, status, basis){
   var wanted = null;
   if(types && types.length){
     wanted = {};
@@ -10834,9 +10842,10 @@ function _repFilterTrades(fromISO, toISO, types, status){
     if(wanted && !wanted[t.type]) return false;
     if(!t.opened) return false;
     var od = String(t.opened).substring(0,10);
-    if(fromISO && od < fromISO) return false;
-    if(toISO   && od > toISO)   return false;
     var isClosed = !!(t.closed && t.pnl != null);
+    var cd = isClosed ? String(t.closed).substring(0,10) : null;
+    var inO = _repInRange(od, fromISO, toISO), inC = _repInRange(cd, fromISO, toISO);
+    if(basis === 'closed' ? !inC : basis === 'either' ? !(inO || inC) : !inO) return false;
     if(status === 'closed') return isClosed;
     if(status === 'open')   return !isClosed;
     return true;
@@ -10844,9 +10853,9 @@ function _repFilterTrades(fromISO, toISO, types, status){
 }
 
 // Secili aralikta ACILMIS PCS/BCS islemleri + ozet
-function _spreadReportData(fromISO, toISO, types, status){
+function _spreadReportData(fromISO, toISO, types, status, basis){
   var rows = [];
-  _repFilterTrades(fromISO, toISO, types, status).forEach(function(t){
+  _repFilterTrades(fromISO, toISO, types, status, basis).forEach(function(t){
     var isClosed = calcIsClosedTrade(t) && calcTradePnl(t) !== null;
     var cd = isClosed ? String(t.closed).substring(0,10) : null;
 
@@ -10889,10 +10898,12 @@ function _spreadReportData(fromISO, toISO, types, status){
     });
   });
   // Acilis tarihine gore sirala (filtrenin dayanagi da bu)
-  rows.sort(function(a,b){ return a.opened < b.opened ? -1 : a.opened > b.opened ? 1 : 0; });
+  // ('closed' tabaninda kapanis tarihine gore)
+  var _sk = function(r){ return basis === 'closed' ? (r.closed || r.opened) : r.opened; };
+  rows.sort(function(a,b){ return _sk(a) < _sk(b) ? -1 : _sk(a) > _sk(b) ? 1 : 0; });
 
   var done      = rows.filter(function(r){ return !r.isOpen; });
-  var _srcTrades = _repFilterTrades(fromISO, toISO, types, status);
+  var _srcTrades = _repFilterTrades(fromISO, toISO, types, status, basis);
   var _ws       = calcWinStats(_srcTrades);
   var _agg      = calcAggregateROC(_srcTrades);
   var wins      = _ws.wins;
@@ -10904,7 +10915,7 @@ function _spreadReportData(fromISO, toISO, types, status){
   var doneCredit = done.reduce(function(s,r){ return s + r.credit; }, 0);
   return {
     rows: rows,
-    from: fromISO, to: toISO, status: status,
+    from: fromISO, to: toISO, status: status, basis: basis || 'opened',
     count: rows.length,
     closedCount: done.length,
     openCount: rows.length - done.length,
@@ -11524,8 +11535,13 @@ function showSpreadReport(){
 // Islem bazli kredi ve P&L dolar rakamlari serbesttir.
 var _xrFrom = null, _xrTo = null, _xrStatus = 'closed', _xrTypes = null;  // null = tum turler
 var _xrShowCapital = true;   // teminat/portfoy satiri kartta gorunsun mu
+var _xrBasis = 'opened';     // tarih filtresi: 'opened' | 'closed' | 'either'
 
-function _xrData(){ return _spreadReportData(_xrFrom, _xrTo, _xrTypes, _xrStatus); }
+function _xrData(){ return _spreadReportData(_xrFrom, _xrTo, _xrTypes, _xrStatus, _xrBasis); }
+
+function _xrBasisLabel(b){
+  return b === 'closed' ? 'CLOSED IN PERIOD' : b === 'either' ? 'OPENED OR CLOSED IN PERIOD' : 'OPENED IN PERIOD';
+}
 
 function _xrStatusLabel(st){
   return st === 'open' ? 'OPEN POSITIONS' : st === 'all' ? 'ALL TRADES' : 'CLOSED TRADES';
@@ -11667,7 +11683,7 @@ function _xrPaintCard(c, D, W){
   var yy = 22;
 
   // ── Ust bant: gercek filtre acikligi ──
-  text((_xrStatusLabel(D.status) + ' · OPENED IN PERIOD').toUpperCase(), W / 2, yy + 10, F(10, '700'), MUT2, 'center', 1.4);
+  text((_xrStatusLabel(D.status) + ' · ' + _xrBasisLabel(D.basis)).toUpperCase(), W / 2, yy + 10, F(10, '700'), MUT2, 'center', 1.4);
   yy += 44;
 
   // ── Hero ──
@@ -11921,7 +11937,7 @@ function _xrPaintCard(c, D, W){
   // ── Alt bilgi ──
   text('Personal trading journal · Not financial advice', W / 2, yy + 10, F(11, '600'), MUT, 'center');
   yy += 16;
-  text('Positions opened in period · ROC = realized P&L ÷ cash collateral · CC/PMCC: no cash collateral', W / 2, yy + 10, F(9.5, '500'), MUT2, 'center');
+  text('Positions ' + _xrBasisLabel(D.basis).toLowerCase() + ' · ROC = realized P&L ÷ cash collateral · CC/PMCC: no cash collateral', W / 2, yy + 10, F(9.5, '500'), MUT2, 'center');
   yy += 30;
 
   // ── Zemin + cok hafif atmosferik isilti (en arkaya) ──
@@ -11979,7 +11995,7 @@ function buildXTweet(D){
            : D.status === 'all'  ? '📊 ' + period + ' · all trades'
                                  : '📊 ' + period + ' · closed trades';
   L.push(head);
-  var line2 = D.count + ' position' + (D.count === 1 ? '' : 's') + ' opened';
+  var line2 = D.count + ' position' + (D.count === 1 ? '' : 's') + ' ' + (D.basis === 'closed' ? 'closed' : D.basis === 'either' ? 'opened or closed' : 'opened');
   if(D.closedCount) line2 += ' · ' + D.winRate + '% win (' + D.wins + 'W/' + D.losses + 'L)';
   L.push(line2);
   if(D.closedCount){
@@ -12040,6 +12056,7 @@ function _xrPreset(kind){
 }
 
 function _xrSetStatus(v){ _xrStatus = v; _xrRefresh(); }
+function _xrSetBasis(v){ _xrBasis = v; _xrRefresh(); }
 
 function _xrToggleCapital(on){
   _xrShowCapital = !!on;
@@ -12062,6 +12079,22 @@ function _xrRefresh(){
   if(fi) _xrFrom = fi.value || null;
   if(ti) _xrTo   = ti.value || null;
 
+  ['opened','closed','either'].forEach(function(v){
+    var b = document.getElementById('xr_dt_' + v);
+    if(!b) return;
+    var on = (_xrBasis === v);
+    b.style.background  = on ? 'var(--accent-soft)' : 'var(--surface-secondary)';
+    b.style.borderColor = on ? 'var(--accent)' : 'transparent';
+    b.style.color       = on ? 'var(--accent)' : 'var(--text-tertiary)';
+  });
+  var bs = document.getElementById('xr_basis_sub');
+  if(bs) bs.textContent = _xrBasis === 'closed' ? 'close' : _xrBasis === 'either' ? 'open or close' : 'open';
+  var bh = document.getElementById('xr_dt_hint');
+  if(bh) bh.textContent = _xrBasis === 'closed'
+    ? 'Only trades closed between the dates (opened any time). Open positions are not included.'
+    : _xrBasis === 'either'
+    ? 'Trades opened OR closed between the dates.'
+    : 'Trades opened between the dates — even if they closed later.';
   ['closed','open','all'].forEach(function(v){
     var b = document.getElementById('xr_st_' + v);
     if(!b) return;
@@ -12578,7 +12611,7 @@ function showXReport(){
   box.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border-subtle);">'
     + '<div><div style="font-size:17px;font-weight:700;color:var(--text-primary);">X Share Report</div>'
-    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Date range by <b>open</b> date · image + tweet text</div></div>'
+    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Date range by <b id="xr_basis_sub">open</b> date · image + tweet text</div></div>'
     + '<button onclick="document.getElementById(\'xr-modal\').remove()" style="width:30px;height:30px;border-radius:50%;background:var(--surface-secondary);border:none;color:var(--text-secondary);font-size:17px;cursor:pointer;">&times;</button>'
     + '</div>'
 
@@ -12599,6 +12632,14 @@ function showXReport(){
     + '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">End</div>'
     +   '<input id="xr_to" type="date" value="' + _xrTo + '" onchange="_xrRefresh()" style="' + dateCss + '"></div>'
     + '</div>'
+
+    + '<div style="' + lblCss + '">Date filter</div>'
+    + '<div style="display:flex;gap:6px;margin-bottom:4px;">'
+    +   btn('xr_dt_opened', 'Opened', "_xrSetBasis('opened')", pill)
+    +   btn('xr_dt_closed', 'Closed', "_xrSetBasis('closed')", pill)
+    +   btn('xr_dt_either', 'Mixed',  "_xrSetBasis('either')", pill)
+    + '</div>'
+    + '<div id="xr_dt_hint" style="font-size:10px;color:var(--text-tertiary);margin-bottom:12px;line-height:1.5;"></div>'
 
     + '<div style="' + lblCss + '">Status</div>'
     + '<div style="display:flex;gap:6px;margin-bottom:12px;">'
