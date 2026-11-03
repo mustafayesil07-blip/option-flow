@@ -3,7 +3,7 @@
 // bunu register ediyor). Depodaki sw.js hicbir yerde kayitli degil —
 // oradaki CACHE surumunu artirmak hicbir sey yapmaz.
 // Yeni surum yayinlarken CACHE degerini burada artirin.
-var CACHE = 'optflow-v68';
+var CACHE = 'optflow-v69';
 var APP_SHELL = '/option-flow/index.html';
 // Uygulamanin calismasi icin gereken her sey kurulumda indirilir; boylece
 // cevrimdisi acilis, dosyalarin daha once tesadufen onbellege girmis

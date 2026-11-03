@@ -5255,7 +5255,7 @@ function showDiagnostics(refresh){
     try {
       var rows = CLOUD_PROFILE_IDS.map(function(pid){ var st = syncLoadState(pid);
         return E(pid) + ': son eşitleme ' + (st.lastSyncAt ? E(_cloudFmtTime(st.lastSyncAt)) : '—') + ' · rev ' + E(String(st.lastSyncRevision == null ? '—' : st.lastSyncRevision)) + (st.dirty ? ' · <span style="color:var(--warn)">yerel değişiklik</span>' : '') + (st.conflicts.length ? ' · <span style="color:var(--loss)">' + st.conflicts.length + ' çakışma</span>' : ''); });
-      h += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">' + rows.join('<br>') + '<br>Cihaz: ' + E(getDeviceId()) + '</div>';
+      h += '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px;">' + rows.join('<br>') + '<br>Cihaz: ' + E(getDeviceId()) + ' · bulut bağlantısı: ' + E((window.OFCloud && window.OFCloud.transport) || '—') + '</div>';
       h += '<div id="diagSnapList"></div>';
       setTimeout(function(){ _diagRenderSnapshots(btn); }, 0);
     } catch(e){}
@@ -5877,9 +5877,12 @@ function syncErrorText(e){
   var msg = e && e.message ? String(e.message) : String(e);
   var hint = '';
   if(/permission/i.test(code + msg)) hint = ' — Firestore güvenlik kuralları optionflow/profiles/** yoluna yazmaya izin vermiyor olabilir (kural: match /optionflow/{document=**}).';
-  else if(/unavailable|offline|network|failed to get document because the client is offline/i.test(code + msg)) hint = ' — bulut erişilemiyor (internet bağlantısı yok ya da Firestore yanıt vermiyor). Yerel veri güvende.';
+  else if(/unavailable|offline|network|failed to get document because the client is offline/i.test(code + msg)) hint = ' — bulut erişilemiyor (internet bağlantısı yok ya da Firestore yanıt vermiyor)'
+    + ((window.OFCloud && window.OFCloud.transport === 'long-polling') ? '; yedek bağlantı türü de denendi. İnternet bağlantısını, VPN / İçerik engelleyici / iCloud Özel Geçiş ayarlarını kontrol edip tekrar deneyin' : '')
+    + '. Yerel veri güvende.';
   else if(/DOC_TOO_LARGE|exceeds the maximum|maximum size/i.test(code + msg)) hint = ' — belge Firestore 1 MiB sınırına yaklaştı.';
-  else if(/deadline-exceeded/i.test(code)) hint = ' — bağlantı yavaş ya da ağ Firestore akış bağlantısını engelliyor.';
+  else if(/deadline-exceeded/i.test(code)) hint = ' — bağlantı yavaş ya da ağ Firestore bağlantısını engelliyor'
+    + ((window.OFCloud && window.OFCloud.transport === 'long-polling') ? ' (yedek bağlantı türü de denendi). İnternet bağlantısını, VPN / İçerik engelleyici / iCloud Özel Geçiş ayarlarını kontrol edip tekrar deneyin.' : '. Tekrar denediğinizde uygulama yedek bağlantı türüne geçecek.');
   return (code ? '[' + code + '] ' : '') + msg + hint;
 }
 // Her bulut cagrisi zaman sinirli: Firestore SDK'si akis kanali (Listen/
@@ -17384,7 +17387,7 @@ function showUpdateBanner() {
   import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
   import { getMessaging, getToken, onMessage }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
-  import { getFirestore, doc, setDoc, getDoc, getDocFromServer, runTransaction, writeBatch }
+  import { getFirestore, initializeFirestore, doc, setDoc, getDoc, getDocFromServer, runTransaction, writeBatch }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   const firebaseConfig = {
@@ -17397,8 +17400,48 @@ function showUpdateBanner() {
   };
 
   const app       = initializeApp(firebaseConfig);
-  const messaging = getMessaging(app);
-  const db        = getFirestore(app);
+  // Bildirim desteklenmeyen tarayicilarda (ör. iPad/iPhone Safari sekmesi)
+  // getMessaging istisna atar; bulut esitlemesi bundan etkilenmemeli.
+  let messaging = null;
+  try { messaging = getMessaging(app); } catch (e) { console.warn('[push] desteklenmiyor:', e && e.message); }
+
+  // ── Firestore baglanti turu ───────────────────────────────────────────
+  // Varsayilan akis baglantisi (WebChannel) bazi aglarda / Safari'de
+  // takilabiliyor: okuma hic donmuyor ve "deadline-exceeded" aliniyordu.
+  // Ilk okuma FS_PROBE_MS icinde donmezse uzun yoklamaya (long-polling)
+  // gecilir ve cihaz bunu hatirlar.
+  const FS_LP_KEY = 'optflow_fs_longpoll';
+  const FS_PROBE_MS = 9000;
+  const _lpPref = () => { try { return localStorage.getItem(FS_LP_KEY) === '1'; } catch (e) { return false; } };
+  let db = _lpPref()
+    ? initializeFirestore(app, { experimentalForceLongPolling: true })
+    : getFirestore(app);
+  let _fsMode = _lpPref() ? 'long-polling' : 'default';
+  let _lpDb = null;
+  function _switchToLongPolling(reason) {
+    if (_fsMode === 'long-polling') return false;
+    if (!_lpDb) _lpDb = initializeFirestore(initializeApp(firebaseConfig, 'optflow-lp'), { experimentalForceLongPolling: true });
+    db = _lpDb; _fsMode = 'long-polling';
+    try { localStorage.setItem(FS_LP_KEY, '1'); } catch (e) {}
+    console.warn('[cloud] Firestore long-polling moduna gecildi:', reason);
+    return true;
+  }
+  const _fsTimeout = (p, ms) => new Promise((res, rej) => {
+    const t = setTimeout(() => { const e = new Error('probe-timeout'); e.code = 'probe-timeout'; rej(e); }, ms);
+    p.then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+  });
+  // Okuma: varsayilan baglantida takilir/erisilemezse bir kez long-polling ile dene.
+  async function _fsRead(fn) {
+    if (_fsMode === 'long-polling') return fn();
+    try { return await _fsTimeout(fn(), FS_PROBE_MS); }
+    catch (e) {
+      const c = String((e && (e.code || e.message)) || '');
+      if (!/probe-timeout|unavailable|offline/i.test(c)) throw e;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) throw e;   // gercekten cevrimdisi
+      _switchToLongPolling(c);
+      return fn();
+    }
+  }
   const VAPID_KEY = "BDcNMAd0E107KD5mOEBPKV1pMAvGZJv0AK1x7_u2Gq1-ylhCjmxLrgjaMueAILZSDRr6EGJTLduKm9BtgTtQTJw";
 
   // ── SADECE bildirim belgesi ('optionflow/main') ────────────────────────
@@ -17453,11 +17496,13 @@ function showUpdateBanner() {
   // Eski tek-belge tam yedek yazan pushFullBackupToCloud KALDIRILDI —
   // "son yazan kazanir" davranisi buydu. backup_all belgesi silinmez;
   // v2'ye tasinirken yedeklenir ve salt okunur kaynak olarak kalir.
-  const _ref = (path) => doc(db, ...String(path).split('/'));
+  const _ref = (path) => doc(db, ...String(path).split('/'));   // her cagrida GUNCEL db
   const _snap = (s) => ({ exists: s.exists(), data: s.exists() ? s.data() : null });
   window.OFCloud = {
     ready: true,
-    get: async (path) => _snap(await getDocFromServer(_ref(path))),
+    get transport() { return _fsMode; },
+    resetTransport: () => { try { localStorage.removeItem(FS_LP_KEY); } catch (e) {} },
+    get: async (path) => _snap(await _fsRead(() => getDocFromServer(_ref(path)))),
     set: async (path, data) => { await setDoc(_ref(path), data); return true; },
     batch: async (ops) => {
       const b = writeBatch(db);
@@ -17484,6 +17529,7 @@ function showUpdateBanner() {
 
   // ── Push bildirim izni ve token al ─────────────────────────────────────
   async function initPush() {
+    if (!messaging) return;
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return;
@@ -17514,7 +17560,7 @@ function showUpdateBanner() {
   }
 
   // ── Uygulama açıkken gelen bildirimler ─────────────────────────────────
-  onMessage(messaging, (payload) => {
+  if (messaging) onMessage(messaging, (payload) => {
     const { title, body } = payload.notification ?? {};
     if (Notification.permission === 'granted') {
       new Notification(title ?? 'OptionFlow', {
