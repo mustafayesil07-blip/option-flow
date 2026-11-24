@@ -11542,6 +11542,26 @@ var _xrBasis = 'opened';     // tarih filtresi: 'opened' | 'closed' | 'either'
 
 function _xrData(){ return _spreadReportData(_xrFrom, _xrTo, _xrTypes, _xrStatus, _xrBasis); }
 
+// ── Islem listesi filtresi (metriklerden BAGIMSIZ) ──
+// 'same'  : liste = metriklerle ayni islemler (varsayilan, eski davranis)
+// 'custom': kendi tarih araligi / tarih tabani / durumu; tarih bos = tum tarihler.
+// Islem turu filtresi (_xrTypes) ikisinde ortaktir.
+var _xrListMode = 'same';
+var _xrListKind = 'same';   // secili dugme: 'same' | 'open' | 'custom'
+var _xrListFrom = null, _xrListTo = null, _xrListBasis = 'opened', _xrListStatus = 'all';
+// Gorsel duzeni: 'combined' (tek gorsel) | 'metrics' | 'trades' | 'separate' (iki ayri gorsel)
+var _xrLayout = 'combined';
+
+function _xrListData(){
+  if(_xrListMode !== 'custom') return _xrData();
+  return _spreadReportData(_xrListFrom, _xrListTo, _xrTypes, _xrListStatus, _xrListBasis);
+}
+// Listenin ust etiketi, ör. "OPEN POSITIONS · ALL DATES" / "CLOSED TRADES · SEP 1 – SEP 30, 2026 · CLOSED IN PERIOD"
+function _xrListDesc(L){
+  var dates = (!L.from && !L.to) ? 'ALL DATES' : _xrPeriodLabel(L) + ' · ' + _xrBasisLabel(L.basis);
+  return (_xrStatusLabel(L.status) + ' · ' + dates).toUpperCase();
+}
+
 function _xrBasisLabel(b){
   return b === 'closed' ? 'CLOSED IN PERIOD' : b === 'either' ? 'OPENED OR CLOSED IN PERIOD' : 'OPENED IN PERIOD';
 }
@@ -11632,7 +11652,16 @@ function _xrK(n){
 // ve DEGISTIRILMEDI. Rapordaki HER islem cizilir — "+N more" kisaltmasi
 // yoktur; islem sayisi arttikca satirlar sikisir (comfortable → compact →
 // dense), ama hicbir islem gizlenmez.
-function _xrPaintCard(c, D, W){
+// o.parts: 'combined' (varsayilan) | 'metrics' | 'trades'
+// o.L    : islem listesinin verisi (varsayilan D — metriklerle ayni)
+function _xrPaintCard(c, D, W, o){
+  o = o || {};
+  var parts = o.parts || 'combined';
+  var L = o.L || D;
+  var showM = parts !== 'trades', showT = parts !== 'metrics';
+  // Liste metriklerden ayri filtrelendiyse, filtrenin disladigi bolum (ör.
+  // yalnizca acik islemler istendiyse "Closed Trades") hic cizilmez.
+  var listOwn = (L !== D) || parts === 'trades';
   var BG='#F5F5F7', SURF='#FFFFFF', OPEN_SURF='#F6F8FC', TRACK='#EEF0F4';
   var TXT='#1D1D1F', MUT='#6E6E73', MUT2='#86868B', HAIR='rgba(60,60,67,0.12)';
   var GTXT='#248A3D', GLINE='#34C759', RTXT='#D70015', RLINE='#FF3B30', ACC='#007AFF', ORG='#C93400';
@@ -11669,13 +11698,13 @@ function _xrPaintCard(c, D, W){
     c.restore();
   };
 
-  var closedRows = D.rows.filter(function(r){ return !r.isOpen; }).slice()
+  var closedRows = L.rows.filter(function(r){ return !r.isOpen; }).slice()
     .sort(function(a, b){ return a.closed < b.closed ? 1 : a.closed > b.closed ? -1 : (a.opened < b.opened ? 1 : -1); });
-  var openRows = D.rows.filter(function(r){ return r.isOpen; }).slice()
+  var openRows = L.rows.filter(function(r){ return r.isOpen; }).slice()
     .sort(function(a, b){ return (a.dte === null ? 99999 : a.dte) - (b.dte === null ? 99999 : b.dte); });
 
   // Yogunluk: islem sayisi arttikca satirlar sikisir; hicbiri gizlenmez.
-  var n = D.rows.length;
+  var n = showT ? L.rows.length : D.rows.length;
   var mode = n <= 10 ? 'comfortable' : n <= 22 ? 'compact' : 'dense';
   var M = mode === 'comfortable' ? { rowH:62, l1:20, l2:38, l3:54, tk:15, st:13, pl:16, d2:12.5, d3:11.5 }
         : mode === 'compact'     ? { rowH:46, l1:18, l2:36, tk:14.5, st:12.5, pl:15, d2:12 }
@@ -11684,18 +11713,20 @@ function _xrPaintCard(c, D, W){
   var CAP = _xrShowCapital ? _xrCapital(D) : null;
   var pos = D.totPnl >= 0;
   var yy = 22;
+  var cw = W - PAD * 2;
+  var heroY = null, heroMid = null;
 
+  if(showM){
   // ── Ust bant: gercek filtre acikligi ──
   text((_xrStatusLabel(D.status) + ' · ' + _xrBasisLabel(D.basis)).toUpperCase(), W / 2, yy + 10, F(10, '700'), MUT2, 'center', 1.4);
   yy += 44;
 
   // ── Hero ──
-  var heroY = yy;
+  heroY = yy;
   text(_xrPeriodLabel(D).toUpperCase(), W / 2, yy + 14, F(14, '600'), MUT, 'center', 2);
   yy += 22;
   text('TRADING REPORT', W / 2, yy + 11, F(10.5, '600'), MUT2, 'center', 3);
   yy += 30;
-  var heroMid;
   if(D.closedCount){
     c.font = F(60, '800'); ls(-1.5);
     var heroTxt = _srSigned(D.totPnl), hs = 60;
@@ -11716,7 +11747,7 @@ function _xrPaintCard(c, D, W){
   yy += 34;
 
   // ── Performans seridi ──
-  var mTop = yy, cw = W - PAD * 2;
+  var mTop = yy;
   var rocTxt = (D.rocValue !== null && D.closedCount) ? _srPctFine(D.rocValue) : 'N/A';
   var metrics = [
     { v:D.closedCount ? D.winRate + '%' : '—', l:'WIN RATE', s:D.closedCount ? (D.wins + 'W · ' + D.losses + 'L') : 'no closed trades', col:TXT },
@@ -11753,7 +11784,8 @@ function _xrPaintCard(c, D, W){
   if(D.closedCount) text(_srSigned(D.totPnl), CR, yy + 11, F(13, '700'), pos ? GTXT : RTXT, 'right');
   yy += 24;
   var byDay = {};
-  closedRows.forEach(function(r){ byDay[r.closed] = (byDay[r.closed] || 0) + r.pnl; });
+  // Grafik METRIK verisinden cizilir (liste ayri filtrelenmis olabilir)
+  D.rows.forEach(function(r){ if(!r.isOpen) byDay[r.closed] = (byDay[r.closed] || 0) + r.pnl; });
   var days = Object.keys(byDay).sort(), cum = 0;
   var pts = days.map(function(d){ cum += byDay[d]; return { date:d, cum:Math.round(cum * 100) / 100 }; });
   if(pts.length && D.from && D.from < pts[0].date) pts.unshift({ date:D.from, cum:0 });
@@ -11799,7 +11831,27 @@ function _xrPaintCard(c, D, W){
   yy += CP - 4;
   card(PAD, cTop, cw, yy - cTop, SURF);
   yy += 14;
+  }   // showM (ust kisim)
 
+  // ── Yalnizca islem listesi: kendi basligi ──
+  if(!showM){
+    text(((!L.from && !L.to) ? _xrStatusLabel(L.status) : _xrStatusLabel(L.status) + ' · ' + _xrBasisLabel(L.basis)).toUpperCase(),
+         W / 2, yy + 10, F(10, '700'), MUT2, 'center', 1.4);
+    yy += 40;
+    text(((!L.from && !L.to) ? 'All dates' : _xrPeriodLabel(L)).toUpperCase(), W / 2, yy + 14, F(14, '600'), MUT, 'center', 2);
+    yy += 22;
+    text('TRADE LIST', W / 2, yy + 11, F(10.5, '600'), MUT2, 'center', 3);
+    yy += 30;
+    text(L.count + (L.count === 1 ? ' POSITION' : ' POSITIONS') + '  ·  ' + L.closedCount + ' CLOSED  ·  ' + L.openCount + ' OPEN',
+         W / 2, yy + 11, F(11.5, '600'), MUT, 'center', 1.4);
+    yy += 34;
+  } else if(showT && L !== D){
+    // Birlesik gorselde liste ayri filtrelendiyse: neyin listelendigi acikca yazilir
+    text('TRADE LIST · ' + _xrListDesc(L), W / 2, yy + 8, F(9.5, '700'), MUT2, 'center', 1.2);
+    yy += 22;
+  }
+
+  if(showT){
   // ── Islem listesi yardimcilari ──
   var sectionTop = function(title, sub){
     yy += CP;
@@ -11828,9 +11880,10 @@ function _xrPaintCard(c, D, W){
   var rocOf = function(r){ return r.ror !== null ? _srPct(r.ror) : (r.covered ? 'No cash coll.' : 'ROC N/A'); };
 
   // ── Kapanmis islemler (beyaz yuzey, guclu kontrast) ──
+  if(!(listOwn && L.status === 'open')){
   var clTop = yy;
   sectionTop('Closed Trades', (closedRows.length + (closedRows.length === 1 ? ' POSITION' : ' POSITIONS')
-    + (D.closedCount ? ' · ' + _srSigned(D.totPnl) + ' REALIZED' : '')));
+    + (L.closedCount ? ' · ' + _srSigned(L.totPnl) + ' REALIZED' : '')));
   if(!closedRows.length){
     text('No closed trades in this period', CX, yy + 14, F(13, '500'), MUT2, 'left');
     yy += 30;
@@ -11851,8 +11904,10 @@ function _xrPaintCard(c, D, W){
   yy += CP - 10;
   card(PAD, clTop, cw, yy - clTop, SURF);
   yy += 14;
+  }
 
   // ── Acik pozisyonlar (hafif tonlu yuzey, notr) ──
+  if(!(listOwn && L.status === 'closed')){
   var opTop = yy;
   sectionTop('Open Trades', openRows.length + (openRows.length === 1 ? ' POSITION' : ' POSITIONS') + ' · NO LIVE OPTION PRICES');
   if(!openRows.length){
@@ -11885,8 +11940,11 @@ function _xrPaintCard(c, D, W){
   yy += CP - 10;
   card(PAD, opTop, cw, yy - opTop, OPEN_SURF);
   yy += 14;
+  }
+  }   // showT
 
   // ── Strateji dagilimi + sermaye kullanimi (ikincil) ──
+  if(showM){
   var byType = {};
   D.rows.forEach(function(r){ byType[r.type] = (byType[r.type] || 0) + 1; });
   var mix = Object.keys(byType).map(function(k){ return { type:k, count:byType[k] }; })
@@ -11936,11 +11994,14 @@ function _xrPaintCard(c, D, W){
     yy = sy;
   }
   yy += 24;
+  } else {
+    yy += 10;
+  }
 
   // ── Alt bilgi ──
   text('Personal trading journal · Not financial advice', W / 2, yy + 10, F(11, '600'), MUT, 'center');
   yy += 16;
-  text('Positions ' + _xrBasisLabel(D.basis).toLowerCase() + ' · ROC = realized P&L ÷ cash collateral · CC/PMCC: no cash collateral', W / 2, yy + 10, F(9.5, '500'), MUT2, 'center');
+  text('Positions ' + _xrBasisLabel((showM ? D : L).basis).toLowerCase() + ' · ROC = realized P&L ÷ cash collateral · CC/PMCC: no cash collateral', W / 2, yy + 10, F(9.5, '500'), MUT2, 'center');
   yy += 30;
 
   // ── Zemin + cok hafif atmosferik isilti (en arkaya) ──
@@ -11955,6 +12016,7 @@ function _xrPaintCard(c, D, W){
     rg.addColorStop(1, 'rgba(' + rgbCore + ',0)');
     c.fillStyle = rg; c.fillRect(0, 0, W, Math.min(yy, heroY + r * 1.4));
   };
+  if(showM){
   var heroRGB = pos ? '52,199,89' : '255,59,48';
   // cekirdek: P&L'in hemen arkasinda yogun ton
   glow(W / 2, heroMid, 170, heroRGB, pos ? 0.34 : 0.26, pos ? 0.16 : 0.12);
@@ -11963,19 +12025,23 @@ function _xrPaintCard(c, D, W){
   // yardimci tonlar geri planda, yesili bastirmasin
   glow(W * 0.16, heroY - 10, 210, '0,122,255', 0.06, 0.03);
   glow(W * 0.88, heroMid + 30, 200, '175,82,222', 0.05, 0.02);
+  } else {
+  // yalnizca liste: notr, cok hafif mavi bir ton
+  glow(W / 2, 60, 260, '0,122,255', 0.07, 0.03);
+  }
   c.fillStyle = BG; c.fillRect(0, 0, W, yy);
   c.restore();
 
   return yy;
 }
 
-function _drawXCard(D, scale){
+function _drawXCard(D, scale, o){
   scale = scale || 2;
   var W = 600;                                   // mantiksal genislik; X akisinda okunur punto
   // 1) Olcum gecisi: tum islemler cizildiginde toplam yukseklik.
   var probe = document.createElement('canvas');
   probe.width = W; probe.height = 10;
-  var H = Math.ceil(_xrPaintCard(probe.getContext('2d'), D, W));
+  var H = Math.ceil(_xrPaintCard(probe.getContext('2d'), D, W, o));
   // Cok uzun raporlarda tarayici tuval sinirini asmamak icin olcegi dusur
   // (icerik yine TAM cizilir, sadece piksel yogunlugu azalir).
   while(scale > 1 && H * scale > 16000) scale -= 0.5;
@@ -11985,8 +12051,18 @@ function _drawXCard(D, scale){
   var c = cv.getContext('2d');
   c.scale(scale, scale);
   c.imageSmoothingQuality = 'high';
-  _xrPaintCard(c, D, W);
+  _xrPaintCard(c, D, W, o);
   return cv;
+}
+
+// Secili duzene gore cizilecek gorseller: [{ cv, part }]
+function _xrCanvases(scale){
+  var D = _xrData(), L = _xrListData();
+  var mk = function(part){ return { part:part, cv:_drawXCard(D, scale, { parts:part, L:L }) }; };
+  if(_xrLayout === 'metrics')  return [mk('metrics')];
+  if(_xrLayout === 'trades')   return [mk('trades')];
+  if(_xrLayout === 'separate') return [mk('metrics'), mk('trades')];
+  return [mk('combined')];
 }
 
 // 280 karakteri gecmeyen tweet metni
@@ -12060,6 +12136,29 @@ function _xrPreset(kind){
 
 function _xrSetStatus(v){ _xrStatus = v; _xrRefresh(); }
 function _xrSetBasis(v){ _xrBasis = v; _xrRefresh(); }
+function _xrSetLayout(v){ _xrLayout = v; _xrRefresh(); }
+// Liste: 'same' | 'open' (tum acik islemler, tarih yok) | 'custom'
+function _xrSetListMode(v){
+  _xrListKind = (v === 'open' || v === 'custom') ? v : 'same';
+  if(v === 'open'){ _xrListMode = 'custom'; _xrListStatus = 'open'; _xrListFrom = null; _xrListTo = null; _xrListBasis = 'opened'; }
+  else if(v === 'custom'){
+    if(_xrListMode !== 'custom'){ _xrListFrom = _xrFrom; _xrListTo = _xrTo; _xrListBasis = _xrBasis; _xrListStatus = _xrStatus; }
+    _xrListMode = 'custom';
+  }
+  else _xrListMode = 'same';
+  var fi = document.getElementById('xr_l_from'), ti = document.getElementById('xr_l_to');
+  if(fi) fi.value = _xrListFrom || '';
+  if(ti) ti.value = _xrListTo || '';
+  _xrRefresh();
+}
+function _xrSetListStatus(v){ _xrListStatus = v; _xrRefresh(); }
+function _xrSetListBasis(v){ _xrListBasis = v; _xrRefresh(); }
+function _xrListClearDates(){
+  _xrListFrom = null; _xrListTo = null;
+  var fi = document.getElementById('xr_l_from'), ti = document.getElementById('xr_l_to');
+  if(fi) fi.value = ''; if(ti) ti.value = '';
+  _xrRefresh();
+}
 
 function _xrToggleCapital(on){
   _xrShowCapital = !!on;
@@ -12077,10 +12176,29 @@ function _xrToggleType(t){
   _xrRefresh();
 }
 
+function _xrPillOn(b, on){
+  if(!b) return;
+  b.style.background  = on ? 'var(--accent-soft)' : 'var(--surface-secondary)';
+  b.style.borderColor = on ? 'var(--accent)' : 'transparent';
+  b.style.color       = on ? 'var(--accent)' : 'var(--text-tertiary)';
+}
+
 function _xrRefresh(){
   var fi = document.getElementById('xr_from'), ti = document.getElementById('xr_to');
   if(fi) _xrFrom = fi.value || null;
   if(ti) _xrTo   = ti.value || null;
+  var lfi = document.getElementById('xr_l_from'), lti = document.getElementById('xr_l_to');
+  if(_xrListMode === 'custom'){
+    if(lfi) _xrListFrom = lfi.value || null;
+    if(lti) _xrListTo   = lti.value || null;
+  }
+  var listKind = _xrListMode !== 'custom' ? 'same' : _xrListKind;
+  ['same','open','custom'].forEach(function(v){ _xrPillOn(document.getElementById('xr_lm_' + v), listKind === v); });
+  var lc = document.getElementById('xr_l_custom');
+  if(lc) lc.style.display = listKind === 'custom' ? 'block' : 'none';
+  ['closed','open','all'].forEach(function(v){ _xrPillOn(document.getElementById('xr_lst_' + v), _xrListStatus === v); });
+  ['opened','closed','either'].forEach(function(v){ _xrPillOn(document.getElementById('xr_ldt_' + v), _xrListBasis === v); });
+  ['combined','metrics','trades','separate'].forEach(function(v){ _xrPillOn(document.getElementById('xr_lay_' + v), _xrLayout === v); });
 
   ['opened','closed','either'].forEach(function(v){
     var b = document.getElementById('xr_dt_' + v);
@@ -12122,7 +12240,10 @@ function _xrRefresh(){
     b.style.color       = on ? 'var(--accent)' : 'var(--text-tertiary)';
   });
 
-  var D = _xrData();
+  var D = _xrData(), LD = _xrListData();
+  var lsum = document.getElementById('xr_l_summary');
+  if(lsum) lsum.textContent = 'Listed: ' + LD.count + (LD.count === 1 ? ' position' : ' positions') + ' · ' + LD.closedCount + ' closed · ' + LD.openCount + ' open'
+    + (_xrListMode === 'custom' ? ' · ' + ((!LD.from && !LD.to) ? 'all dates' : _xrPeriodLabel(LD)) : ' · same as metrics');
   var sum = document.getElementById('xr_summary');
   if(sum){
     var cell = function(l, v, col){
@@ -12140,10 +12261,22 @@ function _xrRefresh(){
   var prev = document.getElementById('xr_preview');
   if(prev){
     prev.innerHTML = '';
-    var cv = _drawXCard(D, 2);
-    cv.style.cssText = 'width:100%;display:block;';
-    prev.appendChild(cv);
+    var cvs = _xrCanvases(2);
+    cvs.forEach(function(x, i){
+      if(cvs.length > 1){
+        var cap = document.createElement('div');
+        cap.textContent = 'Image ' + (i + 1) + ' of ' + cvs.length + ' · ' + (x.part === 'metrics' ? 'Metrics' : 'Trades');
+        cap.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-tertiary);padding:8px 10px;background:var(--surface-secondary);' + (i ? 'border-top:1px solid var(--border-subtle);' : '');
+        prev.appendChild(cap);
+      }
+      x.cv.style.cssText = 'width:100%;display:block;';
+      prev.appendChild(x.cv);
+    });
   }
+  var dl = document.getElementById('xr_dl_btn');
+  if(dl) dl.textContent = _xrLayout === 'separate' ? 'Download 2 PNGs' : 'Download PNG';
+  var sh = document.getElementById('xr_sh_btn');
+  if(sh) sh.textContent = _xrLayout === 'separate' ? 'Share 2 Images + Text' : 'Share Image + Text';
 
   var ta = document.getElementById('xr_tweet');
   if(ta){
@@ -12157,30 +12290,42 @@ function _xrRefresh(){
   }
 }
 
-function _xrFileName(ext){ return 'x-recap-' + (_xrFrom||'') + '_' + (_xrTo||'') + '.' + ext; }
+function _xrFileName(ext, part){
+  return 'x-recap-' + (_xrFrom||'') + '_' + (_xrTo||'') + (part && part !== 'combined' ? '-' + part : '') + '.' + ext;
+}
 
 function downloadXPNG(){
-  var cv = _drawXCard(_xrData(), 3);
-  var a = document.createElement('a');
-  a.href = cv.toDataURL('image/png');
-  a.download = _xrFileName('png');
-  document.body.appendChild(a); a.click(); a.remove();
+  _xrCanvases(3).forEach(function(x, i){
+    setTimeout(function(){   // ardisik indirmeler tarayicida birbirini engellemesin
+      var a = document.createElement('a');
+      a.href = x.cv.toDataURL('image/png');
+      a.download = _xrFileName('png', x.part);
+      document.body.appendChild(a); a.click(); a.remove();
+    }, i * 400);
+  });
 }
 
 function shareXPNG(){
-  var cv = _drawXCard(_xrData(), 3);
+  var cvs = _xrCanvases(3);
   var tweet = buildXTweet();
-  cv.toBlob(function(blob){
-    if(!blob) return;
-    var file = new File([blob], _xrFileName('png'), { type: 'image/png' });
-    if(navigator.canShare && navigator.canShare({ files: [file] })){
-      navigator.share({ files: [file], text: tweet }).catch(function(){});
+  Promise.all(cvs.map(function(x){
+    return new Promise(function(res){ x.cv.toBlob(function(blob){ res(blob ? { blob:blob, part:x.part } : null); }, 'image/png'); });
+  })).then(function(list){
+    list = list.filter(Boolean);
+    if(!list.length) return;
+    var files = list.map(function(x){ return new File([x.blob], _xrFileName('png', x.part), { type: 'image/png' }); });
+    if(navigator.canShare && navigator.canShare({ files: files })){
+      navigator.share({ files: files, text: tweet }).catch(function(){});
     } else {
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = _xrFileName('png');
-      document.body.appendChild(a); a.click(); a.remove();
+      list.forEach(function(x, i){
+        setTimeout(function(){
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(x.blob); a.download = _xrFileName('png', x.part);
+          document.body.appendChild(a); a.click(); a.remove();
+        }, i * 400);
+      });
     }
-  }, 'image/png');
+  });
 }
 
 function _xrCopyTweet(){
@@ -12614,11 +12759,12 @@ function showXReport(){
   box.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border-subtle);">'
     + '<div><div style="font-size:17px;font-weight:700;color:var(--text-primary);">X Share Report</div>'
-    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Date range by <b id="xr_basis_sub">open</b> date · image + tweet text</div></div>'
+    + '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">Metrics by <b id="xr_basis_sub">open</b> date · own trade list filter · image + tweet text</div></div>'
     + '<button onclick="document.getElementById(\'xr-modal\').remove()" style="width:30px;height:30px;border-radius:50%;background:var(--surface-secondary);border:none;color:var(--text-secondary);font-size:17px;cursor:pointer;">&times;</button>'
     + '</div>'
 
     + '<div style="padding:14px 18px 0;">'
+    + '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 10px;"><span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none;">1</span><div><div style="font-size:14px;font-weight:700;color:var(--text-primary);">Metrics</div><div style="font-size:10.5px;color:var(--text-tertiary);margin-top:1px;">Total P&amp;L, win rate, ROC, chart — the top of the image</div></div></div>'
     + '<div style="' + lblCss + '">Period</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'
     +   btn('', 'This month', "_xrPreset('thisMonth')", pill)
@@ -12651,7 +12797,7 @@ function showXReport(){
     +   btn('xr_st_all',    'All',    "_xrSetStatus('all')",    pill)
     + '</div>'
 
-    + '<div style="' + lblCss + '">Trade Type</div>'
+    + '<div style="' + lblCss + '">Trade Type <span style="text-transform:none;letter-spacing:0;font-weight:500;">· applies to metrics and trade list</span></div>'
     + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">' + typePills + '</div>'
 
     + '<div style="' + lblCss + '">Collateral &amp; Portfolio</div>'
@@ -12665,6 +12811,43 @@ function showXReport(){
     + '</div>'
 
     + '<div id="xr_summary" style="background:var(--surface-secondary);border-radius:10px;padding:11px;margin-bottom:14px;"></div>'
+
+    + '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 10px;padding-top:12px;border-top:1px solid var(--border-subtle);"><span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none;">2</span><div><div style="font-size:14px;font-weight:700;color:var(--text-primary);">Trade list</div><div style="font-size:10.5px;color:var(--text-tertiary);margin-top:1px;">Which trades are listed under the metrics</div></div></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">'
+    +   btn('xr_lm_same',   'Same as metrics', "_xrSetListMode('same')",   pill)
+    +   btn('xr_lm_open',   'All open trades', "_xrSetListMode('open')",   pill)
+    +   btn('xr_lm_custom', 'Custom filter',   "_xrSetListMode('custom')", pill)
+    + '</div>'
+    + '<div id="xr_l_custom" style="display:none;background:var(--surface-secondary);border-radius:10px;padding:10px 10px 2px;margin-bottom:8px;">'
+    +   '<div style="display:flex;gap:8px;margin-bottom:6px;">'
+    +     '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">Start</div>'
+    +       '<input id="xr_l_from" type="date" value="" onchange="_xrRefresh()" style="' + dateCss + 'background:var(--surface);"></div>'
+    +     '<div style="flex:1;"><div style="' + lblCss + 'margin-bottom:4px;">End</div>'
+    +       '<input id="xr_l_to" type="date" value="" onchange="_xrRefresh()" style="' + dateCss + 'background:var(--surface);"></div>'
+    +   '</div>'
+    +   '<div style="text-align:right;margin-bottom:8px;">' + btn('', 'Clear dates (all dates)', '_xrListClearDates()', tiny) + '</div>'
+    +   '<div style="' + lblCss + '">Date filter</div>'
+    +   '<div style="display:flex;gap:6px;margin-bottom:10px;">'
+    +     btn('xr_ldt_opened', 'Opened', "_xrSetListBasis('opened')", pill)
+    +     btn('xr_ldt_closed', 'Closed', "_xrSetListBasis('closed')", pill)
+    +     btn('xr_ldt_either', 'Mixed',  "_xrSetListBasis('either')", pill)
+    +   '</div>'
+    +   '<div style="' + lblCss + '">Status</div>'
+    +   '<div style="display:flex;gap:6px;margin-bottom:10px;">'
+    +     btn('xr_lst_closed', 'Closed', "_xrSetListStatus('closed')", pill)
+    +     btn('xr_lst_open',   'Open',   "_xrSetListStatus('open')",   pill)
+    +     btn('xr_lst_all',    'All',    "_xrSetListStatus('all')",    pill)
+    +   '</div>'
+    + '</div>'
+    + '<div id="xr_l_summary" style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;"></div>'
+
+    + '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 10px;padding-top:12px;border-top:1px solid var(--border-subtle);"><span style="width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none;">3</span><div><div style="font-size:14px;font-weight:700;color:var(--text-primary);">Image</div><div style="font-size:10.5px;color:var(--text-tertiary);margin-top:1px;">One combined image, or metrics and trades as separate posts</div></div></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">'
+    +   btn('xr_lay_combined', 'Combined',          "_xrSetLayout('combined')", pill)
+    +   btn('xr_lay_separate', '2 separate images', "_xrSetLayout('separate')", pill)
+    +   btn('xr_lay_metrics',  'Metrics only',      "_xrSetLayout('metrics')",  pill)
+    +   btn('xr_lay_trades',   'Trades only',       "_xrSetLayout('trades')",   pill)
+    + '</div>'
     + '</div>'
 
     + '<div style="padding:0 18px 14px;">'
@@ -12678,8 +12861,8 @@ function showXReport(){
     + '</div>'
 
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 18px 18px;">'
-    +   btn('', 'Download PNG', 'downloadXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--success);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
-    +   btn('', 'Share Image + Text', 'shareXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('xr_dl_btn', 'Download PNG', 'downloadXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--success);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
+    +   btn('xr_sh_btn', 'Share Image + Text', 'shareXPNG()', 'padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     +   btn('', 'Copy Tweet Text', '_xrCopyTweet()', 'grid-column:1/-1;padding:13px;border-radius:11px;border:1px solid var(--border-subtle);background:var(--surface-secondary);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;')
     + '</div>';
 
