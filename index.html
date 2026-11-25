@@ -14280,11 +14280,11 @@ function _shotCommit(){
       var pCm   = last ? Math.round((cm  - accC) * 100) / 100  : Math.round(cm   * part.n / qty * 100) / 100;
       accP += pPrem; accT += pTem; accC += pCm;
 
-      // Hesap sahibi (Mustafa/Eda) profil icindeki ayrimdir: aktif profile
-      // giden dilim ekrandaki secimi alir, diger profiller kendi
-      // varsayilanini kullanir.
-      var pOwner = (part.pid === ACTIVE_PROFILE) ? owner
-                 : (part.pid === 'mustafa' ? 'Mustafa' : 'Eda');
+      // Hesap sahibi: bir ekran goruntusu tek hesaba aittir; ekrandaki
+      // secim (Mustafa/Eda) islemin dagitildigi TUM profillere yazilir.
+      // (Eskiden yalnizca aktif profil secimi aliyor, digerleri "Eda"
+      // varsayilanina dusuyordu.)
+      var pOwner = owner;
 
       var newT = {
         id: newRecordId('shot' + i + '_' + part.pid),
